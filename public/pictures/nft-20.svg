@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#040810"/><stop offset="50%" stop-color="#081428"/><stop offset="100%" stop-color="#061020"/>
+    </linearGradient>
+    <radialGradient id="g1" cx="50%" cy="45%" r="45%">
+      <stop offset="0%" stop-color="#10B981" stop-opacity="0.15"/><stop offset="100%" stop-color="transparent"/>
+    </radialGradient>
+    <filter id="glow"><feGaussianBlur stdDeviation="4"/></filter>
+  </defs>
+  <rect width="512" height="512" fill="url(#bg)"/>
+  <rect width="512" height="512" fill="url(#g1)"/>
+  <!-- Interlocking squares -->
+  <g transform="translate(256,240)" fill="none" opacity="0.25">
+    <rect x="-80" y="-80" width="160" height="160" stroke="#10B981" stroke-width="2" transform="rotate(0)"/>
+    <rect x="-80" y="-80" width="160" height="160" stroke="#06B6D4" stroke-width="1.5" transform="rotate(22.5)"/>
+    <rect x="-80" y="-80" width="160" height="160" stroke="#00E5FF" stroke-width="1" transform="rotate(45)"/>
+  </g>
+  <circle cx="256" cy="240" r="10" fill="#10B981" opacity="0.3" filter="url(#glow)"/>
+  <circle cx="256" cy="240" r="3" fill="#fff" opacity="0.8"/>
+  <g fill="#fff" opacity="0.3"><circle cx="80" cy="60" r="1"/><circle cx="430" cy="90" r="1.2"/><circle cx="100" cy="440" r="1"/><circle cx="400" cy="420" r="1"/></g>
+</svg>

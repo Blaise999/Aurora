@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 1200" width="900" height="1200">
+  <defs>
+    <linearGradient id="c21bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0c0420"/><stop offset="100%" stop-color="#08061a"/>
+    </linearGradient>
+    <linearGradient id="c21p" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ec4899" stop-opacity="0.6"/><stop offset="50%" stop-color="#8B5CF6" stop-opacity="0.4"/><stop offset="100%" stop-color="#06B6D4" stop-opacity="0.3"/>
+    </linearGradient>
+    <radialGradient id="c21r" cx="50%" cy="45%" r="40%">
+      <stop offset="0%" stop-color="#8B5CF6" stop-opacity="0.15"/><stop offset="100%" stop-color="transparent"/>
+    </radialGradient>
+    <filter id="c21glow"><feGaussianBlur stdDeviation="6"/></filter>
+    <filter id="c21ns">
+      <feTurbulence type="fractalNoise" baseFrequency="0.7" numOctaves="3" stitchTiles="stitch"/>
+      <feColorMatrix type="saturate" values="0"/><feComponentTransfer><feFuncA type="linear" slope="0.04"/></feComponentTransfer>
+      <feBlend in="SourceGraphic" mode="overlay"/>
+    </filter>
+  </defs>
+  <rect width="900" height="1200" fill="url(#c21bg)"/>
+  <rect width="900" height="1200" fill="url(#c21r)"/>
+  <!-- Diamond shape -->
+  <g transform="translate(450,530)">
+    <polygon points="0,-250 180,0 0,250 -180,0" fill="url(#c21p)" opacity="0.15"/>
+    <polygon points="0,-250 180,0 0,250 -180,0" fill="none" stroke="#8B5CF6" stroke-width="1.5"/>
+    <polygon points="0,-250 180,0 0,250 -180,0" fill="none" stroke="#8B5CF6" stroke-width="3" opacity="0.15" filter="url(#c21glow)"/>
+    <line x1="0" y1="-250" x2="0" y2="250" stroke="#ec4899" stroke-width="0.5" opacity="0.3"/>
+    <line x1="-180" y1="0" x2="180" y2="0" stroke="#06B6D4" stroke-width="0.5" opacity="0.3"/>
+    <!-- Inner diamond -->
+    <polygon points="0,-140 100,0 0,140 -100,0" fill="none" stroke="#a78bfa" stroke-width="0.8" opacity="0.4"/>
+    <polygon points="0,-70 50,0 0,70 -50,0" fill="none" stroke="#ec4899" stroke-width="0.6" opacity="0.5"/>
+    <circle r="10" fill="#ec4899" opacity="0.4" filter="url(#c21glow)"/>
+    <circle r="3" fill="#fff" opacity="0.9"/>
+  </g>
+  <!-- Emanating lines -->
+  <g opacity="0.08" stroke="#8B5CF6" stroke-width="0.5">
+    <line x1="450" y1="280" x2="200" y2="100"/><line x1="450" y1="280" x2="700" y2="100"/>
+    <line x1="450" y1="780" x2="200" y2="1000"/><line x1="450" y1="780" x2="700" y2="1000"/>
+  </g>
+  <g fill="#ec4899"><circle cx="320" cy="380" r="2.5" opacity="0.5" filter="url(#c21glow)"/><circle cx="580" cy="680" r="2" opacity="0.4" filter="url(#c21glow)"/></g>
+  <g fill="#8B5CF6"><circle cx="560" cy="350" r="2" opacity="0.4"/><circle cx="340" cy="700" r="2.5" opacity="0.5"/></g>
+  <g fill="#fff" opacity="0.35"><circle cx="120" cy="80" r="1"/><circle cx="780" cy="120" r="1.2"/><circle cx="150" cy="1080" r="1"/><circle cx="750" cy="1100" r="0.8"/></g>
+  <rect width="900" height="1200" filter="url(#c21ns)" opacity="0.4"/>
+</svg>

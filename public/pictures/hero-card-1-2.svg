@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 1200" width="900" height="1200">
+  <defs>
+    <linearGradient id="c12bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0a0416"/><stop offset="100%" stop-color="#06081a"/>
+    </linearGradient>
+    <radialGradient id="c12r1" cx="50%" cy="42%" r="35%">
+      <stop offset="0%" stop-color="#8B5CF6" stop-opacity="0.2"/><stop offset="100%" stop-color="transparent"/>
+    </radialGradient>
+    <filter id="c12glow"><feGaussianBlur stdDeviation="6"/></filter>
+    <filter id="c12ns">
+      <feTurbulence type="fractalNoise" baseFrequency="0.75" numOctaves="3" stitchTiles="stitch"/>
+      <feColorMatrix type="saturate" values="0"/><feComponentTransfer><feFuncA type="linear" slope="0.04"/></feComponentTransfer>
+      <feBlend in="SourceGraphic" mode="overlay"/>
+    </filter>
+  </defs>
+  <rect width="900" height="1200" fill="url(#c12bg)"/>
+  <rect width="900" height="1200" fill="url(#c12r1)"/>
+  <!-- Concentric rings -->
+  <g transform="translate(450,500)" fill="none">
+    <circle r="250" stroke="#8B5CF6" stroke-width="1.5" opacity="0.15"/>
+    <circle r="200" stroke="#a78bfa" stroke-width="1.2" opacity="0.2"/>
+    <circle r="150" stroke="#8B5CF6" stroke-width="1" opacity="0.3"/>
+    <circle r="100" stroke="#00E5FF" stroke-width="1.5" opacity="0.35"/>
+    <circle r="50" stroke="#00E5FF" stroke-width="2" opacity="0.5"/>
+    <circle r="250" stroke="#8B5CF6" stroke-width="4" opacity="0.08" filter="url(#c12glow)"/>
+    <circle r="150" stroke="#00E5FF" stroke-width="3" opacity="0.1" filter="url(#c12glow)"/>
+    <!-- Dashed orbit -->
+    <circle r="300" stroke="#a78bfa" stroke-width="0.5" stroke-dasharray="6,10" opacity="0.1"/>
+    <circle r="180" stroke="#06B6D4" stroke-width="0.5" stroke-dasharray="4,8" opacity="0.15"/>
+    <!-- Center glow -->
+    <circle r="20" fill="#00E5FF" opacity="0.3" filter="url(#c12glow)"/>
+    <circle r="6" fill="#fff" opacity="0.8"/>
+  </g>
+  <!-- Orbital dots -->
+  <g fill="#00E5FF">
+    <circle cx="450" cy="200" r="4" opacity="0.7"/><circle cx="700" cy="500" r="3" opacity="0.5"/>
+    <circle cx="200" cy="500" r="3.5" opacity="0.6"/><circle cx="450" cy="800" r="3" opacity="0.4"/>
+  </g>
+  <g fill="#8B5CF6">
+    <circle cx="300" cy="300" r="2.5" opacity="0.5"/><circle cx="600" cy="700" r="2" opacity="0.4"/>
+  </g>
+  <g fill="#fff" opacity="0.35">
+    <circle cx="100" cy="80" r="1"/><circle cx="800" cy="120" r="1.2"/>
+    <circle cx="150" cy="1050" r="1"/><circle cx="750" cy="1100" r="0.8"/>
+  </g>
+  <rect width="900" height="1200" filter="url(#c12ns)" opacity="0.4"/>
+</svg>

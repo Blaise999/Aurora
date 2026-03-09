@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 1200" width="900" height="1200">
+  <defs>
+    <linearGradient id="c22bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#080410"/><stop offset="100%" stop-color="#0a0818"/>
+    </linearGradient>
+    <radialGradient id="c22r" cx="50%" cy="45%" r="45%">
+      <stop offset="0%" stop-color="#ec4899" stop-opacity="0.12"/><stop offset="40%" stop-color="#8B5CF6" stop-opacity="0.06"/><stop offset="100%" stop-color="transparent"/>
+    </radialGradient>
+    <filter id="c22glow"><feGaussianBlur stdDeviation="5"/></filter>
+    <filter id="c22ns">
+      <feTurbulence type="fractalNoise" baseFrequency="0.65" numOctaves="3" stitchTiles="stitch"/>
+      <feColorMatrix type="saturate" values="0"/><feComponentTransfer><feFuncA type="linear" slope="0.04"/></feComponentTransfer>
+      <feBlend in="SourceGraphic" mode="overlay"/>
+    </filter>
+  </defs>
+  <rect width="900" height="1200" fill="url(#c22bg)"/>
+  <rect width="900" height="1200" fill="url(#c22r)"/>
+  <!-- Spiral arms -->
+  <g transform="translate(450,530)" fill="none" opacity="0.15">
+    <path d="M0,0 Q40,-80 120,-100 Q200,-100 220,-20 Q220,60 150,100 Q80,130 20,100 Q-30,70 -20,20" stroke="#ec4899" stroke-width="2"/>
+    <path d="M0,0 Q-40,80 -120,100 Q-200,100 -220,20 Q-220,-60 -150,-100 Q-80,-130 -20,-100 Q30,-70 20,-20" stroke="#8B5CF6" stroke-width="2"/>
+  </g>
+  <g transform="translate(450,530) scale(1.8)" fill="none" opacity="0.08">
+    <path d="M0,0 Q40,-80 120,-100 Q200,-100 220,-20 Q220,60 150,100 Q80,130 20,100" stroke="#ec4899" stroke-width="1.2"/>
+    <path d="M0,0 Q-40,80 -120,100 Q-200,100 -220,20 Q-220,-60 -150,-100 Q-80,-130 -20,-100" stroke="#8B5CF6" stroke-width="1.2"/>
+  </g>
+  <!-- Center core -->
+  <circle cx="450" cy="530" r="30" fill="#ec4899" opacity="0.1" filter="url(#c22glow)"/>
+  <circle cx="450" cy="530" r="12" fill="#ec4899" opacity="0.3" filter="url(#c22glow)"/>
+  <circle cx="450" cy="530" r="4" fill="#fff" opacity="0.9"/>
+  <!-- Spiral dust particles -->
+  <g fill="#ec4899"><circle cx="500" cy="440" r="2" opacity="0.5"/><circle cx="380" cy="610" r="2.5" opacity="0.4"/><circle cx="560" cy="560" r="1.5" opacity="0.6"/></g>
+  <g fill="#8B5CF6"><circle cx="350" cy="460" r="2" opacity="0.4"/><circle cx="530" cy="630" r="1.5" opacity="0.5"/></g>
+  <g fill="#fff" opacity="0.35"><circle cx="100" cy="90" r="1.2"/><circle cx="800" cy="100" r="1"/><circle cx="140" cy="1060" r="1"/><circle cx="760" cy="1100" r="1.2"/></g>
+  <rect width="900" height="1200" filter="url(#c22ns)" opacity="0.4"/>
+</svg>

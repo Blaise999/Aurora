@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 1200" width="900" height="1200">
+  <defs>
+    <linearGradient id="c23bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#06040f"/><stop offset="100%" stop-color="#0a0820"/>
+    </linearGradient>
+    <radialGradient id="c23r" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#06B6D4" stop-opacity="0.1"/><stop offset="100%" stop-color="transparent"/>
+    </radialGradient>
+    <filter id="c23glow"><feGaussianBlur stdDeviation="4"/></filter>
+    <filter id="c23ns">
+      <feTurbulence type="fractalNoise" baseFrequency="0.7" numOctaves="3" stitchTiles="stitch"/>
+      <feColorMatrix type="saturate" values="0"/><feComponentTransfer><feFuncA type="linear" slope="0.04"/></feComponentTransfer>
+      <feBlend in="SourceGraphic" mode="overlay"/>
+    </filter>
+  </defs>
+  <rect width="900" height="1200" fill="url(#c23bg)"/>
+  <rect width="900" height="1200" fill="url(#c23r)"/>
+  <!-- Vertical data streams -->
+  <g opacity="0.1" stroke-width="1">
+    <line x1="150" y1="0" x2="150" y2="1200" stroke="#00E5FF" stroke-dasharray="3,8"/>
+    <line x1="300" y1="0" x2="300" y2="1200" stroke="#8B5CF6" stroke-dasharray="2,12"/>
+    <line x1="450" y1="0" x2="450" y2="1200" stroke="#00E5FF" stroke-dasharray="4,6"/>
+    <line x1="600" y1="0" x2="600" y2="1200" stroke="#8B5CF6" stroke-dasharray="3,10"/>
+    <line x1="750" y1="0" x2="750" y2="1200" stroke="#06B6D4" stroke-dasharray="2,14"/>
+  </g>
+  <!-- Signal wave -->
+  <g transform="translate(0,600)" fill="none" opacity="0.2">
+    <path d="M0,0 L100,0 L120,-80 L140,60 L160,-120 L180,100 L200,-60 L220,40 L240,-20 L260,0 L450,0 L470,-60 L490,80 L510,-100 L530,70 L550,-40 L570,20 L590,0 L900,0" stroke="#00E5FF" stroke-width="2"/>
+  </g>
+  <g transform="translate(0,600)" fill="none" opacity="0.08">
+    <path d="M0,0 L100,0 L120,-80 L140,60 L160,-120 L180,100 L200,-60 L220,40 L240,-20 L260,0 L450,0 L470,-60 L490,80 L510,-100 L530,70 L550,-40 L570,20 L590,0 L900,0" stroke="#00E5FF" stroke-width="4" filter="url(#c23glow)"/>
+  </g>
+  <!-- Data nodes -->
+  <g fill="#00E5FF">
+    <circle cx="160" cy="520" r="4" opacity="0.6" filter="url(#c23glow)"/><circle cx="510" cy="480" r="5" opacity="0.7" filter="url(#c23glow)"/>
+    <circle cx="180" cy="680" r="3" opacity="0.5"/><circle cx="530" cy="720" r="3.5" opacity="0.4"/>
+  </g>
+  <g fill="#8B5CF6"><circle cx="300" cy="550" r="3" opacity="0.4"/><circle cx="600" cy="650" r="3" opacity="0.5"/></g>
+  <!-- Binary-like text markers -->
+  <g font-family="monospace" font-size="8" fill="#00E5FF" opacity="0.08">
+    <text x="155" y="200">0x1a2b</text><text x="305" y="350">0xff</text>
+    <text x="455" y="150">0xdead</text><text x="605" y="400">0x42</text>
+  </g>
+  <g fill="#fff" opacity="0.35"><circle cx="80" cy="60" r="1"/><circle cx="820" cy="90" r="1.2"/><circle cx="100" cy="1120" r="1"/><circle cx="800" cy="1080" r="1"/></g>
+  <rect width="900" height="1200" filter="url(#c23ns)" opacity="0.4"/>
+</svg>

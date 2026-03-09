@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 1200" width="900" height="1200">
+  <defs>
+    <linearGradient id="c13bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#060a14"/><stop offset="100%" stop-color="#0a0e1f"/>
+    </linearGradient>
+    <radialGradient id="c13r" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#06B6D4" stop-opacity="0.12"/><stop offset="100%" stop-color="transparent"/>
+    </radialGradient>
+    <filter id="c13glow"><feGaussianBlur stdDeviation="5"/></filter>
+    <filter id="c13ns">
+      <feTurbulence type="fractalNoise" baseFrequency="0.7" numOctaves="3" stitchTiles="stitch"/>
+      <feColorMatrix type="saturate" values="0"/><feComponentTransfer><feFuncA type="linear" slope="0.04"/></feComponentTransfer>
+      <feBlend in="SourceGraphic" mode="overlay"/>
+    </filter>
+  </defs>
+  <rect width="900" height="1200" fill="url(#c13bg)"/>
+  <rect width="900" height="1200" fill="url(#c13r)"/>
+  <!-- Flowing wave layers -->
+  <g opacity="0.12" fill="none" stroke-width="1.5">
+    <path d="M-50,300 Q200,250 450,350 Q700,450 950,300" stroke="#00E5FF"/>
+    <path d="M-50,380 Q200,330 450,430 Q700,530 950,380" stroke="#06B6D4"/>
+    <path d="M-50,460 Q200,410 450,510 Q700,610 950,460" stroke="#00E5FF"/>
+    <path d="M-50,540 Q200,490 450,590 Q700,690 950,540" stroke="#06B6D4"/>
+    <path d="M-50,620 Q200,570 450,670 Q700,770 950,620" stroke="#00E5FF"/>
+    <path d="M-50,700 Q200,650 450,750 Q700,850 950,700" stroke="#8B5CF6" opacity="0.8"/>
+    <path d="M-50,780 Q200,730 450,830 Q700,930 950,780" stroke="#8B5CF6" opacity="0.6"/>
+    <path d="M-50,860 Q200,810 450,910 Q700,1010 950,860" stroke="#a78bfa" opacity="0.4"/>
+  </g>
+  <!-- Glowing wave highlights -->
+  <g opacity="0.06" fill="none" stroke-width="3">
+    <path d="M-50,460 Q200,410 450,510 Q700,610 950,460" stroke="#00E5FF" filter="url(#c13glow)"/>
+    <path d="M-50,700 Q200,650 450,750 Q700,850 950,700" stroke="#8B5CF6" filter="url(#c13glow)"/>
+  </g>
+  <!-- Floating particles along waves -->
+  <g fill="#00E5FF">
+    <circle cx="250" cy="350" r="3" opacity="0.6" filter="url(#c13glow)"/>
+    <circle cx="600" cy="500" r="2.5" opacity="0.5"/>
+    <circle cx="400" cy="680" r="2" opacity="0.4"/>
+  </g>
+  <g fill="#8B5CF6">
+    <circle cx="500" cy="800" r="2.5" opacity="0.5" filter="url(#c13glow)"/>
+    <circle cx="300" cy="550" r="2" opacity="0.4"/>
+  </g>
+  <g fill="#fff" opacity="0.35">
+    <circle cx="150" cy="100" r="1.2"/><circle cx="750" cy="80" r="1"/>
+    <circle cx="100" cy="1100" r="1"/><circle cx="800" cy="1050" r="1.2"/>
+  </g>
+  <rect width="900" height="1200" filter="url(#c13ns)" opacity="0.4"/>
+</svg>

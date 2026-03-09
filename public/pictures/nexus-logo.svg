@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="logo-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00E5FF"/>
+      <stop offset="100%" stop-color="#8B5CF6"/>
+    </linearGradient>
+    <linearGradient id="logo-grad2" x1="100%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#06B6D4" stop-opacity="0.6"/>
+      <stop offset="100%" stop-color="#a78bfa" stop-opacity="0.3"/>
+    </linearGradient>
+    <filter id="logo-glow">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+    <clipPath id="logo-clip">
+      <rect x="56" y="56" width="400" height="400" rx="80"/>
+    </clipPath>
+  </defs>
+  <!-- Background rounded square -->
+  <rect x="56" y="56" width="400" height="400" rx="80" fill="url(#logo-grad)"/>
+  <!-- Inner subtle pattern -->
+  <g clip-path="url(#logo-clip)" opacity="0.15">
+    <line x1="56" y1="156" x2="456" y2="156" stroke="#fff" stroke-width="0.5"/>
+    <line x1="56" y1="256" x2="456" y2="256" stroke="#fff" stroke-width="0.5"/>
+    <line x1="56" y1="356" x2="456" y2="356" stroke="#fff" stroke-width="0.5"/>
+    <line x1="156" y1="56" x2="156" y2="456" stroke="#fff" stroke-width="0.5"/>
+    <line x1="256" y1="56" x2="256" y2="456" stroke="#fff" stroke-width="0.5"/>
+    <line x1="356" y1="56" x2="356" y2="456" stroke="#fff" stroke-width="0.5"/>
+  </g>
+  <!-- N letterform -->
+  <g transform="translate(256,256)">
+    <!-- Main N shape -->
+    <path d="M-100,-110 L-100,110 L-60,110 L-60,-20 L60,110 L100,110 L100,-110 L60,-110 L60,20 L-60,-110 Z"
+          fill="#070A10" opacity="0.9"/>
+    <!-- Highlight stroke on N -->
+    <path d="M-100,-110 L-100,110 L-60,110 L-60,-20 L60,110 L100,110 L100,-110 L60,-110 L60,20 L-60,-110 Z"
+          fill="none" stroke="#fff" stroke-width="1" opacity="0.15"/>
+  </g>
+  <!-- Corner accent dots -->
+  <circle cx="106" cy="106" r="6" fill="#fff" opacity="0.2"/>
+  <circle cx="406" cy="106" r="6" fill="#fff" opacity="0.2"/>
+  <circle cx="106" cy="406" r="6" fill="#fff" opacity="0.2"/>
+  <circle cx="406" cy="406" r="6" fill="#fff" opacity="0.2"/>
+  <!-- Outer glow ring -->
+  <rect x="56" y="56" width="400" height="400" rx="80" fill="none" stroke="url(#logo-grad)" stroke-width="2" opacity="0.3" filter="url(#logo-glow)"/>
+</svg>

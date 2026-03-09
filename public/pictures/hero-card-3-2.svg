@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 1200" width="900" height="1200">
+  <defs>
+    <linearGradient id="c32bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#04080c"/><stop offset="100%" stop-color="#081018"/>
+    </linearGradient>
+    <radialGradient id="c32r" cx="50%" cy="48%" r="45%">
+      <stop offset="0%" stop-color="#10B981" stop-opacity="0.15"/><stop offset="50%" stop-color="#06B6D4" stop-opacity="0.06"/><stop offset="100%" stop-color="transparent"/>
+    </radialGradient>
+    <filter id="c32glow"><feGaussianBlur stdDeviation="8"/></filter>
+    <filter id="c32ns">
+      <feTurbulence type="fractalNoise" baseFrequency="0.6" numOctaves="4" stitchTiles="stitch"/>
+      <feColorMatrix type="saturate" values="0"/><feComponentTransfer><feFuncA type="linear" slope="0.05"/></feComponentTransfer>
+      <feBlend in="SourceGraphic" mode="overlay"/>
+    </filter>
+  </defs>
+  <rect width="900" height="1200" fill="url(#c32bg)"/>
+  <rect width="900" height="1200" fill="url(#c32r)"/>
+  <!-- Organic bloom petals -->
+  <g transform="translate(450,530)" fill="none" opacity="0.12">
+    <path d="M0,-180 Q80,-120 60,0 Q40,80 0,120 Q-40,80 -60,0 Q-80,-120 0,-180" stroke="#10B981" stroke-width="1.5"/>
+    <path d="M0,-180 Q80,-120 60,0 Q40,80 0,120 Q-40,80 -60,0 Q-80,-120 0,-180" stroke="#10B981" stroke-width="2" filter="url(#c32glow)" opacity="0.4"/>
+    <g transform="rotate(72)"><path d="M0,-180 Q80,-120 60,0 Q40,80 0,120 Q-40,80 -60,0 Q-80,-120 0,-180" stroke="#06B6D4" stroke-width="1.5"/></g>
+    <g transform="rotate(144)"><path d="M0,-180 Q80,-120 60,0 Q40,80 0,120 Q-40,80 -60,0 Q-80,-120 0,-180" stroke="#10B981" stroke-width="1.5"/></g>
+    <g transform="rotate(216)"><path d="M0,-180 Q80,-120 60,0 Q40,80 0,120 Q-40,80 -60,0 Q-80,-120 0,-180" stroke="#06B6D4" stroke-width="1.5"/></g>
+    <g transform="rotate(288)"><path d="M0,-180 Q80,-120 60,0 Q40,80 0,120 Q-40,80 -60,0 Q-80,-120 0,-180" stroke="#00E5FF" stroke-width="1.5"/></g>
+  </g>
+  <!-- Inner bloom -->
+  <g transform="translate(450,530) scale(0.5)" fill="none" opacity="0.18">
+    <path d="M0,-180 Q80,-120 60,0 Q40,80 0,120 Q-40,80 -60,0 Q-80,-120 0,-180" stroke="#10B981" stroke-width="2"/>
+    <g transform="rotate(72)"><path d="M0,-180 Q80,-120 60,0 Q40,80 0,120 Q-40,80 -60,0 Q-80,-120 0,-180" stroke="#06B6D4" stroke-width="2"/></g>
+    <g transform="rotate(144)"><path d="M0,-180 Q80,-120 60,0 Q40,80 0,120 Q-40,80 -60,0 Q-80,-120 0,-180" stroke="#10B981" stroke-width="2"/></g>
+    <g transform="rotate(216)"><path d="M0,-180 Q80,-120 60,0 Q40,80 0,120 Q-40,80 -60,0 Q-80,-120 0,-180" stroke="#06B6D4" stroke-width="2"/></g>
+    <g transform="rotate(288)"><path d="M0,-180 Q80,-120 60,0 Q40,80 0,120 Q-40,80 -60,0 Q-80,-120 0,-180" stroke="#00E5FF" stroke-width="2"/></g>
+  </g>
+  <!-- Center core -->
+  <circle cx="450" cy="530" r="15" fill="#10B981" opacity="0.2" filter="url(#c32glow)"/>
+  <circle cx="450" cy="530" r="5" fill="#fff" opacity="0.8"/>
+  <g fill="#10B981"><circle cx="380" cy="380" r="2" opacity="0.4"/><circle cx="520" cy="680" r="2.5" opacity="0.5" filter="url(#c32glow)"/></g>
+  <g fill="#06B6D4"><circle cx="530" cy="420" r="2" opacity="0.4"/><circle cx="370" cy="640" r="2" opacity="0.4"/></g>
+  <g fill="#fff" opacity="0.35"><circle cx="90" cy="80" r="1.2"/><circle cx="810" cy="110" r="1"/><circle cx="110" cy="1090" r="1"/><circle cx="790" cy="1070" r="1.2"/></g>
+  <rect width="900" height="1200" filter="url(#c32ns)" opacity="0.4"/>
+</svg>
