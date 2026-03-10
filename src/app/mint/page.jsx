@@ -14,6 +14,7 @@ import NftCardSkeleton from "@/components/NftCardSkeleton";
 import Button from "@/components/ui/Button";
 import Badge from "@/components/ui/Badge";
 import { Wallet, AlertTriangle, Check, Loader2, Heart } from "lucide-react";
+import WalletConnectModal from "@/components/WalletConnectModal";
 
 function MintPageContent() {
   const sp = useSearchParams();
@@ -73,6 +74,7 @@ function MintPageContent() {
   else if (isConnected && isAuthed) state = "ready";
 
   const handleConnect = () => { const c = connectors[0]; if (c) connect({ connector: c }); };
+  const [showWalletModal, setShowWalletModal] = useState(false);
   const handleMint = useCallback(() => {
     if (!selectedNft) return;
     resetBuy();
@@ -159,7 +161,8 @@ function MintPageContent() {
                     <div className="flex justify-between text-sm"><span className="text-muted">Network</span><span className="text-text font-mono">{chainName}</span></div>
                   </div>
 
-                  {state === "disconnected" && (<div className="space-y-4"><div className="text-center py-4 space-y-2"><Wallet size={32} className="mx-auto text-muted-dim" /><p className="text-sm text-muted">Connect your wallet to mint</p></div><Button variant="primary" size="lg" className="w-full" onClick={handleConnect} disabled={isConnectPending}>{isConnectPending ? <Loader2 size={16} className="animate-spin"/> : <Wallet size={16}/>} Connect Wallet</Button></div>)}
+                  {state === "disconnected" && (<div className="space-y-4"><div className="text-center py-4 space-y-2"><Wallet size={32} className="mx-auto text-muted-dim" /><p className="text-sm text-muted">Connect your wallet to mint</p></div><Button variant="primary" size="lg" className="w-full" onClick={() => setShowWalletModal(true)}>
+                    <Wallet size={16}/> Connect Wallet</Button><WalletConnectModal open={showWalletModal} onClose={() => setShowWalletModal(false)} /></div>)}
                   {state === "needs_auth" && (<div className="space-y-4"><div className="text-center py-4 space-y-2"><Wallet size={32} className="mx-auto text-accent" /><p className="text-sm text-muted">Sign in to verify wallet</p></div><Button variant="primary" size="lg" className="w-full" onClick={login} disabled={authLoading}>{authLoading ? <Loader2 size={16} className="animate-spin"/> : <Wallet size={16}/>} Sign In (SIWE)</Button></div>)}
                   {state === "wrong_network" && (<div className="space-y-4"><div className="bg-warning/10 border border-warning/20 rounded-xl p-4 flex items-start gap-3"><AlertTriangle size={18} className="text-warning mt-0.5 shrink-0" /><div><p className="text-sm font-medium text-warning">Wrong Network</p><p className="text-xs text-muted mt-1">Switch to {chainName}.</p></div></div><Button variant="primary" size="lg" className="w-full" onClick={() => switchChain({ chainId: targetChainId })}>Switch to {chainName}</Button></div>)}
                   {state === "ready" && (<div className="space-y-4"><Button variant="primary" size="lg" className="w-full" onClick={handleMint}>Mint Now — {totalPrice} ETH</Button></div>)}

@@ -29,7 +29,7 @@ export default function Navbar() {
         <div className="flex items-center justify-between h-16 sm:h-20">
           {/* Logo */}
           <Link href="/" className="flex items-center group">
-            <div className="relative w-12 h-12 sm:w-14 sm:h-14">
+            <div className="relative w-10 h-10 sm:w-12 sm:h-12">
               <Image src="/pictures/logo.png" alt="AuroraNft" fill className="object-contain drop-shadow-[0_0_10px_rgba(0,229,255,0.3)] group-hover:drop-shadow-[0_0_16px_rgba(0,229,255,0.5)] transition-all" priority />
             </div>
           </Link>

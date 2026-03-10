@@ -1,25 +1,17 @@
 import { NextResponse } from 'next/server';
-import { sendNtfyNotification } from '@/lib/ntfy';
+import { getSupabase } from '@/lib/db/supabase';
 
-/**
- * GET /api/admin/notifications/test
- * Sends a test push notification via ntfy. Use to verify your setup works.
- */
 export async function GET() {
-  const delivered = await sendNtfyNotification({
-    title: '🔔 Test Notification',
-    message: 'AuroraNft ntfy integration is working!',
-    priority: 'default',
-    tags: ['white_check_mark', 'bell'],
-    click: '/admin',
-  });
-
-  return NextResponse.json({
-    ok: delivered,
-    topic: process.env.NTFY_TOPIC || 'aurora-nft-admin',
-    server: process.env.NTFY_SERVER || 'https://ntfy.sh',
-    message: delivered
-      ? 'Test notification sent! Check your ntfy app.'
-      : 'Failed to send. Check your NTFY_SERVER and NTFY_TOPIC env vars.',
-  });
+  try {
+    const sb = getSupabase();
+    const { data, error } = await sb
+      .from('admin_notifications')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(50);
+    if (error) throw error;
+    return NextResponse.json({ notifications: data || [] });
+  } catch (err) {
+    return NextResponse.json({ error: err.message }, { status: 500 });
+  }
 }

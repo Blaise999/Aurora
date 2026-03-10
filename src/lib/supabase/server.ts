@@ -1,8 +1,6 @@
 import "server-only";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
-// Use `any` as the Database generic to avoid `never` type errors
-// on tables that aren't defined in a generated schema file.
 let serviceClient: SupabaseClient<any> | null = null;
 
 export function getServiceSupabase(): SupabaseClient<any> {

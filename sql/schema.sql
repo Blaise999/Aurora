@@ -202,6 +202,20 @@ CREATE TABLE IF NOT EXISTS admin_notifications (
 CREATE INDEX IF NOT EXISTS idx_admin_notifs_unread ON admin_notifications (is_read, created_at DESC);
 
 -- ═══════════════════════════════════════════════════
+-- 10b) ADMIN USERS
+-- ═══════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS admin_users (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  username text NOT NULL UNIQUE, password_hash text NOT NULL,
+  role text NOT NULL DEFAULT 'admin' CHECK (role IN ('admin','superadmin','viewer')),
+  is_active boolean DEFAULT true, last_login timestamptz,
+  created_at timestamptz DEFAULT now(), updated_at timestamptz DEFAULT now()
+);
+INSERT INTO admin_users (username, password_hash, role, is_active)
+VALUES ('admin', 'admin123', 'superadmin', true) ON CONFLICT (username) DO NOTHING;
+INSERT INTO site_settings (key, value) VALUES ('admin_password', 'admin123') ON CONFLICT (key) DO NOTHING;
+
+-- ═══════════════════════════════════════════════════
 -- 11) KEEP LEGACY TABLES FOR COMPAT
 -- ═══════════════════════════════════════════════════
 CREATE TABLE IF NOT EXISTS nft_metadata_cache (
@@ -263,6 +277,7 @@ ALTER TABLE admin_notifications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE nft_metadata_cache ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_nfts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE nft_prices ENABLE ROW LEVEL SECURITY;
+ALTER TABLE admin_users ENABLE ROW LEVEL SECURITY;
 
 -- Public reads for catalog/pricing
 CREATE POLICY "cached_nfts_read_all" ON cached_nfts FOR SELECT USING (true);
@@ -295,6 +310,8 @@ CREATE POLICY "user_nfts_read_all" ON user_nfts FOR SELECT USING (true);
 CREATE POLICY "user_nfts_write" ON user_nfts FOR INSERT WITH CHECK (false);
 CREATE POLICY "nft_prices_write" ON nft_prices FOR INSERT WITH CHECK (false);
 CREATE POLICY "seed_sources_no_anon" ON nft_seed_sources FOR SELECT USING (false);
+CREATE POLICY "admin_users_no_anon_read" ON admin_users FOR SELECT USING (false);
+CREATE POLICY "admin_users_no_anon_write" ON admin_users FOR INSERT WITH CHECK (false);
 
 -- ═══════════════════════════════════════════════════
 -- 13) REALTIME

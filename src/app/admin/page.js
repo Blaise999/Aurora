@@ -1,6 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { Layers, DollarSign, Activity as ActivityIcon, BarChart3, RefreshCw } from 'lucide-react';
+import AdminLoginGate from '@/components/admin/AdminLoginGate';
 import AdminShell from '@/components/admin/AdminShell';
 import AdminStatCard from '@/components/admin/AdminStatCard';
 import SettingsForm from '@/components/admin/SettingsForm';
@@ -13,8 +14,6 @@ import SupportInbox from '@/components/admin/SupportInbox';
 import Card from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 import Badge from '@/components/ui/Badge';
-
-
 
 function OverviewTab() {
   const [syncing, setSyncing] = useState(false);
@@ -108,5 +107,9 @@ export default function AdminPage() {
     allowlist: <UploadDropzone />,
     activity: <ActivityLog />,
   };
-  return <AdminShell activeTab={tab} onTabChange={setTab}>{content[tab] || <OverviewTab />}</AdminShell>;
+  return (
+    <AdminLoginGate>
+      <AdminShell activeTab={tab} onTabChange={setTab}>{content[tab] || <OverviewTab />}</AdminShell>
+    </AdminLoginGate>
+  );
 }

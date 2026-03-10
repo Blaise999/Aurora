@@ -160,7 +160,7 @@ export default function HeroCarousel() {
   return (
     <section
       ref={(el) => (heroRef.current = el)}
-      className="relative w-full h-screen min-h-[700px] max-h-[1000px] overflow-hidden -mt-16 sm:-mt-20"
+      className="relative w-full h-screen min-h-[580px] sm:min-h-[700px] max-h-[1000px] overflow-hidden -mt-16 sm:-mt-20"
     >
       {/* BACKGROUNDS */}
       {slides.map((slide, i) => {
@@ -240,7 +240,7 @@ export default function HeroCarousel() {
                     </Badge>
                   </div>
 
-                  <h1 className="font-display text-4xl sm:text-5xl lg:text-[58px] font-bold leading-[1.08] tracking-tight text-balance">
+                  <h1 className="font-display text-3xl sm:text-4xl md:text-5xl lg:text-[58px] font-bold leading-[1.08] tracking-tight text-balance">
                     {slide.heading.split(" ").map((word, wi) => {
                       const gradientWords = ["collection", "rarity", "clarity"];
                       const isGradient = gradientWords.some((gw) => word.toLowerCase().includes(gw));
@@ -362,7 +362,7 @@ export default function HeroCarousel() {
       </div>
 
       {/* DOTS */}
-      <div className="absolute bottom-20 sm:bottom-10 left-1/2 -translate-x-1/2 z-[4] flex items-center gap-2.5">
+      <div className="absolute bottom-24 sm:bottom-10 left-1/2 -translate-x-1/2 z-[4] flex items-center gap-2.5">
         {slides.map((_, i) => (
           <button
             key={i}
