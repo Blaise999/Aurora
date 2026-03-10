@@ -4,6 +4,26 @@ import { getServiceSupabase } from "@/lib/supabase/server";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+type UserNftRow = {
+  owner_address: string;
+  chain_id: number | string;
+  contract_address: string;
+  token_id: string;
+  tx_hash: string | null;
+  minted_at: string | null;
+  status: string | null;
+};
+
+type NftMetadataCacheRow = {
+  chain_id: number | string;
+  contract_address: string;
+  token_id: string;
+  name: string | null;
+  description: string | null;
+  image_url: string | null;
+  attributes: unknown[] | null;
+};
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const wallet = searchParams.get("wallet");
@@ -18,7 +38,7 @@ export async function GET(request: Request) {
   try {
     const sb = getServiceSupabase();
 
-    const { data: mints, error: mintErr } = await sb
+    const { data: mintsRaw, error: mintErr } = await sb
       .from("user_nfts")
       .select("*")
       .eq("owner_address", wallet.toLowerCase())
@@ -26,15 +46,19 @@ export async function GET(request: Request) {
 
     if (mintErr) throw mintErr;
 
+    const mints = (mintsRaw ?? []) as UserNftRow[];
+
     const enriched = await Promise.all(
-      (mints || []).map(async (m) => {
-        const { data: meta } = await sb
+      mints.map(async (m) => {
+        const { data: metaRaw } = await sb
           .from("nft_metadata_cache")
           .select("*")
           .eq("chain_id", m.chain_id)
           .eq("contract_address", m.contract_address)
           .eq("token_id", m.token_id)
           .maybeSingle();
+
+        const meta = metaRaw as NftMetadataCacheRow | null;
 
         return {
           contractAddress: m.contract_address,
