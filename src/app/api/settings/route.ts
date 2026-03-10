@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
-import { getServiceSupabase } from "@/lib/supabase";
+import { getServiceSupabase } from "@/lib/supabase/server";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
@@ -8,14 +11,15 @@ export async function GET() {
 
     if (error) throw error;
 
-    const settings = {};
-    (data || []).forEach((row) => {
-      settings[row.key] = row.value;
-    });
+    const settings: Record<string, unknown> = {};
+    for (const row of data ?? []) {
+      if (row?.key) settings[row.key] = row.value;
+    }
 
     return NextResponse.json(settings);
-  } catch {
-    // Return safe defaults
+  } catch (error) {
+    console.error("[/api/settings] GET error:", error);
+
     return NextResponse.json({
       minting_fee: "0.002",
       buy_fee: "0.002",
