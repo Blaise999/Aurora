@@ -1,8 +1,8 @@
 import "./globals.css";
 import { DM_Sans, Outfit, JetBrains_Mono } from "next/font/google";
 import dynamic from "next/dynamic";
-import Navbar from "@/components/Navbar";
-import Footer from "@/components/Footer";
+import Header from "@/components/layout/Header";
+import Footer from "@/components/layout/Footer";
 import ClientProviders from "@/components/ClientProviders";
 
 // ── next/font: self-hosted, no render-blocking <link> or @import ──
@@ -41,10 +41,10 @@ const VisitorTrackerProvider = dynamic(
 );
 
 export const metadata = {
-  title: "Aurora NFT — Discover & Mint Digital Art",
+  title: "AuroraNft — Discover & Mint Digital Art",
   description:
     "Explore thousands of unique NFTs from creators worldwide. Mint, collect, and trade on Base L2.",
-  icons: { icon: "/logo.png" },
+  icons: { icon: "/pictures/logo.png" },
 };
 
 // This is a SERVER COMPONENT — no "use client" here.
@@ -57,7 +57,7 @@ export default function RootLayout({ children }) {
     >
       <body className="grain bg-bg text-text antialiased font-body min-h-screen flex flex-col">
         <ClientProviders>
-          <Navbar />
+          <Header />
           <main className="flex-1 pt-16 sm:pt-20">{children}</main>
           <Footer />
           <ToastProvider />

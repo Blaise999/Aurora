@@ -1,9 +1,11 @@
 import "server-only";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
-let serviceClient: ReturnType<typeof createClient> | null = null;
+// Use `any` as the Database generic to avoid `never` type errors
+// on tables that aren't defined in a generated schema file.
+let serviceClient: SupabaseClient<any> | null = null;
 
-export function getServiceSupabase() {
+export function getServiceSupabase(): SupabaseClient<any> {
   const supabaseUrl =
     process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -19,7 +21,7 @@ export function getServiceSupabase() {
   }
 
   if (!serviceClient) {
-    serviceClient = createClient(supabaseUrl, serviceRoleKey, {
+    serviceClient = createClient<any>(supabaseUrl, serviceRoleKey, {
       auth: {
         persistSession: false,
         autoRefreshToken: false,

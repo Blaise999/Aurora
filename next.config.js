@@ -1,11 +1,18 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // ── Remove x-powered-by header ──
+  poweredByHeader: false,
   // ── Compress responses ──
   compress: true,
   // ── Experimental: optimize package imports to reduce bundle size ──
   experimental: {
-    optimizePackageImports: ["lucide-react", "@tanstack/react-query"],
+    optimizePackageImports: [
+      "lucide-react",
+      "@tanstack/react-query",
+      "framer-motion",
+      "react-icons",
+    ],
   },
   images: {
     formats: ["image/avif", "image/webp"],

@@ -86,7 +86,7 @@ export default function Header() {
               <img
                 src="/pictures/logo.png"
                 alt="AuroraNft Logo"
-                className="h-10 sm:h-12 w-auto object-contain group-hover:brightness-110 transition-all duration-300 drop-shadow-[0_0_12px_rgba(0,229,255,0.35)]"
+                className="h-12 sm:h-14 w-auto object-contain group-hover:brightness-110 transition-all duration-300 drop-shadow-[0_0_12px_rgba(0,229,255,0.35)]"
               />
               <span className="hidden sm:block font-display font-bold text-[15px] tracking-tight text-text group-hover:text-accent transition-colors duration-200">
                 AuroraNft

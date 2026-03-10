@@ -18,8 +18,9 @@ const NFTCard = memo(function NFTCard({ nft, index = 0 }) {
   const [hov, setHov] = useState(false);
   const desc = nft.description || nft.normalized_metadata?.description || '';
   const img = nft.image || nft.normalized_metadata?.image || nft.image_url || '';
-  const hasPrice = nft.price && nft.price !== '—';
+  const hasPrice = (nft.price && nft.price !== '—') || nft.mintPrice;
   const hasLast = nft.lastSale && nft.lastSale !== '—';
+  const displayPrice = (nft.price && nft.price !== '—') ? nft.price : nft.mintPrice ? `${nft.mintPrice} ETH` : null;
 
   return (
     <Link href={mintHref(nft)} prefetch={false}>
@@ -47,7 +48,7 @@ const NFTCard = memo(function NFTCard({ nft, index = 0 }) {
           {desc && <p className="text-[11px] text-muted leading-relaxed line-clamp-2">{desc}</p>}
           {hasPrice || hasLast ? (
             <div className="flex items-center justify-between pt-2 border-t border-white/[0.06]">
-              <div><p className="text-[9px] text-muted-dim uppercase tracking-wider">Price</p><p className="text-sm text-accent font-mono font-semibold mt-0.5">{nft.price}</p></div>
+              <div><p className="text-[9px] text-muted-dim uppercase tracking-wider">Price</p><p className="text-sm text-accent font-mono font-semibold mt-0.5">{displayPrice || nft.price}</p></div>
               <div className="text-right"><p className="text-[9px] text-muted-dim uppercase tracking-wider">Last</p><p className="text-sm text-muted font-mono mt-0.5">{nft.lastSale}</p></div>
             </div>
           ) : (

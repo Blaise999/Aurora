@@ -26,10 +26,10 @@ export default function Footer() {
           <div className="col-span-2 md:col-span-1">
             <div className="flex items-center gap-2.5 mb-4">
               <img
-                src="/logo.png"
+                src="/pictures/logo.png"
                 alt="AuroraNft Logo"
-                className="h-10 w-auto object-contain"
-                style={{ maxHeight: '40px' }}
+                className="h-12 w-auto object-contain"
+                style={{ maxHeight: '48px' }}
               />
               
             </div>
