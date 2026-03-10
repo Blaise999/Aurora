@@ -2,7 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500;600&display=swap');
+/* Fonts loaded via next/font in layout.jsx — no @import needed */
 
 * {
   margin: 0;
@@ -15,7 +15,7 @@ html {
 }
 
 body {
-  font-family: 'DM Sans', sans-serif;
+  font-family: var(--font-body), 'DM Sans', sans-serif;
   background: #070A10;
   color: #EAF0FF;
   overflow-x: hidden;

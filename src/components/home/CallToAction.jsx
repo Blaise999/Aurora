@@ -1,4 +1,4 @@
-'use client';
+// Server Component — no hooks needed
 import Link from 'next/link';
 import { ArrowRight, Sparkles } from 'lucide-react';
 import Button from '@/components/ui/Button';

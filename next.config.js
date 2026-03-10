@@ -1,6 +1,12 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // ── Compress responses ──
+  compress: true,
+  // ── Experimental: optimize package imports to reduce bundle size ──
+  experimental: {
+    optimizePackageImports: ["lucide-react", "@tanstack/react-query"],
+  },
   images: {
     formats: ["image/avif", "image/webp"],
     deviceSizes: [320, 420, 640, 750, 828, 1080, 1200, 1600, 1920, 2560, 3200, 3840],
@@ -18,9 +24,29 @@ const nextConfig = {
       { protocol: "https", hostname: "lh3.googleusercontent.com", pathname: "/**" },
     ],
   },
+  // ── Cache headers for static assets ──
+  async headers() {
+    return [
+      {
+        source: "/pictures/:path*",
+        headers: [
+          { key: "Cache-Control", value: "public, max-age=31536000, immutable" },
+        ],
+      },
+      {
+        source: "/_next/static/:path*",
+        headers: [
+          { key: "Cache-Control", value: "public, max-age=31536000, immutable" },
+        ],
+      },
+    ];
+  },
   webpack: (config, { isServer }) => {
     if (!isServer) {
-      config.resolve.alias = { ...(config.resolve.alias || {}), "@react-native-async-storage/async-storage": false };
+      config.resolve.alias = {
+        ...(config.resolve.alias || {}),
+        "@react-native-async-storage/async-storage": false,
+      };
     }
     return config;
   },

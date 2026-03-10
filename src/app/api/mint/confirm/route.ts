@@ -77,7 +77,7 @@ export async function POST(req: Request) {
         const decoded = decodeEventLog({
           abi: AURORA_NFT_ABI,
           data: log.data,
-          topics: log.topics,
+          topics: (log as any).topics,
         });
         if (decoded.eventName === "Transfer") {
           const args = decoded.args as any;

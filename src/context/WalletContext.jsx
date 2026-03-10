@@ -1,6 +1,5 @@
 "use client";
 import { createContext, useContext, useState, useCallback, useEffect } from "react";
-import { ethers } from "ethers";
 import { CHAIN_CONFIG, CHAIN_ID } from "@/lib/constants";
 
 const WalletContext = createContext(null);

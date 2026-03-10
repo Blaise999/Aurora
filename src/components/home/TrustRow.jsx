@@ -1,4 +1,4 @@
-'use client';
+// Server Component — static content
 import { Shield, Lock, Globe, Cpu } from 'lucide-react';
 
 const signals = [

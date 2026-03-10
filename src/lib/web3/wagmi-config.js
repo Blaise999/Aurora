@@ -6,6 +6,7 @@ const wcProjectId = process.env.NEXT_PUBLIC_WC_PROJECT_ID || "";
 
 export const wagmiConfig = createConfig({
   chains: [base, baseSepolia],
+  ssr: true, // prevents hydration mismatch with server-rendered content
   connectors: [
     injected(),
     ...(wcProjectId ? [walletConnect({ projectId: wcProjectId })] : []),

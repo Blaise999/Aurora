@@ -1,4 +1,4 @@
-'use client';
+// Server Component — CSS-only animation
 
 const headlines = [
   'ETH Layer 2 activity surges to all-time high as gas fees drop below 5 gwei',

@@ -30,9 +30,9 @@ module.exports = {
         rising: '#8B5CF6',
       },
       fontFamily: {
-        display: ['"Outfit"', 'sans-serif'],
-        body: ['"DM Sans"', 'sans-serif'],
-        mono: ['"JetBrains Mono"', 'monospace'],
+        display: ['var(--font-display)', '"Outfit"', 'sans-serif'],
+        body: ['var(--font-body)', '"DM Sans"', 'sans-serif'],
+        mono: ['var(--font-mono)', '"JetBrains Mono"', 'monospace'],
       },
       borderRadius: {
         'card': '18px',
