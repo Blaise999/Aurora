@@ -1,18 +1,23 @@
 import { NextResponse } from "next/server";
-import { getServiceSupabase } from "@/lib/supabase";
+import { getServiceSupabase } from "@/lib/supabase/server";
 
-export async function GET(request) {
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const wallet = searchParams.get("wallet");
 
   if (!wallet) {
-    return NextResponse.json({ error: "wallet param required" }, { status: 400 });
+    return NextResponse.json(
+      { error: "wallet param required" },
+      { status: 400 }
+    );
   }
 
   try {
     const sb = getServiceSupabase();
 
-    // Get user's minted NFTs
     const { data: mints, error: mintErr } = await sb
       .from("user_nfts")
       .select("*")
@@ -21,7 +26,6 @@ export async function GET(request) {
 
     if (mintErr) throw mintErr;
 
-    // Enrich with cached metadata
     const enriched = await Promise.all(
       (mints || []).map(async (m) => {
         const { data: meta } = await sb
@@ -30,7 +34,7 @@ export async function GET(request) {
           .eq("chain_id", m.chain_id)
           .eq("contract_address", m.contract_address)
           .eq("token_id", m.token_id)
-          .single();
+          .maybeSingle();
 
         return {
           contractAddress: m.contract_address,
@@ -48,7 +52,13 @@ export async function GET(request) {
     );
 
     return NextResponse.json({ nfts: enriched });
-  } catch (err) {
-    return NextResponse.json({ nfts: [], error: err.message }, { status: 500 });
+  } catch (err: unknown) {
+    const message =
+      err instanceof Error ? err.message : "Internal server error";
+
+    return NextResponse.json(
+      { nfts: [], error: message },
+      { status: 500 }
+    );
   }
 }
