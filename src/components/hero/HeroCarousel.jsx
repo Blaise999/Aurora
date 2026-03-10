@@ -160,7 +160,7 @@ export default function HeroCarousel() {
   return (
     <section
       ref={(el) => (heroRef.current = el)}
-      className="relative w-full h-screen min-h-[700px] max-h-[1000px] overflow-hidden"
+      className="relative w-full h-screen min-h-[700px] max-h-[1000px] overflow-hidden -mt-16 sm:-mt-20"
     >
       {/* BACKGROUNDS */}
       {slides.map((slide, i) => {

@@ -1,6 +1,6 @@
 "use client";
 import { useSearchParams } from "next/navigation";
-import { Suspense, useState, useEffect, useCallback } from "react";
+import { Suspense, useState, useEffect, useCallback, useRef } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useCachedNft, useSettings, useCachedNfts } from "@/hooks/useNfts";
@@ -48,27 +48,19 @@ function MintPageContent() {
   const [imgZoomed, setImgZoomed] = useState(false);
   const [favorited, setFavorited] = useState(false);
 
-  // Auto-confirm after on-chain success
+  // Auto-confirm after on-chain success (stable ref to avoid stale closure)
+  const confirmRef = useRef({ confirmBuy, selectedNft, tokenIdParam, nftPrice, mintFee });
   useEffect(() => {
-    if (isConfirmedOnChain && txHash && !confirmResult && !confirming && selectedNft) {
-      confirmBuy(txHash, selectedNft.tokenId || tokenIdParam || "0", nftPrice, mintFee, selectedNft.name || "NFT");
+    confirmRef.current = { confirmBuy, selectedNft, tokenIdParam, nftPrice, mintFee };
+  });
+
+  useEffect(() => {
+    if (isConfirmedOnChain && txHash && !confirmResult && !confirming) {
+      const { confirmBuy: cb, selectedNft: nft, tokenIdParam: tid, nftPrice: price, mintFee: fee } = confirmRef.current;
+      if (!nft) return;
+      cb(txHash, nft.tokenId || tid || "0", price, fee, nft.name || "NFT");
     }
   }, [isConfirmedOnChain, txHash, confirmResult, confirming]);
-
-  // After successful buy, also save to wallet_mints
-  useEffect(() => {
-    if (confirmResult && selectedNft && address) {
-      fetch("/api/nft/buy", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          txHash, nftId: selectedNft.tokenId, contractAddress: selectedNft.contractAddress,
-          tokenId: selectedNft.tokenId, ownerAddress: address,
-          priceEth: nftPrice, mintingFeeEth: mintFee,
-          name: selectedNft.name, description: selectedNft.description, imageUrl: selectedNft.image,
-        }),
-      }).catch(() => {});
-    }
-  }, [confirmResult]);
 
   let state = "disconnected";
   if (isConnected && isWrongChain) state = "wrong_network";

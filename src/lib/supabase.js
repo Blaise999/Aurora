@@ -7,10 +7,13 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 // Service client (server-side only — used in API routes)
+let _serviceClient = null;
 export function getServiceSupabase() {
+  if (_serviceClient) return _serviceClient;
   const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
-  return createClient(url, serviceKey, {
+  _serviceClient = createClient(url, serviceKey, {
     auth: { persistSession: false },
   });
+  return _serviceClient;
 }

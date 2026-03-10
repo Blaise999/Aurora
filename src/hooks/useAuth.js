@@ -18,13 +18,17 @@ export function useAuth() {
 
   const [session, setSession] = useState(null); // wallet address string
   const [loading, setLoading] = useState(false);
+  // Track whether login was rejected/errored so callers can decide to retry
+  const [loginRejected, setLoginRejected] = useState(false);
 
   const login = useCallback(async () => {
     if (!address) return;
     setLoading(true);
+    setLoginRejected(false);
     try {
       // 1. Get nonce
       const nonceRes = await fetch('/api/auth/nonce');
+      if (!nonceRes.ok) throw new Error('Failed to get nonce');
       const { nonce } = await nonceRes.json();
 
       // 2. Build SIWE message
@@ -43,7 +47,7 @@ export function useAuth() {
         `Issued At: ${new Date().toISOString()}`,
       ].join('\n');
 
-      // 3. Sign
+      // 3. Sign — user may reject here
       const signature = await signMessageAsync({ message });
 
       // 4. Verify
@@ -58,9 +62,13 @@ export function useAuth() {
         setSession(data.address);
       } else {
         console.error('Auth failed:', data.error);
+        setLoginRejected(true);
       }
     } catch (e) {
+      // User rejected wallet signature or network error
       console.error('Login error:', e);
+      setLoginRejected(true);
+      throw e; // re-throw so callers can handle (e.g. reset loginAttempted)
     } finally {
       setLoading(false);
     }
@@ -71,12 +79,16 @@ export function useAuth() {
       await fetch('/api/auth/logout', { method: 'POST' });
     } catch { /* ignore */ }
     setSession(null);
+    setLoginRejected(false);
     disconnect();
   }, [disconnect]);
 
   // Clear session when wallet disconnects
   useEffect(() => {
-    if (!isConnected) setSession(null);
+    if (!isConnected) {
+      setSession(null);
+      setLoginRejected(false);
+    }
   }, [isConnected]);
 
   return {
@@ -85,6 +97,7 @@ export function useAuth() {
     login,
     logout,
     loading,
+    loginRejected,
     address,
     isConnected,
   };

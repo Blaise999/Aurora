@@ -17,7 +17,7 @@ export default function ExplorePage() {
   // Client-side filtering
   const filteredNfts = useMemo(() => {
     if (activeTab === "trending") {
-      return [...nfts].sort((a, b) => parseFloat(b.price_eth || 0) - parseFloat(a.price_eth || 0));
+      return [...nfts].sort((a, b) => parseFloat(b.mintPrice || 0) - parseFloat(a.mintPrice || 0));
     }
     if (activeTab === "recent") {
       return [...nfts].reverse();

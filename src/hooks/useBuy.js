@@ -53,8 +53,8 @@ export function useBuy() {
         console.error('BUY_COLLECTOR_CONTRACT not configured');
         return;
       }
-      const totalEth = (parseFloat(priceEth) + parseFloat(feeEth)).toFixed(18);
-      const value = parseEther(totalEth);
+      // Use BigInt addition to avoid floating-point precision loss
+      const value = parseEther(String(priceEth)) + parseEther(String(feeEth));
 
       writeContract({
         address: buyCollectorAddress,
