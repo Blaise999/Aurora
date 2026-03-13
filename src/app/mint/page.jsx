@@ -1,4 +1,5 @@
 "use client";
+
 import { useSearchParams } from "next/navigation";
 import { Suspense, useState, useEffect, useCallback, useRef } from "react";
 import Image from "next/image";
@@ -27,20 +28,33 @@ function MintPageContent() {
     isSelectedMode ? contractParam : null,
     isSelectedMode ? tokenIdParam : null
   );
+
   const { settings, loading: settingsLoading } = useSettings();
   const { nfts: relatedNfts, loading: relatedLoading } = useCachedNfts(12);
 
   const { address, isConnected, chain } = useAccount();
-  const { connectors, connect, isPending: isConnectPending } = useConnect();
+  const { connectors, connect } = useConnect();
   const { switchChain } = useSwitchChain();
   const { isAuthed, login, loading: authLoading } = useAuth();
 
-  const { buy, txHash, isSending, isWaiting, isConfirmedOnChain, writeError, confirmBuy, confirming, confirmResult, confirmError, resetBuy } = useBuy();
+  const {
+    buy,
+    txHash,
+    isSending,
+    isWaiting,
+    isConfirmedOnChain,
+    writeError,
+    confirmBuy,
+    confirming,
+    confirmResult,
+    confirmError,
+    resetBuy,
+  } = useBuy();
 
   const targetChainId = getChainId();
   const isWrongChain = isConnected && chain?.id !== targetChainId;
   const chainName = targetChainId === 8453 ? "Base" : "Base Sepolia";
-  const explorerUrl = getExplorerUrl(); // your fallback
+  const explorerUrl = getExplorerUrl();
 
   const mintFee = selectedNft?.mintFee || settings?.minting_fee || "0.002";
   const nftPrice = selectedNft?.mintPrice || settings?.minting_fee || "0.002";
@@ -48,35 +62,39 @@ function MintPageContent() {
 
   const [imgZoomed, setImgZoomed] = useState(false);
   const [favorited, setFavorited] = useState(false);
+  const [showWalletModal, setShowWalletModal] = useState(false);
 
-  // Auto-confirm after on-chain success (stable ref)
+  // Stable ref for auto-confirm
   const confirmRef = useRef({ confirmBuy, selectedNft, tokenIdParam, nftPrice, mintFee });
+
   useEffect(() => {
     confirmRef.current = { confirmBuy, selectedNft, tokenIdParam, nftPrice, mintFee };
-  });
+  }, [confirmBuy, selectedNft, tokenIdParam, nftPrice, mintFee]);
 
   useEffect(() => {
     if (isConfirmedOnChain && txHash && !confirmResult && !confirming) {
-      const { confirmBuy: cb, selectedNft: nft, tokenIdParam: tid, nftPrice: price, mintFee: fee } = confirmRef.current;
+      const { confirmBuy: cb, selectedNft: nft, tokenIdParam: tid, nftPrice: price, mintFee: fee } =
+        confirmRef.current;
       if (!nft) return;
       cb(txHash, nft.tokenId || tid || "0", price, fee, nft.name || "NFT");
     }
   }, [isConfirmedOnChain, txHash, confirmResult, confirming]);
 
-  // ────────────────────────────────────────────────
-  // Explorer link logic ─ per-NFT blockchain viewer
-  // ────────────────────────────────────────────────
-  const getExplorerBase = (chainId?: number) => {
+  // Explorer link
+  const getExplorerBase = (chainId) => {
     if (chainId === 8453) return "https://basescan.org";
     if (chainId === 84532) return "https://sepolia.basescan.org";
-    return explorerUrl; // fallback (your getExplorerUrl probably already handles this)
+    return explorerUrl;
   };
 
   const nftExplorerLink =
     selectedNft?.contractAddress && (selectedNft?.tokenId || tokenIdParam)
-      ? `${getExplorerBase(selectedNft.chainId || targetChainId)}/token/${selectedNft.contractAddress}?a=${selectedNft.tokenId || tokenIdParam}`
+      ? `${getExplorerBase(selectedNft.chainId || targetChainId)}/token/${selectedNft.contractAddress}?a=${
+          selectedNft.tokenId || tokenIdParam
+        }`
       : null;
 
+  // State machine
   let state = "disconnected";
   if (isConnected && isWrongChain) state = "wrong_network";
   else if (isConnected && !isAuthed) state = "needs_auth";
@@ -87,31 +105,34 @@ function MintPageContent() {
   else if (isSending) state = "tx_signing";
   else if (isConnected && isAuthed) state = "ready";
 
-  const handleConnect = () => { const c = connectors[0]; if (c) connect({ connector: c }); };
-  const [showWalletModal, setShowWalletModal] = useState(false);
   const handleMint = useCallback(() => {
     if (!selectedNft) return;
     resetBuy();
     buy(selectedNft.tokenId || tokenIdParam || "0", nftPrice, mintFee);
-  }, [selectedNft, nftPrice, mintFee, tokenIdParam, buy, resetBuy]);
+  }, [selectedNft, tokenIdParam, nftPrice, mintFee, buy, resetBuy]);
 
   const handleFavorite = async (e) => {
-    e?.preventDefault?.(); e?.stopPropagation?.();
+    e?.preventDefault();
+    e?.stopPropagation();
     if (!isConnected || !selectedNft) return;
+
     if (favorited) {
-      await fetch(`/api/favorites?wallet=${address}&contract=${selectedNft.contractAddress}&tokenId=${selectedNft.tokenId}&chainId=${selectedNft.chainId}`, { method: "DELETE" });
+      await fetch(
+        `/api/favorites?wallet=${address}&contract=${selectedNft.contractAddress}&tokenId=${selectedNft.tokenId}&chainId=${selectedNft.chainId}`,
+        { method: "DELETE" }
+      );
       setFavorited(false);
     } else {
-      await fetch("/api/favorites", { 
-        method: "POST", 
+      await fetch("/api/favorites", {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          wallet: address, 
-          contractAddress: selectedNft.contractAddress, 
-          tokenId: selectedNft.tokenId, 
-          chainId: selectedNft.chainId, 
-          cachedNftId: selectedNft.dbId 
-        }) 
+        body: JSON.stringify({
+          wallet: address,
+          contractAddress: selectedNft.contractAddress,
+          tokenId: selectedNft.tokenId,
+          chainId: selectedNft.chainId,
+          cachedNftId: selectedNft.dbId,
+        }),
       });
       setFavorited(true);
     }
@@ -127,34 +148,44 @@ function MintPageContent() {
         <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-accent/3 rounded-full blur-[200px]" />
         <div className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-accent-violet/4 rounded-full blur-[180px]" />
       </div>
+
       <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
         <nav className="flex items-center gap-2 text-xs text-muted-dim mb-6">
-          <Link href="/" className="hover:text-accent transition-colors">Home</Link><span>/</span>
-          <Link href="/explore" className="hover:text-accent transition-colors">Explore</Link><span>/</span>
+          <Link href="/" className="hover:text-accent transition-colors">Home</Link>
+          <span>/</span>
+          <Link href="/explore" className="hover:text-accent transition-colors">Explore</Link>
+          <span>/</span>
           <span className="text-text">{isSelectedMode ? (dn?.name || "Loading...") : "Mint"}</span>
         </nav>
 
         {isSelectedMode && dn ? (
           <div className="grid lg:grid-cols-5 gap-6 lg:gap-10">
+            {/* LEFT COLUMN – NFT details */}
             <div className="lg:col-span-3 space-y-6">
-              <div className={`relative rounded-card overflow-hidden border border-border-light shadow-card ${imgZoomed ? "cursor-zoom-out" : "cursor-zoom-in"}`} 
-                   onClick={() => setImgZoomed(!imgZoomed)}>
+              <div
+                className={`relative rounded-card overflow-hidden border border-border-light shadow-card ${
+                  imgZoomed ? "cursor-zoom-out" : "cursor-zoom-in"
+                }`}
+                onClick={() => setImgZoomed(!imgZoomed)}
+              >
                 <div className={`relative ${imgZoomed ? "aspect-auto min-h-[500px]" : "aspect-square"} transition-all duration-500`}>
-                  <Image 
-                    src={nftImage} 
-                    alt={dn.name || "NFT"} 
-                    fill 
-                    className={`object-contain transition-transform duration-500 ${imgZoomed ? "scale-110" : ""}`} 
-                    sizes="(max-width:1024px) 100vw, 60vw" 
-                    priority 
+                  <Image
+                    src={nftImage}
+                    alt={dn.name || "NFT"}
+                    fill
+                    className={`object-contain transition-transform duration-500 ${imgZoomed ? "scale-110" : ""}`}
+                    sizes="(max-width:1024px) 100vw, 60vw"
+                    priority
                   />
                 </div>
+
                 <div className="absolute top-4 left-4 px-3 py-1.5 rounded-pill bg-surface/80 backdrop-blur-sm border border-border-light text-xs font-display font-semibold">
                   {dn.collection || "Collection"}
                 </div>
+
                 {isConnected && (
-                  <button 
-                    onClick={handleFavorite} 
+                  <button
+                    onClick={handleFavorite}
                     className="absolute top-4 right-4 w-10 h-10 rounded-full bg-black/40 backdrop-blur-sm flex items-center justify-center hover:bg-black/60 transition-colors"
                   >
                     <Heart size={18} className={favorited ? "text-hot fill-hot" : "text-white/70"} />
@@ -162,7 +193,6 @@ function MintPageContent() {
                 )}
               </div>
 
-              {/* ─── NEW: View on Explorer button ─── */}
               {nftExplorerLink && (
                 <div className="flex justify-center sm:justify-start">
                   <a
@@ -182,9 +212,15 @@ function MintPageContent() {
                   <h1 className="font-display font-extrabold text-2xl sm:text-3xl mb-3">{dn.name}</h1>
                   <p className="text-sm text-muted leading-relaxed">{nftDesc}</p>
                   <div className="flex flex-wrap gap-2 mt-4">
-                    <span className="px-3 py-1 rounded-pill bg-accent/10 text-xs text-accent font-medium border border-accent/20">{dn.tokenType || "ERC-721"}</span>
-                    <span className="px-3 py-1 rounded-pill bg-accent-violet/10 text-xs text-accent-violet font-medium border border-accent-violet/20">{dn.chain || "Base"}</span>
-                    <span className="px-3 py-1 rounded-pill bg-warning/10 text-xs text-warning font-medium border border-warning/20">Chain-Verifiable</span>
+                    <span className="px-3 py-1 rounded-pill bg-accent/10 text-xs text-accent font-medium border border-accent/20">
+                      {dn.tokenType || "ERC-721"}
+                    </span>
+                    <span className="px-3 py-1 rounded-pill bg-accent-violet/10 text-xs text-accent-violet font-medium border border-accent-violet/20">
+                      {dn.chain || "Base"}
+                    </span>
+                    <span className="px-3 py-1 rounded-pill bg-warning/10 text-xs text-warning font-medium border border-warning/20">
+                      Chain-Verifiable
+                    </span>
                   </div>
                 </div>
 
@@ -193,7 +229,10 @@ function MintPageContent() {
                   <div className="grid grid-cols-2 gap-4">
                     {[
                       { l: "Token ID", v: dn.tokenId || "—" },
-                      { l: "Contract", v: dn.contractAddress ? `${dn.contractAddress.slice(0,6)}...${dn.contractAddress.slice(-4)}` : "—" },
+                      {
+                        l: "Contract",
+                        v: dn.contractAddress ? `${dn.contractAddress.slice(0, 6)}...${dn.contractAddress.slice(-4)}` : "—",
+                      },
                       { l: "Collection", v: dn.collection || "—" },
                       { l: "Chain", v: dn.chain || "Base" },
                     ].map((item) => (
@@ -233,6 +272,7 @@ function MintPageContent() {
               </div>
             </div>
 
+            {/* RIGHT COLUMN – Mint controls */}
             <div className="lg:col-span-2 space-y-6">
               <div className="lg:sticky lg:top-24">
                 <div className="glass-card rounded-card p-6 sm:p-8 space-y-6">
@@ -240,7 +280,7 @@ function MintPageContent() {
                     <div className="flex items-center gap-2">
                       <h2 className="font-display text-xl font-semibold text-text">Mint</h2>
                       {state === "ready" && <Badge color="success" dot>Ready</Badge>}
-                      {["tx_pending","tx_signing","confirming"].includes(state) && <Badge color="warning" dot>Pending</Badge>}
+                      {["tx_pending", "tx_signing", "confirming"].includes(state) && <Badge color="warning" dot>Pending</Badge>}
                       {state === "tx_success" && <Badge color="success" dot>Complete</Badge>}
                       {state === "tx_error" && <Badge color="danger" dot>Error</Badge>}
                     </div>
@@ -248,12 +288,25 @@ function MintPageContent() {
                   </div>
 
                   <div className="bg-surface2/40 rounded-xl p-4 space-y-3">
-                    <div className="flex justify-between text-sm"><span className="text-muted">NFT Price</span><span className="text-text font-mono font-medium">{nftPrice} ETH</span></div>
-                    <div className="flex justify-between text-sm"><span className="text-muted">Mint Fee</span><span className="text-text font-mono font-medium">{mintFee} ETH</span></div>
-                    <div className="flex justify-between text-sm pt-2 border-t border-border-light"><span className="text-text font-medium">Total</span><span className="text-lg font-mono font-semibold text-accent">{totalPrice} ETH</span></div>
-                    <div className="flex justify-between text-sm"><span className="text-muted">Network</span><span className="text-text font-mono">{chainName}</span></div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted">NFT Price</span>
+                      <span className="text-text font-mono font-medium">{nftPrice} ETH</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted">Mint Fee</span>
+                      <span className="text-text font-mono font-medium">{mintFee} ETH</span>
+                    </div>
+                    <div className="flex justify-between text-sm pt-2 border-t border-border-light">
+                      <span className="text-text font-medium">Total</span>
+                      <span className="text-lg font-mono font-semibold text-accent">{totalPrice} ETH</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted">Network</span>
+                      <span className="text-text font-mono">{chainName}</span>
+                    </div>
                   </div>
 
+                  {/* ── Conditional UI based on connection / auth / tx state ── */}
                   {state === "disconnected" && (
                     <div className="space-y-4">
                       <div className="text-center py-4 space-y-2">
@@ -261,7 +314,7 @@ function MintPageContent() {
                         <p className="text-sm text-muted">Connect your wallet to mint</p>
                       </div>
                       <Button variant="primary" size="lg" className="w-full" onClick={() => setShowWalletModal(true)}>
-                        <Wallet size={16}/> Connect Wallet
+                        <Wallet size={16} /> Connect Wallet
                       </Button>
                       <WalletConnectModal open={showWalletModal} onClose={() => setShowWalletModal(false)} />
                     </div>
@@ -274,7 +327,7 @@ function MintPageContent() {
                         <p className="text-sm text-muted">Sign in to verify wallet</p>
                       </div>
                       <Button variant="primary" size="lg" className="w-full" onClick={login} disabled={authLoading}>
-                        {authLoading ? <Loader2 size={16} className="animate-spin"/> : <Wallet size={16}/>} Sign In (SIWE)
+                        {authLoading ? <Loader2 size={16} className="animate-spin" /> : <Wallet size={16} />} Sign In (SIWE)
                       </Button>
                     </div>
                   )}
@@ -302,18 +355,18 @@ function MintPageContent() {
                     </div>
                   )}
 
-                  {["tx_signing","tx_pending","confirming"].includes(state) && (
+                  {["tx_signing", "tx_pending", "confirming"].includes(state) && (
                     <div className="text-center py-6 space-y-3">
                       <Loader2 size={36} className="mx-auto text-accent animate-spin" />
                       <p className="text-sm text-muted">
-                        {state === "tx_signing" ? "Confirm in wallet…" : 
+                        {state === "tx_signing" ? "Confirm in wallet…" :
                          state === "tx_pending" ? "Transaction pending…" : "Verifying…"}
                       </p>
                       {txHash && (
-                        <a 
-                          href={`${explorerUrl}/tx/${txHash}`} 
-                          target="_blank" 
-                          rel="noopener noreferrer" 
+                        <a
+                          href={`${explorerUrl}/tx/${txHash}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
                           className="text-xs text-accent font-mono hover:underline"
                         >
                           View on Basescan
@@ -364,7 +417,9 @@ function MintPageContent() {
                   <div className="mt-6">
                     <h3 className="font-display font-semibold text-sm uppercase tracking-wider text-muted mb-4">More to Explore</h3>
                     <div className="grid grid-cols-2 gap-3">
-                      {relatedNfts.slice(0,4).map((n,i) => <NftCard key={n.id||i} nft={n} index={i}/>)}
+                      {relatedNfts.slice(0, 4).map((n, i) => (
+                        <NftCard key={n.id || i} nft={n} index={i} />
+                      ))}
                     </div>
                   </div>
                 )}
@@ -372,24 +427,22 @@ function MintPageContent() {
             </div>
           </div>
         ) : isSelectedMode && nftLoading ? (
-          // ... skeleton unchanged ...
           <div className="grid lg:grid-cols-5 gap-6 lg:gap-10">
             <div className="lg:col-span-3 space-y-6">
-              <div className="aspect-square rounded-card shimmer"/>
+              <div className="aspect-square rounded-card shimmer" />
               <div className="rounded-card bg-surface2 border border-border-light p-6 space-y-3">
-                <div className="h-8 w-2/3 rounded shimmer"/>
-                <div className="h-4 w-full rounded shimmer"/>
+                <div className="h-8 w-2/3 rounded shimmer" />
+                <div className="h-4 w-full rounded shimmer" />
               </div>
             </div>
             <div className="lg:col-span-2">
               <div className="rounded-card bg-surface2 border border-border-light p-6 space-y-4">
-                <div className="h-6 w-1/2 rounded shimmer"/>
-                <div className="h-12 rounded-pill shimmer"/>
+                <div className="h-6 w-1/2 rounded shimmer" />
+                <div className="h-12 rounded-pill shimmer" />
               </div>
             </div>
           </div>
         ) : (
-          // ... browse mode unchanged ...
           <div className="space-y-12">
             <div className="text-center max-w-2xl mx-auto">
               <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-pill bg-accent/10 border border-accent/20 mb-6">
@@ -403,10 +456,17 @@ function MintPageContent() {
                 Click any NFT to see its details and mint it to your wallet.
               </p>
             </div>
+
             <div>
               <h2 className="font-display font-bold text-xl sm:text-2xl mb-6">Available NFTs</h2>
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 sm:gap-5">
-                {relatedLoading ? <NftCardSkeleton count={10}/> : relatedNfts.length > 0 ? relatedNfts.map((n,i) => <NftCard key={n.id||i} nft={n} index={i}/>) : <NftCardSkeleton count={10}/>}
+                {relatedLoading ? (
+                  <NftCardSkeleton count={10} />
+                ) : relatedNfts.length > 0 ? (
+                  relatedNfts.map((n, i) => <NftCard key={n.id || i} nft={n} index={i} />)
+                ) : (
+                  <NftCardSkeleton count={10} />
+                )}
               </div>
             </div>
           </div>
@@ -418,11 +478,13 @@ function MintPageContent() {
 
 export default function MintPage() {
   return (
-    <Suspense fallback={
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="w-8 h-8 border-2 border-accent border-t-transparent rounded-full animate-spin"/>
-      </div>
-    }>
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center">
+          <div className="w-8 h-8 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+        </div>
+      }
+    >
       <MintPageContent />
     </Suspense>
   );
