@@ -4,12 +4,15 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
-import { useWallet } from "@/context/WalletContext";
+import { useSession } from "@/hooks/useSession";
+import { useAccount } from "wagmi";
 import { shortenAddress } from "@/lib/utils";
+import { User, LogOut, Menu, X } from "lucide-react";
 
 export default function Navbar() {
-  const { address, isConnected, connecting, connect, disconnect } = useWallet();
   const pathname = usePathname();
+  const { session, profile, isLoggedIn, logout } = useSession();
+  const { address, isConnected } = useAccount();
 
   const [mobileOpen, setMobileOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
@@ -20,16 +23,8 @@ export default function Navbar() {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
-  useEffect(() => {
-    document.body.style.overflow = mobileOpen ? "hidden" : "";
-    return () => {
-      document.body.style.overflow = "";
-    };
-  }, [mobileOpen]);
-
-  useEffect(() => {
-    setMobileOpen(false);
-  }, [pathname]);
+  useEffect(() => { document.body.style.overflow = mobileOpen ? "hidden" : ""; return () => { document.body.style.overflow = ""; }; }, [mobileOpen]);
+  useEffect(() => { setMobileOpen(false); }, [pathname]);
 
   const navLinks = [
     { label: "Home", href: "/" },
@@ -38,8 +33,7 @@ export default function Navbar() {
     { label: "Profile", href: "/profile" },
   ];
 
-  const walletLabel =
-    connecting ? "Connecting..." : isConnected && address ? shortenAddress(address) : "Connect Wallet";
+  const displayName = profile?.first_name || profile?.username || session?.firstName || (address ? shortenAddress(address) : null);
 
   return (
     <>
@@ -51,25 +45,28 @@ export default function Navbar() {
         }`}
       >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-24 sm:h-28">
-            {/* Logo */}
+          <div className="flex items-center justify-between h-20 sm:h-24">
+            {/* Logo — BIG */}
             <Link href="/" className="flex items-center shrink-0 group">
-              <div className="relative w-20 h-20 sm:w-24 sm:h-24">
+              <div className="relative w-16 h-16 sm:w-20 sm:h-20 lg:w-24 lg:h-24">
                 <Image
                   src="/pictures/logo.png"
                   alt="AuroraNft"
                   fill
                   priority
-                  sizes="(max-width: 640px) 80px, 96px"
-                  className="object-contain drop-shadow-[0_0_20px_rgba(0,229,255,0.28)] group-hover:scale-[1.03] group-hover:drop-shadow-[0_0_28px_rgba(0,229,255,0.45)] transition-all duration-300"
+                  sizes="(max-width: 640px) 64px, (max-width: 1024px) 80px, 96px"
+                  className="object-contain drop-shadow-[0_0_24px_rgba(0,229,255,0.3)] group-hover:scale-[1.05] group-hover:drop-shadow-[0_0_32px_rgba(0,229,255,0.5)] transition-all duration-300"
                 />
               </div>
+              <span className="hidden lg:inline-block ml-2 font-display font-extrabold text-lg text-gradient">
+                AuroraNFT
+              </span>
             </Link>
 
             {/* Desktop Nav */}
-            <div className="hidden md:flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] backdrop-blur-xl p-1.5">
+            <div className="hidden md:flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.03] backdrop-blur-xl p-1.5">
               {navLinks.map((link) => {
-                const active = pathname === link.href;
+                const active = pathname === link.href || (link.href !== '/' && pathname.startsWith(link.href));
                 return (
                   <Link
                     key={link.href}
@@ -88,128 +85,85 @@ export default function Navbar() {
 
             {/* Actions */}
             <div className="flex items-center gap-3">
-              <button
-                onClick={isConnected ? disconnect : connect}
-                disabled={connecting}
-                className="hidden sm:inline-flex relative items-center justify-center min-w-[156px] px-5 py-3 rounded-full text-[13px] font-semibold font-display transition-all duration-300 overflow-hidden group disabled:opacity-70"
-                style={{
-                  background: isConnected
-                    ? "rgba(0, 229, 255, 0.10)"
-                    : "linear-gradient(135deg, #00E5FF 0%, #7C3AED 100%)",
-                  border: isConnected ? "1px solid rgba(0, 229, 255, 0.28)" : "1px solid rgba(255,255,255,0.08)",
-                  boxShadow: isConnected
-                    ? "0 0 0 1px rgba(255,255,255,0.02) inset"
-                    : "0 12px 28px rgba(0, 229, 255, 0.22)",
-                }}
-              >
-                <span className="relative z-10">{walletLabel}</span>
-                {!isConnected && (
-                  <span className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-gradient-to-r from-accent-violet to-accent" />
-                )}
-              </button>
+              {isLoggedIn ? (
+                <div className="hidden sm:flex items-center gap-2">
+                  <Link
+                    href="/profile"
+                    className="flex items-center gap-2 px-4 py-2.5 rounded-full text-[13px] font-semibold font-display border border-accent/25 bg-accent/10 text-accent hover:bg-accent/15 transition-all"
+                  >
+                    <User size={14} />
+                    <span className="max-w-[120px] truncate">{displayName || 'Profile'}</span>
+                  </Link>
+                  <button
+                    onClick={logout}
+                    className="p-2.5 rounded-full text-muted-dim hover:text-danger hover:bg-danger/10 transition-all"
+                    title="Sign out"
+                  >
+                    <LogOut size={14} />
+                  </button>
+                </div>
+              ) : (
+                <Link
+                  href="/login"
+                  className="hidden sm:inline-flex items-center justify-center min-w-[130px] px-5 py-3 rounded-full text-[13px] font-semibold font-display transition-all duration-300 overflow-hidden"
+                  style={{
+                    background: "linear-gradient(135deg, #00E5FF 0%, #7C3AED 100%)",
+                    border: "1px solid rgba(255,255,255,0.08)",
+                    color: "#070A10",
+                  }}
+                >
+                  Login / Sign Up
+                </Link>
+              )}
 
+              {/* Mobile hamburger */}
               <button
-                onClick={() => setMobileOpen((prev) => !prev)}
-                className={`md:hidden relative h-12 w-12 rounded-2xl border transition-all duration-300 ${
-                  mobileOpen
-                    ? "border-white/15 bg-white/10 shadow-[0_10px_30px_rgba(0,0,0,0.35)]"
-                    : "border-white/10 bg-white/[0.04] hover:bg-white/[0.08]"
-                }`}
-                aria-label="Toggle menu"
-                aria-expanded={mobileOpen}
+                onClick={() => setMobileOpen(!mobileOpen)}
+                className="md:hidden w-10 h-10 rounded-xl flex items-center justify-center text-muted hover:text-text hover:bg-white/5 transition-colors"
               >
-                <span className="sr-only">Open menu</span>
-
-                <span
-                  className={`absolute left-1/2 top-[15px] h-[2px] w-5 -translate-x-1/2 rounded-full bg-white transition-all duration-300 ${
-                    mobileOpen ? "translate-y-[7px] rotate-45" : ""
-                  }`}
-                />
-                <span
-                  className={`absolute left-1/2 top-1/2 h-[2px] w-5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white transition-all duration-300 ${
-                    mobileOpen ? "opacity-0 scale-x-0" : "opacity-100 scale-x-100"
-                  }`}
-                />
-                <span
-                  className={`absolute left-1/2 bottom-[15px] h-[2px] w-5 -translate-x-1/2 rounded-full bg-white transition-all duration-300 ${
-                    mobileOpen ? "-translate-y-[7px] -rotate-45" : ""
-                  }`}
-                />
+                {mobileOpen ? <X size={20} /> : <Menu size={20} />}
               </button>
             </div>
           </div>
         </div>
       </nav>
 
-      {/* Mobile backdrop */}
-      <div
-        className={`md:hidden fixed inset-0 z-40 bg-black/50 backdrop-blur-sm transition-all duration-300 ${
-          mobileOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
-        }`}
-        onClick={() => setMobileOpen(false)}
-      />
-
-      {/* Mobile panel */}
-      <div
-        className={`md:hidden fixed top-[88px] left-4 right-4 z-50 transition-all duration-300 ${
-          mobileOpen ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-4 pointer-events-none"
-        }`}
-      >
-        <div className="overflow-hidden rounded-[28px] border border-white/10 bg-[#0B1020]/90 backdrop-blur-2xl shadow-[0_25px_80px_rgba(0,0,0,0.45)]">
-          <div className="px-5 pt-5 pb-4 border-b border-white/10">
-            <div className="text-xs uppercase tracking-[0.22em] text-white/45">Navigation</div>
-            <div className="mt-2 text-lg font-semibold text-white">Explore AuroraNft</div>
-          </div>
-
-          <div className="p-4 space-y-2">
-            {navLinks.map((link, index) => {
-              const active = pathname === link.href;
-              return (
-                <Link
-                  key={link.href}
-                  href={link.href}
-                  className={`group flex items-center justify-between rounded-2xl px-4 py-4 transition-all duration-300 ${
-                    active
-                      ? "bg-white/10 border border-white/10 text-white"
-                      : "bg-white/[0.035] border border-transparent text-white/80 hover:bg-white/[0.07] hover:text-white"
-                  }`}
-                  style={{
-                    transitionDelay: mobileOpen ? `${index * 40}ms` : "0ms",
-                  }}
-                >
-                  <span className="text-sm font-medium">{link.label}</span>
-                  <span
-                    className={`text-lg transition-transform duration-300 ${
-                      active ? "translate-x-0 opacity-100" : "opacity-40 group-hover:translate-x-1 group-hover:opacity-100"
-                    }`}
-                  >
-                    →
-                  </span>
+      {/* Mobile Menu */}
+      {mobileOpen && (
+        <div className="fixed inset-0 z-[99] md:hidden">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setMobileOpen(false)} />
+          <div className="absolute top-20 right-4 left-4 bg-surface/95 backdrop-blur-2xl border border-white/10 rounded-2xl p-5 space-y-2 shadow-card animate-slide-up">
+            {navLinks.map((link) => (
+              <Link
+                key={link.href}
+                href={link.href}
+                className="block px-4 py-3 rounded-xl text-sm font-medium text-text hover:bg-white/5 transition-colors"
+                onClick={() => setMobileOpen(false)}
+              >
+                {link.label}
+              </Link>
+            ))}
+            <div className="border-t border-white/10 pt-3 mt-2">
+              {isLoggedIn ? (
+                <>
+                  <Link href="/profile" className="block px-4 py-3 rounded-xl text-sm font-medium text-accent" onClick={() => setMobileOpen(false)}>
+                    <User size={14} className="inline mr-2" />
+                    {displayName || 'Profile'}
+                  </Link>
+                  <button onClick={() => { logout(); setMobileOpen(false); }} className="block w-full text-left px-4 py-3 rounded-xl text-sm text-danger">
+                    <LogOut size={14} className="inline mr-2" />
+                    Sign Out
+                  </button>
+                </>
+              ) : (
+                <Link href="/login" className="block px-4 py-3 rounded-xl text-sm font-semibold text-accent" onClick={() => setMobileOpen(false)}>
+                  Login / Sign Up
                 </Link>
-              );
-            })}
-          </div>
-
-          <div className="p-4 pt-0">
-            <button
-              onClick={isConnected ? disconnect : connect}
-              disabled={connecting}
-              className="w-full relative overflow-hidden rounded-2xl px-4 py-4 text-sm font-semibold transition-all duration-300 disabled:opacity-70"
-              style={{
-                background: isConnected
-                  ? "rgba(0, 229, 255, 0.10)"
-                  : "linear-gradient(135deg, #00E5FF 0%, #7C3AED 100%)",
-                border: isConnected ? "1px solid rgba(0, 229, 255, 0.28)" : "1px solid rgba(255,255,255,0.08)",
-                boxShadow: isConnected
-                  ? "0 0 0 1px rgba(255,255,255,0.02) inset"
-                  : "0 14px 32px rgba(0, 229, 255, 0.18)",
-              }}
-            >
-              {walletLabel}
-            </button>
+              )}
+            </div>
           </div>
         </div>
-      </div>
+      )}
     </>
   );
 }

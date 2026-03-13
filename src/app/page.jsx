@@ -1,59 +1,26 @@
-import dynamic from "next/dynamic";
-import PageShell from "@/components/layout/PageShell";
-import HeroCarousel from "@/components/hero/HeroCarousel";
+'use client';
+import { useParams, useRouter } from 'next/navigation';
+import { ArrowLeft } from 'lucide-react';
+import PageShell from '@/components/layout/PageShell';
+import NFTGridCollection from '@/components/nft/NFTGridCollection';
 
-// ── Above-the-fold: loaded eagerly ──
-import LiveStats from "@/components/home/LiveStats";
-import BreakingNewsTicker from "@/components/home/BreakingNewsTicker";
+export default function CollectionPage() {
+  const params = useParams();
+  const router = useRouter();
+  const contractAddress = params?.contractAddress;
 
-// ── Below-the-fold: lazy-loaded to reduce initial JS bundle ──
-const TrendingNftBar = dynamic(
-  () => import("@/components/nft/TrendingNftBar"),
-  { ssr: true }
-);
-const FeaturedNFTs = dynamic(
-  () => import("@/components/home/FeaturedNFTs"),
-  { ssr: true }
-);
-const TrendingCollections = dynamic(
-  () => import("@/components/home/TrendingCollections"),
-  { ssr: true }
-);
-const HowItWorks = dynamic(
-  () => import("@/components/home/HowItWorks"),
-  { ssr: true }
-);
-const MarketPulse = dynamic(
-  () => import("@/components/home/MarketPulse"),
-  { ssr: true }
-);
-const CallToAction = dynamic(
-  () => import("@/components/home/CallToAction"),
-  { ssr: true }
-);
-const Roadmap = dynamic(
-  () => import("@/components/home/Roadmap"),
-  { ssr: true }
-);
-const FAQ = dynamic(
-  () => import("@/components/home/FAQ"),
-  { ssr: false } // FAQ is interactive + far below fold
-);
-
-export default function Home() {
   return (
-    <PageShell heroFused>
-      <HeroCarousel />
-      <LiveStats />
-      <BreakingNewsTicker />
-      <TrendingNftBar />
-      <FeaturedNFTs />
-      <TrendingCollections />
-      <HowItWorks />
-      <MarketPulse />
-      <CallToAction />
-      <Roadmap />
-      <FAQ />
+    <PageShell>
+      <div className="max-w-[1400px] mx-auto px-6 md:px-8 py-8">
+        <button onClick={() => router.back()} className="flex items-center gap-2 text-sm text-muted hover:text-text mb-6 transition-colors">
+          <ArrowLeft size={16} /> Back
+        </button>
+        <div className="mb-8">
+          <h1 className="font-display text-3xl font-bold text-text">Collection</h1>
+          <p className="text-sm text-muted mt-1 font-mono truncate">{contractAddress}</p>
+        </div>
+        <NFTGridCollection contractAddress={contractAddress} />
+      </div>
     </PageShell>
   );
 }

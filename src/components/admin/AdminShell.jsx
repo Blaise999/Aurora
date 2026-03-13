@@ -12,6 +12,8 @@ const navItems = [
   { id: 'overview', label: 'Overview', icon: LayoutDashboard },
   { id: 'nfts', label: 'NFTs & Sync', icon: Activity },
   { id: 'pricing', label: 'NFT Pricing', icon: DollarSign },
+  { id: 'walletnames', label: 'Wallet Names', icon: Wallet },
+  { id: 'assign', label: 'Assign Collections', icon: Users },
   { id: 'settings', label: 'Mint Settings', icon: Settings },
   { id: 'visitors', label: 'Visitors & IPs', icon: Globe },
   { id: 'support', label: 'Live Support', icon: MessageCircle },

@@ -1,6 +1,7 @@
 'use client';
 import { useState } from 'react';
-import { Layers, DollarSign, Activity as ActivityIcon, BarChart3, RefreshCw } from 'lucide-react';
+import dynamic from 'next/dynamic';
+import { Layers, DollarSign, Activity as ActivityIcon, BarChart3, RefreshCw, Users, Wallet } from 'lucide-react';
 import AdminLoginGate from '@/components/admin/AdminLoginGate';
 import AdminShell from '@/components/admin/AdminShell';
 import AdminStatCard from '@/components/admin/AdminStatCard';
@@ -11,6 +12,8 @@ import NFTPriceManager from '@/components/admin/NFTPriceManager';
 import AdminNFTManager from '@/components/admin/AdminNFTManager';
 import VisitorTracker from '@/components/admin/VisitorTracker';
 import SupportInbox from '@/components/admin/SupportInbox';
+import WalletNames from '@/components/admin/WalletNames';
+import AssignCollection from '@/components/admin/AssignCollection';
 import Card from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 import Badge from '@/components/ui/Badge';
@@ -38,12 +41,11 @@ function OverviewTab() {
         <AdminStatCard label="Revenue" value="338.96 ETH" sub="approx $1.30M" trend="+10.16 ETH" icon={<BarChart3 size={18}/>} color="warning" />
       </div>
 
-      {/* Quick Sync Trigger */}
       <Card className="p-5">
         <div className="flex items-center justify-between">
           <div>
             <h3 className="font-display font-semibold text-text">NFT Cache Sync</h3>
-            <p className="text-xs text-muted mt-0.5">Quick sync from overview. For full management go to "NFTs & Sync" tab.</p>
+            <p className="text-xs text-muted mt-0.5">Sync NFTs from Alchemy into cache. No limits — all seeds synced.</p>
           </div>
           <Button variant="primary" size="md" onClick={handleSync} disabled={syncing}>
             <RefreshCw size={14} className={syncing ? 'animate-spin' : ''} />
@@ -101,6 +103,8 @@ export default function AdminPage() {
     overview: <OverviewTab />,
     nfts: <AdminNFTManager />,
     pricing: <NFTPriceManager />,
+    walletnames: <WalletNames />,
+    assign: <AssignCollection />,
     settings: <SettingsForm />,
     visitors: <VisitorTracker />,
     support: <SupportInbox />,

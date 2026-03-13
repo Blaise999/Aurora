@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { LOCAL_NFTS } from "@/lib/constants";
 import { shuffle } from "@/lib/utils";
 
@@ -26,6 +26,60 @@ export function useNfts(endpoint, fallbackCount = 12) {
 }
 
 export function useTrendingNfts(limit = 12) { return useCachedNfts(limit); }
+
+/**
+ * Infinite-scroll capable NFT fetcher
+ * Returns { nfts, loading, error, hasMore, loadMore }
+ */
+export function useCachedNftsInfinite(pageSize = 50, collection = null) {
+  const [nfts, setNfts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [error, setError] = useState(null);
+  const [offset, setOffset] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
+  const [total, setTotal] = useState(0);
+  const initialLoad = useRef(true);
+
+  const fetchPage = useCallback(async (pageOffset, append = false) => {
+    if (append) setLoadingMore(true); else setLoading(true);
+    try {
+      let url = `/api/nft/cached?limit=${pageSize}&offset=${pageOffset}&shuffle=${pageOffset === 0 ? 'true' : 'false'}`;
+      if (collection) url += `&collection=${encodeURIComponent(collection)}`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("fail");
+      const d = await res.json();
+      const newNfts = d.nfts || [];
+      setTotal(d.total || 0);
+      setHasMore(d.hasMore ?? newNfts.length === pageSize);
+      if (append) {
+        setNfts(prev => [...prev, ...newNfts]);
+      } else {
+        setNfts(newNfts);
+      }
+    } catch (e) {
+      setError(e.message);
+      if (!append) setNfts(shuffle(LOCAL_NFTS).slice(0, pageSize));
+    } finally {
+      if (append) setLoadingMore(false); else setLoading(false);
+    }
+  }, [pageSize, collection]);
+
+  useEffect(() => {
+    initialLoad.current = true;
+    setOffset(0);
+    fetchPage(0, false);
+  }, [fetchPage]);
+
+  const loadMore = useCallback(() => {
+    if (loadingMore || !hasMore) return;
+    const newOffset = offset + pageSize;
+    setOffset(newOffset);
+    fetchPage(newOffset, true);
+  }, [offset, pageSize, loadingMore, hasMore, fetchPage]);
+
+  return { nfts, loading, loadingMore, error, hasMore, total, loadMore };
+}
 
 export function useCachedNfts(limit = 50, collection = null) {
   const [nfts, setNfts] = useState([]);
