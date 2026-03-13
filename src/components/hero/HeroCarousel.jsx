@@ -18,6 +18,7 @@ const HERO_BG_IMAGES = [
   "/pictures/hero-bg-3.webp",
 ];
 
+
 const HERO_CARD_IMAGES = [
   ["/pictures/hero-card-1-1.webp", "/pictures/hero-card-1-2.webp", "/pictures/hero-card-1-3.webp"],
   ["/pictures/hero-card-2-1.webp", "/pictures/hero-card-2-2.webp", "/pictures/hero-card-2-3.webp"],
