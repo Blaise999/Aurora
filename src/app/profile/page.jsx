@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import { useAccount, useConnect } from 'wagmi'
+
 import {
   Wallet,
   LayoutGrid,
@@ -9,29 +10,38 @@ import {
   Settings,
   LogOut,
   ShieldCheck,
-  Globe
+  Globe,
+  TrendingUp
 } from 'lucide-react'
 
 import PageShell from '@/components/layout/PageShell'
 import { useSession } from '@/hooks/useSession'
+
 import NftCard from '@/components/NftCard'
 import NftCardSkeleton from '@/components/NftCardSkeleton'
+
 import Button from '@/components/ui/Button'
 import Badge from '@/components/ui/Badge'
+
+import PortfolioChart from '@/components/dashboard/PortfolioChart'
+import { calcPortfolioValue } from '@/lib/portfolio/calcPortfolioValue'
 
 export default function PremiumProfilePage() {
 
   const { address, isConnected } = useAccount()
   const { connect, connectors } = useConnect()
+
   const { profile, isLoggedIn, logout } = useSession()
 
   const [tab, setTab] = useState('collections')
   const [nfts, setNfts] = useState([])
   const [loading, setLoading] = useState(true)
 
+
   /*
-  Greeting logic
+  Greeting
   */
+
   const greeting = useMemo(() => {
 
     const hr = new Date().getHours()
@@ -52,8 +62,52 @@ export default function PremiumProfilePage() {
 
 
   /*
-  Load NFT data
+  Wallet display
   */
+
+  const walletDisplay = useMemo(() => {
+
+    if (!address) return ''
+
+    return `${address.slice(0, 6)}...${address.slice(-4)}`
+
+  }, [address])
+
+
+  /*
+  Portfolio value
+  */
+
+  const portfolioValue = useMemo(() => {
+
+    return calcPortfolioValue(nfts)
+
+  }, [nfts])
+
+
+  /*
+  Fake chart data (replace with real later)
+  */
+
+  const portfolioHistory = useMemo(() => {
+
+    return [
+      { day: 'Mon', value: 1.2 },
+      { day: 'Tue', value: 1.5 },
+      { day: 'Wed', value: 2.1 },
+      { day: 'Thu', value: 1.9 },
+      { day: 'Fri', value: 2.8 },
+      { day: 'Sat', value: 3.0 },
+      { day: 'Sun', value: 3.4 }
+    ]
+
+  }, [])
+
+
+  /*
+  Load NFTs
+  */
+
   useEffect(() => {
 
     if (!isLoggedIn) return
@@ -92,20 +146,9 @@ export default function PremiumProfilePage() {
 
 
   /*
-  Short wallet display
-  */
-  const walletDisplay = useMemo(() => {
-
-    if (!address) return ''
-
-    return `${address.slice(0, 6)}...${address.slice(-4)}`
-
-  }, [address])
-
-
-  /*
   Wallet connect
   */
+
   function handleConnect() {
 
     const connector = connectors?.[0]
@@ -116,8 +159,9 @@ export default function PremiumProfilePage() {
 
 
   /*
-  If user not logged in
+  NOT LOGGED IN
   */
+
   if (!isLoggedIn) {
 
     return (
@@ -129,7 +173,7 @@ export default function PremiumProfilePage() {
           <div className="max-w-md text-center bg-card border border-border p-12 rounded-3xl">
 
             <div className="w-16 h-16 mx-auto mb-6 rounded-2xl bg-gradient-to-r from-accent to-accent-violet flex items-center justify-center">
-              <Wallet size={28} className="text-white" />
+              <Wallet size={28} className="text-white"/>
             </div>
 
             <h2 className="text-3xl font-bold mb-3">
@@ -137,7 +181,7 @@ export default function PremiumProfilePage() {
             </h2>
 
             <p className="text-muted mb-8">
-              Unlock your vault to manage your NFTs and collections.
+              Unlock your vault to manage NFTs and collections.
             </p>
 
             <Button
@@ -165,6 +209,7 @@ export default function PremiumProfilePage() {
 
       <div className="max-w-[1600px] mx-auto px-8 py-12">
 
+
         {/* HEADER */}
 
         <div className="flex flex-col lg:flex-row justify-between mb-12 gap-8">
@@ -178,7 +223,7 @@ export default function PremiumProfilePage() {
               </Badge>
 
               <span className="flex items-center gap-1 text-xs text-success">
-                <ShieldCheck size={12} />
+                <ShieldCheck size={12}/>
                 Verified
               </span>
 
@@ -194,8 +239,6 @@ export default function PremiumProfilePage() {
 
             </h1>
 
-            {/* Wallet only appears when connected */}
-
             {isConnected && walletDisplay && (
 
               <p className="text-muted mt-3 font-mono">
@@ -210,7 +253,7 @@ export default function PremiumProfilePage() {
           <div className="flex gap-3">
 
             <Button variant="outline">
-              <Settings size={16} />
+              <Settings size={16}/>
               Preferences
             </Button>
 
@@ -219,9 +262,41 @@ export default function PremiumProfilePage() {
               onClick={logout}
               className="text-red-500"
             >
-              <LogOut size={16} />
+              <LogOut size={16}/>
               Sign out
             </Button>
+
+          </div>
+
+        </div>
+
+
+        {/* PORTFOLIO SECTION */}
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-14">
+
+          <div className="p-6 rounded-2xl border border-border bg-card">
+
+            <div className="flex items-center justify-between mb-3">
+
+              <span className="text-sm text-muted">
+                Portfolio Value
+              </span>
+
+              <TrendingUp size={16} className="text-accent"/>
+
+            </div>
+
+            <h2 className="text-3xl font-bold">
+              {portfolioValue.toFixed(2)} ETH
+            </h2>
+
+          </div>
+
+
+          <div className="lg:col-span-2 p-6 rounded-2xl border border-border bg-card">
+
+            <PortfolioChart data={portfolioHistory}/>
 
           </div>
 
@@ -234,20 +309,20 @@ export default function PremiumProfilePage() {
 
           <StatCard
             label="Collection Value"
-            value="4.82 ETH"
-            icon={<Globe size={20} />}
+            value={`${portfolioValue.toFixed(2)} ETH`}
+            icon={<Globe size={20}/>}
           />
 
           <StatCard
             label="Total NFTs"
             value={nfts.length}
-            icon={<LayoutGrid size={20} />}
+            icon={<LayoutGrid size={20}/>}
           />
 
           <StatCard
             label="Active Listings"
             value="2"
-            icon={<Tag size={20} />}
+            icon={<Tag size={20}/>}
           />
 
         </div>
@@ -285,7 +360,7 @@ export default function PremiumProfilePage() {
           {loading &&
 
             Array.from({ length: 8 }).map((_, i) => (
-              <NftCardSkeleton key={i} />
+              <NftCardSkeleton key={i}/>
             ))
 
           }
@@ -332,7 +407,7 @@ export default function PremiumProfilePage() {
 
 
 /*
-Stat Card Component
+Stat Card
 */
 
 function StatCard({ label, value, icon }) {
