@@ -13,6 +13,7 @@ export async function POST(req: Request) {
     const { generateOtp, sendOtpEmail } = await import("@/lib/resend");
     const sb = getSupabase();
 
+    
     // Generate 6-digit OTP
     const code = generateOtp();
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 10 min
