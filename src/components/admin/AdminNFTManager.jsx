@@ -34,7 +34,8 @@ export default function AdminNFTManager() {
   /* Editing */
   const [editingId, setEditingId] = useState(null);
   const [editValues, setEditValues] = useState({});
-  const [saving, setSaving] = useState(null);
+  const [savingId, setSavingId] = useState(null);     // per-row saving state
+  const [saveError, setSaveError] = useState(null);   // global or per-row error
   const [successId, setSuccessId] = useState(null);
 
   /* ── Fetch NFTs ───────────────────────────────────── */
@@ -48,20 +49,24 @@ export default function AdminNFTManager() {
       if (listedFilter) params.set('listed', listedFilter);
 
       const res = await fetch(`/api/admin/nft/pricing?${params}`);
+      if (!res.ok) throw new Error('Failed to fetch');
       const data = await res.json();
-      if (data.nfts) setNfts(data.nfts);
+
+      setNfts(data.nfts || []);
       setTotal(data.total || 0);
       setTotalPages(data.totalPages || 1);
     } catch (e) {
       console.error('Failed to fetch NFTs:', e);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, [page, search, chainFilter, featuredFilter, listedFilter]);
 
   /* ── Fetch last sync log ──────────────────────────── */
   const fetchLastSync = useCallback(async () => {
     try {
       const res = await fetch('/api/admin/nft/sync-log');
+      if (!res.ok) return;
       const data = await res.json();
       if (data.logs?.length) setLastSync(data.logs[0]);
     } catch {}
@@ -84,105 +89,135 @@ export default function AdminNFTManager() {
         await fetchLastSync();
       }
     } catch (e) {
-      setSyncResult({ error: e.message });
+      setSyncResult({ error: e.message || 'Sync failed' });
+    } finally {
+      setSyncing(false);
     }
-    setSyncing(false);
   };
 
   /* ── Edit handlers ────────────────────────────────── */
   const startEdit = (nft) => {
     setEditingId(nft.id);
     setEditValues({
-      mint_price_eth: nft.mint_price_eth,
-      mint_fee_eth: nft.mint_fee_eth,
-      is_featured: nft.is_featured,
-      is_listed: nft.is_listed,
+      mint_price_eth: String(nft.mint_price_eth ?? 0.002),
+      mint_fee_eth: String(nft.mint_fee_eth ?? 0.001),
+      is_featured: !!nft.is_featured,
+      is_listed: nft.is_listed !== false,
     });
+    setSaveError(null);
   };
 
-  const cancelEdit = () => { setEditingId(null); setEditValues({}); };
+  const cancelEdit = () => {
+    setEditingId(null);
+    setEditValues({});
+    setSaveError(null);
+  };
 
   const saveEdit = async (nft) => {
-    setSaving(nft.id);
+    setSavingId(nft.id);
+    setSaveError(null);
+
     try {
+      const payload = {
+        cached_nft_id: nft.id,
+        chain_id: nft.chain_id,
+        contract_address: nft.contract_address,
+        token_id: nft.token_id,
+        mint_price_eth: parseFloat(editValues.mint_price_eth) || 0.002,
+        mint_fee_eth: parseFloat(editValues.mint_fee_eth) || 0.001,
+        is_featured: editValues.is_featured,
+        is_listed: editValues.is_listed,
+      };
+
       const res = await fetch('/api/admin/nft/pricing', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          cached_nft_id: nft.id,
-          chain_id: nft.chain_id,
-          contract_address: nft.contract_address,
-          token_id: nft.token_id,
-          mint_price_eth: editValues.mint_price_eth,
-          mint_fee_eth: editValues.mint_fee_eth,
-          is_featured: editValues.is_featured,
-          is_listed: editValues.is_listed,
-        }),
+        body: JSON.stringify(payload),
       });
-      const data = await res.json();
-      if (data.ok) {
-        setNfts(prev =>
-          prev.map(n =>
-            n.id === nft.id
-              ? {
-                  ...n,
-                  mint_price_eth: editValues.mint_price_eth,
-                  mint_fee_eth: editValues.mint_fee_eth,
-                  is_featured: editValues.is_featured,
-                  is_listed: editValues.is_listed,
-                }
-              : n
-          )
-        );
-        setSuccessId(nft.id);
-        setTimeout(() => setSuccessId(null), 2000);
+
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || `HTTP ${res.status}`);
       }
-    } catch (e) {
-      console.error('Save failed:', e);
+
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || 'Save failed');
+
+      // Update local state
+      setNfts(prev =>
+        prev.map(n =>
+          n.id === nft.id
+            ? {
+                ...n,
+                mint_price_eth: payload.mint_price_eth,
+                mint_fee_eth: payload.mint_fee_eth,
+                is_featured: payload.is_featured,
+                is_listed: payload.is_listed,
+              }
+            : n
+        )
+      );
+
+      // Show success & auto-exit edit mode
+      setSuccessId(nft.id);
+      setTimeout(() => setSuccessId(null), 2200);
+      cancelEdit(); // exit edit mode automatically on success
+
+    } catch (err) {
+      console.error('Save failed:', err);
+      setSaveError(err.message || 'Failed to save changes');
+    } finally {
+      setSavingId(null);
     }
-    setSaving(null);
-    setEditingId(null);
-    setEditValues({});
   };
 
-  /* ── Quick toggles ────────────────────────────────── */
+  /* ── Quick toggles (single field update) ──────────── */
   const quickToggle = async (nft, field) => {
     const newVal = !nft[field];
     try {
+      const payload = {
+        cached_nft_id: nft.id,
+        chain_id: nft.chain_id,
+        contract_address: nft.contract_address,
+        token_id: nft.token_id,
+        mint_price_eth: nft.mint_price_eth,
+        mint_fee_eth: nft.mint_fee_eth,
+        is_featured: field === 'is_featured' ? newVal : nft.is_featured,
+        is_listed: field === 'is_listed' ? newVal : nft.is_listed,
+      };
+
       const res = await fetch('/api/admin/nft/pricing', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          cached_nft_id: nft.id,
-          chain_id: nft.chain_id,
-          contract_address: nft.contract_address,
-          token_id: nft.token_id,
-          mint_price_eth: nft.mint_price_eth,
-          mint_fee_eth: nft.mint_fee_eth,
-          is_featured: field === 'is_featured' ? newVal : nft.is_featured,
-          is_listed: field === 'is_listed' ? newVal : nft.is_listed,
-        }),
+        body: JSON.stringify(payload),
       });
-      const data = await res.json();
-      if (data.ok) {
-        setNfts(prev => prev.map(n => n.id === nft.id ? { ...n, [field]: newVal } : n));
-      }
-    } catch (e) { console.error(e); }
+
+      if (!res.ok) throw new Error('Toggle failed');
+
+      setNfts(prev => prev.map(n => 
+        n.id === nft.id ? { ...n, [field]: newVal } : n
+      ));
+    } catch (e) {
+      console.error('Quick toggle failed:', e);
+    }
   };
 
   /* ── Debounced search ─────────────────────────────── */
   const [searchInput, setSearchInput] = useState('');
   useEffect(() => {
-    const t = setTimeout(() => { setSearch(searchInput); setPage(1); }, 400);
+    const t = setTimeout(() => {
+      setSearch(searchInput);
+      setPage(1);
+    }, 400);
     return () => clearTimeout(t);
   }, [searchInput]);
 
-  const shortAddr = (addr) => addr ? `${addr.slice(0, 6)}…${addr.slice(-4)}` : '—';
+  const shortAddr = (addr) => addr ? `${addr.slice(0,6)}…${addr.slice(-4)}` : '—';
   const chainLabel = (id) => CHAIN_LABELS[id] || `Chain ${id}`;
 
   return (
     <div className="space-y-6">
-      {/* ═══ SYNC CARD ═══════════════════════════════════ */}
+      {/* SYNC CARD */}
       <Card className="p-5">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div className="flex-1">
@@ -204,7 +239,6 @@ export default function AdminNFTManager() {
           </Button>
         </div>
 
-        {/* Sync result */}
         {syncResult && (
           <div className={`mt-4 p-4 rounded-xl border ${syncResult.error ? 'bg-danger/5 border-danger/20' : 'bg-success/5 border-success/20'}`}>
             {syncResult.error ? (
@@ -237,7 +271,6 @@ export default function AdminNFTManager() {
           </div>
         )}
 
-        {/* Last sync info */}
         {lastSync && (
           <div className="mt-3 flex items-center gap-3 text-xs text-muted">
             <Clock size={12} />
@@ -254,11 +287,10 @@ export default function AdminNFTManager() {
         )}
       </Card>
 
-      {/* ═══ FILTERS ═════════════════════════════════════ */}
+      {/* FILTERS */}
       <Card className="p-4">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
-          {/* Search */}
-          <div className="relative flex-1 min-w-[200px]">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 flex-wrap">
+          <div className="relative flex-1 min-w-[240px]">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-dim" />
             <input
               type="text"
@@ -269,35 +301,20 @@ export default function AdminNFTManager() {
             />
           </div>
 
-          {/* Chain filter */}
-          <select
-            value={chainFilter}
-            onChange={(e) => { setChainFilter(e.target.value); setPage(1); }}
-            className="bg-surface2/50 border border-border-light rounded-xl px-3 py-2 text-sm text-text focus:outline-none"
-          >
+          <select value={chainFilter} onChange={e => { setChainFilter(e.target.value); setPage(1); }} className="bg-surface2/50 border border-border-light rounded-xl px-3 py-2 text-sm text-text focus:outline-none min-w-[140px]">
             <option value="">All Chains</option>
             <option value="8453">Base</option>
             <option value="1">Ethereum</option>
             <option value="84532">Base Sepolia</option>
           </select>
 
-          {/* Featured filter */}
-          <select
-            value={featuredFilter}
-            onChange={(e) => { setFeaturedFilter(e.target.value); setPage(1); }}
-            className="bg-surface2/50 border border-border-light rounded-xl px-3 py-2 text-sm text-text focus:outline-none"
-          >
+          <select value={featuredFilter} onChange={e => { setFeaturedFilter(e.target.value); setPage(1); }} className="bg-surface2/50 border border-border-light rounded-xl px-3 py-2 text-sm text-text focus:outline-none min-w-[160px]">
             <option value="">Featured: All</option>
             <option value="true">Featured Only</option>
             <option value="false">Not Featured</option>
           </select>
 
-          {/* Listed filter */}
-          <select
-            value={listedFilter}
-            onChange={(e) => { setListedFilter(e.target.value); setPage(1); }}
-            className="bg-surface2/50 border border-border-light rounded-xl px-3 py-2 text-sm text-text focus:outline-none"
-          >
+          <select value={listedFilter} onChange={e => { setListedFilter(e.target.value); setPage(1); }} className="bg-surface2/50 border border-border-light rounded-xl px-3 py-2 text-sm text-text focus:outline-none min-w-[160px]">
             <option value="">Listed: All</option>
             <option value="true">Listed Only</option>
             <option value="false">Hidden Only</option>
@@ -307,7 +324,7 @@ export default function AdminNFTManager() {
         </div>
       </Card>
 
-      {/* ═══ NFT TABLE ═══════════════════════════════════ */}
+      {/* NFT TABLE */}
       <Card className="overflow-hidden">
         {loading ? (
           <div className="p-16 text-center">
@@ -320,217 +337,247 @@ export default function AdminNFTManager() {
             <p className="text-sm text-muted">No NFTs found. Try syncing or adjusting filters.</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border-light bg-surface/50">
-                  <th className="text-left text-[10px] text-muted-dim font-medium px-4 py-2.5 uppercase tracking-wider w-10"></th>
-                  <th className="text-left text-[10px] text-muted-dim font-medium px-4 py-2.5 uppercase tracking-wider">Name</th>
-                  <th className="text-left text-[10px] text-muted-dim font-medium px-4 py-2.5 uppercase tracking-wider hidden lg:table-cell">Collection</th>
-                  <th className="text-left text-[10px] text-muted-dim font-medium px-4 py-2.5 uppercase tracking-wider hidden md:table-cell">Chain</th>
-                  <th className="text-left text-[10px] text-muted-dim font-medium px-4 py-2.5 uppercase tracking-wider hidden xl:table-cell">Contract</th>
-                  <th className="text-left text-[10px] text-muted-dim font-medium px-4 py-2.5 uppercase tracking-wider">Token ID</th>
-                  <th className="text-left text-[10px] text-muted-dim font-medium px-4 py-2.5 uppercase tracking-wider">Price</th>
-                  <th className="text-left text-[10px] text-muted-dim font-medium px-4 py-2.5 uppercase tracking-wider">Fee</th>
-                  <th className="text-center text-[10px] text-muted-dim font-medium px-4 py-2.5 uppercase tracking-wider">Featured</th>
-                  <th className="text-center text-[10px] text-muted-dim font-medium px-4 py-2.5 uppercase tracking-wider">Listed</th>
-                  <th className="text-left text-[10px] text-muted-dim font-medium px-4 py-2.5 uppercase tracking-wider hidden xl:table-cell">Synced</th>
-                  <th className="text-right text-[10px] text-muted-dim font-medium px-4 py-2.5 uppercase tracking-wider w-20">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {nfts.map((nft) => {
-                  const isEditing = editingId === nft.id;
-                  const isSuccess = successId === nft.id;
-                  return (
-                    <tr
-                      key={nft.id}
-                      className={`border-b border-border-light last:border-0 hover:bg-white/[0.02] transition-colors ${isSuccess ? 'bg-success/5' : ''}`}
-                    >
-                      {/* Image */}
-                      <td className="px-4 py-2">
-                        {nft.image_url ? (
-                          <img
-                            src={nft.image_url}
-                            alt=""
-                            className="w-9 h-9 rounded-lg object-cover bg-surface2"
-                            loading="lazy"
-                            onError={(e) => { e.target.style.display = 'none'; }}
-                          />
-                        ) : (
-                          <div className="w-9 h-9 rounded-lg bg-surface2 flex items-center justify-center">
-                            <ImageIcon size={14} className="text-muted-dim" />
-                          </div>
-                        )}
-                      </td>
+          <>
+            {saveError && (
+              <div className="p-4 bg-danger/10 border border-danger/20 text-danger text-sm flex items-center gap-2">
+                <AlertCircle size={16} />
+                {saveError}
+              </div>
+            )}
 
-                      {/* Name */}
-                      <td className="px-4 py-2">
-                        <p className="text-text font-medium truncate max-w-[180px]">{nft.name || '—'}</p>
-                      </td>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border-light bg-surface/50">
+                    <th className="text-left text-[10px] text-muted-dim font-medium px-4 py-2.5 uppercase tracking-wider w-10"></th>
+                    <th className="text-left text-[10px] text-muted-dim font-medium px-4 py-2.5 uppercase tracking-wider">Name</th>
+                    <th className="text-left text-[10px] text-muted-dim font-medium px-4 py-2.5 uppercase tracking-wider hidden lg:table-cell">Collection</th>
+                    <th className="text-left text-[10px] text-muted-dim font-medium px-4 py-2.5 uppercase tracking-wider hidden md:table-cell">Chain</th>
+                    <th className="text-left text-[10px] text-muted-dim font-medium px-4 py-2.5 uppercase tracking-wider hidden xl:table-cell">Contract</th>
+                    <th className="text-left text-[10px] text-muted-dim font-medium px-4 py-2.5 uppercase tracking-wider">Token ID</th>
+                    <th className="text-left text-[10px] text-muted-dim font-medium px-4 py-2.5 uppercase tracking-wider">Price</th>
+                    <th className="text-left text-[10px] text-muted-dim font-medium px-4 py-2.5 uppercase tracking-wider">Fee</th>
+                    <th className="text-center text-[10px] text-muted-dim font-medium px-4 py-2.5 uppercase tracking-wider">Featured</th>
+                    <th className="text-center text-[10px] text-muted-dim font-medium px-4 py-2.5 uppercase tracking-wider">Listed</th>
+                    <th className="text-left text-[10px] text-muted-dim font-medium px-4 py-2.5 uppercase tracking-wider hidden xl:table-cell">Synced</th>
+                    <th className="text-right text-[10px] text-muted-dim font-medium px-4 py-2.5 uppercase tracking-wider w-20">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {nfts.map((nft) => {
+                    const isEditing = editingId === nft.id;
+                    const isSaving = savingId === nft.id;
+                    const isSuccess = successId === nft.id;
 
-                      {/* Collection */}
-                      <td className="px-4 py-2 hidden lg:table-cell">
-                        <p className="text-muted truncate max-w-[140px]">{nft.collection_name || '—'}</p>
-                      </td>
+                    return (
+                      <tr
+                        key={nft.id}
+                        className={`border-b border-border-light last:border-0 hover:bg-white/[0.02] transition-colors ${isSuccess ? 'bg-success/5' : ''} ${isSaving ? 'opacity-75' : ''}`}
+                      >
+                        {/* Image */}
+                        <td className="px-4 py-2">
+                          {nft.image_url ? (
+                            <img
+                              src={nft.image_url}
+                              alt=""
+                              className="w-9 h-9 rounded-lg object-cover bg-surface2"
+                              loading="lazy"
+                              onError={e => e.target.style.display = 'none'}
+                            />
+                          ) : (
+                            <div className="w-9 h-9 rounded-lg bg-surface2 flex items-center justify-center">
+                              <ImageIcon size={14} className="text-muted-dim" />
+                            </div>
+                          )}
+                        </td>
 
-                      {/* Chain */}
-                      <td className="px-4 py-2 hidden md:table-cell">
-                        <Badge color={nft.chain_id === 8453 ? 'accent' : nft.chain_id === 1 ? 'violet' : 'default'} className="!text-[10px]">
-                          {chainLabel(nft.chain_id)}
-                        </Badge>
-                      </td>
+                        {/* Name */}
+                        <td className="px-4 py-2">
+                          <p className="text-text font-medium truncate max-w-[180px]">{nft.name || '—'}</p>
+                        </td>
 
-                      {/* Contract */}
-                      <td className="px-4 py-2 hidden xl:table-cell">
-                        <span className="font-mono text-[11px] text-muted-dim">{shortAddr(nft.contract_address)}</span>
-                      </td>
+                        {/* Collection */}
+                        <td className="px-4 py-2 hidden lg:table-cell">
+                          <p className="text-muted truncate max-w-[140px]">{nft.collection_name || '—'}</p>
+                        </td>
 
-                      {/* Token ID */}
-                      <td className="px-4 py-2">
-                        <span className="font-mono text-[11px] text-muted">{nft.token_id?.length > 8 ? nft.token_id.slice(0, 8) + '…' : nft.token_id}</span>
-                      </td>
+                        {/* Chain */}
+                        <td className="px-4 py-2 hidden md:table-cell">
+                          <Badge color={nft.chain_id === 8453 ? 'accent' : nft.chain_id === 1 ? 'violet' : 'default'} className="!text-[10px]">
+                            {chainLabel(nft.chain_id)}
+                          </Badge>
+                        </td>
 
-                      {/* Mint Price */}
-                      <td className="px-4 py-2">
-                        {isEditing ? (
-                          <input
-                            type="number"
-                            step="0.001"
-                            value={editValues.mint_price_eth}
-                            onChange={(e) => setEditValues(v => ({ ...v, mint_price_eth: e.target.value }))}
-                            className="w-20 bg-surface2/80 border border-accent/30 rounded-lg px-2 py-1 text-xs font-mono text-text focus:outline-none focus:border-accent"
-                          />
-                        ) : (
-                          <span className="font-mono text-accent text-xs">{Number(nft.mint_price_eth).toFixed(4)}</span>
-                        )}
-                      </td>
+                        {/* Contract */}
+                        <td className="px-4 py-2 hidden xl:table-cell">
+                          <span className="font-mono text-[11px] text-muted-dim">{shortAddr(nft.contract_address)}</span>
+                        </td>
 
-                      {/* Mint Fee */}
-                      <td className="px-4 py-2">
-                        {isEditing ? (
-                          <input
-                            type="number"
-                            step="0.001"
-                            value={editValues.mint_fee_eth}
-                            onChange={(e) => setEditValues(v => ({ ...v, mint_fee_eth: e.target.value }))}
-                            className="w-20 bg-surface2/80 border border-accent/30 rounded-lg px-2 py-1 text-xs font-mono text-text focus:outline-none focus:border-accent"
-                          />
-                        ) : (
-                          <span className="font-mono text-muted text-xs">{Number(nft.mint_fee_eth).toFixed(4)}</span>
-                        )}
-                      </td>
+                        {/* Token ID */}
+                        <td className="px-4 py-2">
+                          <span className="font-mono text-[11px] text-muted">
+                            {nft.token_id?.length > 8 ? nft.token_id.slice(0,8)+'…' : nft.token_id || '—'}
+                          </span>
+                        </td>
 
-                      {/* Featured toggle */}
-                      <td className="px-4 py-2 text-center">
-                        {isEditing ? (
-                          <button onClick={() => setEditValues(v => ({ ...v, is_featured: !v.is_featured }))}>
-                            <Star size={16} className={editValues.is_featured ? 'text-warning fill-warning' : 'text-muted-dim'} />
-                          </button>
-                        ) : (
-                          <button onClick={() => quickToggle(nft, 'is_featured')}>
-                            <Star size={16} className={nft.is_featured ? 'text-warning fill-warning' : 'text-muted-dim hover:text-warning/50'} />
-                          </button>
-                        )}
-                      </td>
+                        {/* Mint Price */}
+                        <td className="px-4 py-2">
+                          {isEditing ? (
+                            <input
+                              type="number"
+                              step="0.0001"
+                              min="0"
+                              value={editValues.mint_price_eth}
+                              onChange={e => setEditValues(v => ({ ...v, mint_price_eth: e.target.value }))}
+                              disabled={isSaving}
+                              className="w-20 bg-surface2/80 border border-accent/30 rounded-lg px-2 py-1 text-xs font-mono text-text focus:outline-none focus:border-accent disabled:opacity-60"
+                            />
+                          ) : (
+                            <span className="font-mono text-accent text-xs">
+                              {Number(nft.mint_price_eth ?? 0).toFixed(4)}
+                            </span>
+                          )}
+                        </td>
 
-                      {/* Listed toggle */}
-                      <td className="px-4 py-2 text-center">
-                        {isEditing ? (
-                          <button onClick={() => setEditValues(v => ({ ...v, is_listed: !v.is_listed }))}>
-                            {editValues.is_listed ? <Eye size={16} className="text-success" /> : <EyeOff size={16} className="text-muted-dim" />}
-                          </button>
-                        ) : (
-                          <button onClick={() => quickToggle(nft, 'is_listed')}>
-                            {nft.is_listed ? <Eye size={16} className="text-success hover:text-success/70" /> : <EyeOff size={16} className="text-muted-dim hover:text-muted" />}
-                          </button>
-                        )}
-                      </td>
+                        {/* Mint Fee */}
+                        <td className="px-4 py-2">
+                          {isEditing ? (
+                            <input
+                              type="number"
+                              step="0.0001"
+                              min="0"
+                              value={editValues.mint_fee_eth}
+                              onChange={e => setEditValues(v => ({ ...v, mint_fee_eth: e.target.value }))}
+                              disabled={isSaving}
+                              className="w-20 bg-surface2/80 border border-accent/30 rounded-lg px-2 py-1 text-xs font-mono text-text focus:outline-none focus:border-accent disabled:opacity-60"
+                            />
+                          ) : (
+                            <span className="font-mono text-muted text-xs">
+                              {Number(nft.mint_fee_eth ?? 0).toFixed(4)}
+                            </span>
+                          )}
+                        </td>
 
-                      {/* Synced at */}
-                      <td className="px-4 py-2 hidden xl:table-cell">
-                        <span className="text-[11px] text-muted-dim">
-                          {nft.synced_at ? new Date(nft.synced_at).toLocaleDateString() : '—'}
-                        </span>
-                      </td>
-
-                      {/* Actions */}
-                      <td className="px-4 py-2 text-right">
-                        {isEditing ? (
-                          <div className="flex items-center justify-end gap-1">
+                        {/* Featured */}
+                        <td className="px-4 py-2 text-center">
+                          {isEditing ? (
                             <button
-                              onClick={() => saveEdit(nft)}
-                              disabled={saving === nft.id}
-                              className="p-1.5 rounded-lg bg-success/10 text-success hover:bg-success/20 transition-colors"
+                              onClick={() => setEditValues(v => ({ ...v, is_featured: !v.is_featured }))}
+                              disabled={isSaving}
                             >
-                              {saving === nft.id ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
+                              <Star size={16} className={editValues.is_featured ? 'text-warning fill-warning' : 'text-muted-dim'} />
                             </button>
-                            <button
-                              onClick={cancelEdit}
-                              className="p-1.5 rounded-lg bg-danger/10 text-danger hover:bg-danger/20 transition-colors"
-                            >
-                              <X size={13} />
+                          ) : (
+                            <button onClick={() => quickToggle(nft, 'is_featured')} disabled={isSaving}>
+                              <Star size={16} className={nft.is_featured ? 'text-warning fill-warning' : 'text-muted-dim hover:text-warning/50'} />
                             </button>
-                          </div>
-                        ) : (
-                          <button
-                            onClick={() => startEdit(nft)}
-                            className="p-1.5 rounded-lg text-muted hover:text-accent hover:bg-accent/10 transition-colors"
-                          >
-                            <Edit3 size={13} />
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
+                          )}
+                        </td>
 
-        {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between px-5 py-3 border-t border-border-light">
-            <p className="text-xs text-muted">
-              Page {page} of {totalPages} · {total} NFTs
-            </p>
-            <div className="flex items-center gap-1.5">
-              <button
-                onClick={() => setPage(p => Math.max(1, p - 1))}
-                disabled={page <= 1}
-                className="p-1.5 rounded-lg text-muted hover:text-text disabled:opacity-30 transition-colors"
-              >
-                <ChevronLeft size={16} />
-              </button>
-              {/* Page buttons */}
-              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                let p;
-                if (totalPages <= 5) p = i + 1;
-                else if (page <= 3) p = i + 1;
-                else if (page >= totalPages - 2) p = totalPages - 4 + i;
-                else p = page - 2 + i;
-                return (
-                  <button
-                    key={p}
-                    onClick={() => setPage(p)}
-                    className={`w-8 h-8 rounded-lg text-xs font-medium transition-colors ${
-                      p === page ? 'bg-accent/10 text-accent' : 'text-muted hover:text-text hover:bg-white/[0.04]'
-                    }`}
-                  >
-                    {p}
-                  </button>
-                );
-              })}
-              <button
-                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                disabled={page >= totalPages}
-                className="p-1.5 rounded-lg text-muted hover:text-text disabled:opacity-30 transition-colors"
-              >
-                <ChevronRight size={16} />
-              </button>
+                        {/* Listed */}
+                        <td className="px-4 py-2 text-center">
+                          {isEditing ? (
+                            <button
+                              onClick={() => setEditValues(v => ({ ...v, is_listed: !v.is_listed }))}
+                              disabled={isSaving}
+                            >
+                              {editValues.is_listed ? <Eye size={16} className="text-success" /> : <EyeOff size={16} className="text-muted-dim" />}
+                            </button>
+                          ) : (
+                            <button onClick={() => quickToggle(nft, 'is_listed')} disabled={isSaving}>
+                              {nft.is_listed ? <Eye size={16} className="text-success hover:text-success/70" /> : <EyeOff size={16} className="text-muted-dim hover:text-muted" />}
+                            </button>
+                          )}
+                        </td>
+
+                        {/* Synced */}
+                        <td className="px-4 py-2 hidden xl:table-cell">
+                          <span className="text-[11px] text-muted-dim">
+                            {nft.synced_at ? new Date(nft.synced_at).toLocaleDateString() : '—'}
+                          </span>
+                        </td>
+
+                        {/* Actions */}
+                        <td className="px-4 py-2 text-right">
+                          {isEditing ? (
+                            <div className="flex items-center justify-end gap-1">
+                              <button
+                                onClick={() => saveEdit(nft)}
+                                disabled={isSaving}
+                                className="p-1.5 rounded-lg bg-success/10 text-success hover:bg-success/20 transition-colors disabled:opacity-50"
+                              >
+                                {isSaving ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
+                              </button>
+                              <button
+                                onClick={cancelEdit}
+                                disabled={isSaving}
+                                className="p-1.5 rounded-lg bg-danger/10 text-danger hover:bg-danger/20 transition-colors disabled:opacity-50"
+                              >
+                                <X size={13} />
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => startEdit(nft)}
+                              className="p-1.5 rounded-lg text-muted hover:text-accent hover:bg-accent/10 transition-colors"
+                            >
+                              <Edit3 size={13} />
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
-          </div>
+
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between px-5 py-3 border-t border-border-light">
+                <p className="text-xs text-muted">
+                  Page {page} of {totalPages} · {total} NFTs
+                </p>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() => setPage(p => Math.max(1, p - 1))}
+                    disabled={page <= 1}
+                    className="p-1.5 rounded-lg text-muted hover:text-text disabled:opacity-30 transition-colors"
+                  >
+                    <ChevronLeft size={16} />
+                  </button>
+
+                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                    let p;
+                    if (totalPages <= 5) p = i + 1;
+                    else if (page <= 3) p = i + 1;
+                    else if (page >= totalPages - 2) p = totalPages - 4 + i;
+                    else p = page - 2 + i;
+
+                    return (
+                      <button
+                        key={p}
+                        onClick={() => setPage(p)}
+                        className={`w-8 h-8 rounded-lg text-xs font-medium transition-colors ${
+                          p === page ? 'bg-accent/10 text-accent' : 'text-muted hover:text-text hover:bg-white/[0.04]'
+                        }`}
+                      >
+                        {p}
+                      </button>
+                    );
+                  })}
+
+                  <button
+                    onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                    disabled={page >= totalPages}
+                    className="p-1.5 rounded-lg text-muted hover:text-text disabled:opacity-30 transition-colors"
+                  >
+                    <ChevronRight size={16} />
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
         )}
       </Card>
     </div>
