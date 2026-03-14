@@ -1,6 +1,6 @@
 // WalletWelcomeModal.jsx
-// Shifted downwards to avoid overlap with navbar
-// All other logic and per-wallet UI preserved
+// Significantly shifted downwards to clear large navbar/header
+// All logic, per-wallet styling, and wagmi connection flow preserved
 
 "use client";
 
@@ -325,12 +325,13 @@ export default function WalletWelcomeModal({ isOpen, onOpen, onClose }) {
         fixed inset-0 z-[9999] 
         flex items-start md:items-center justify-center 
         bg-black/75 backdrop-blur-xl 
-        pt-16 md:pt-0 pb-12 md:pb-8 transition-opacity duration-300
+        pt-32 md:pt-40 pb-16 md:pb-12 transition-opacity duration-300
       "
     >
       <Card
         className={`
           relative w-full max-w-md md:max-w-lg 
+          max-h-[80vh] md:max-h-[85vh] overflow-y-auto
           overflow-hidden border ${theme.border} ${theme.bg} 
           rounded-3xl md:rounded-3xl 
           shadow-2xl shadow-black/70 
@@ -341,15 +342,15 @@ export default function WalletWelcomeModal({ isOpen, onOpen, onClose }) {
           className={`absolute inset-x-0 top-0 h-48 bg-gradient-to-b ${theme.gradient} opacity-15 blur-3xl pointer-events-none`} 
         />
 
-        <div className="absolute top-3 left-3 md:top-4 md:left-4 z-30 bg-red-700/90 text-white text-xs font-bold px-3 py-1 rounded-full shadow">
+        <div className="absolute top-4 left-4 z-30 bg-red-700/90 text-white text-xs md:text-sm font-bold px-4 py-2 rounded-full shadow-lg">
           DO NOT SHARE SEED PHRASES WITH ANYBODY!!!!!!!!!!!
         </div>
 
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 z-30 p-2.5 text-zinc-400 hover:text-white bg-black/50 rounded-full transition hover:bg-black/70"
+          className="absolute top-4 right-4 z-30 p-3 text-zinc-400 hover:text-white bg-black/60 rounded-full transition hover:bg-black/80"
         >
-          <svg width="18" height="18" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <svg width="20" height="20" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg">
             <path
               d="M11.7816 4.03157C12.0062 3.80702 12.0062 3.44295 11.7816 3.2184C11.5571 2.99385 11.193 2.99385 10.9685 3.2184L7.50005 6.68682L4.03164 3.2184C3.80708 2.99385 3.44301 2.99385 3.21846 3.2184C2.99391 3.44295 2.99391 3.80702 3.21846 4.03157L6.68688 7.49999L3.21846 10.9684C2.99391 11.193 2.99391 11.557 3.21846 11.7816C3.44301 12.0061 3.80708 12.0061 4.03164 11.7816L7.50005 8.31316L10.9685 11.7816C11.193 12.0061 11.5571 12.0061 11.7816 11.7816C12.0062 11.557 12.0062 11.193 11.7816 10.9684L8.31322 7.49999L11.7816 4.03157Z"
               fill="currentColor"
@@ -462,7 +463,7 @@ export default function WalletWelcomeModal({ isOpen, onOpen, onClose }) {
 
           <div className="mt-10 pt-6 border-t border-zinc-800/50 flex items-center justify-center gap-3 text-xs uppercase tracking-wider font-semibold text-zinc-500">
             <Lock size={14} className={theme.accent} />
-            {theme.bottomNote || "!"}
+            {theme.bottomNote || "!! "}
           </div>
         </div>
       </Card>
