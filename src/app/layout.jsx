@@ -3,9 +3,27 @@ import { DM_Sans, Outfit, JetBrains_Mono } from "next/font/google";
 import dynamic from "next/dynamic";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
-import ClientProviders from "@/components/ClientProviders";
 
-// ── next/font: self-hosted, no render-blocking <link> or @import ──
+// ── CRITICAL FIX: Load wallet provider ONLY on client (no more indexedDB crash) ──
+const ClientProviders = dynamic(
+  () => import("@/components/ClientProviders"),
+  { ssr: false }
+);
+
+// ── Other heavy client-only components ──
+const ToastProvider = dynamic(() => import("@/components/ToastProvider"), {
+  ssr: false,
+});
+const SupportChatWidget = dynamic(
+  () => import("@/components/support/SupportChatWidget"),
+  { ssr: false }
+);
+const VisitorTrackerProvider = dynamic(
+  () => import("@/components/support/VisitorTrackerProvider"),
+  { ssr: false }
+);
+
+// ── next/font: self-hosted, no render-blocking ──
 const dmSans = DM_Sans({
   subsets: ["latin"],
   variable: "--font-body",
@@ -27,19 +45,6 @@ const jetbrainsMono = JetBrains_Mono({
   weight: ["400", "500", "600"],
 });
 
-// ── Lazy-load heavy components that aren't needed at first paint ──
-const ToastProvider = dynamic(() => import("@/components/ToastProvider"), {
-  ssr: false,
-});
-const SupportChatWidget = dynamic(
-  () => import("@/components/support/SupportChatWidget"),
-  { ssr: false }
-);
-const VisitorTrackerProvider = dynamic(
-  () => import("@/components/support/VisitorTrackerProvider"),
-  { ssr: false }
-);
-
 export const metadata = {
   title: "Aurora NFT — Discover & Mint Digital Art",
   description:
@@ -47,8 +52,7 @@ export const metadata = {
   icons: { icon: "/pictures/logo.png" },
 };
 
-// This is a SERVER COMPONENT — no "use client" here.
-// Only ClientProviders (wagmi/wallet context) is client-side.
+// This is still a SERVER COMPONENT
 export default function RootLayout({ children }) {
   return (
     <html

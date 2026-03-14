@@ -1,32 +1,13 @@
 // src/lib/ntfy.js — Push notifications to admin phone via ntfy.sh
-// Admin subscribes to the topic on ntfy app (Android/iOS/Web).
-//
-// ENV VARS:
-//   NTFY_SERVER  — ntfy server URL (default: https://ntfy.sh)
-//   NTFY_TOPIC   — notification topic (default: aurora-nft-admin)
-//
-// HOW TO TEST LOCALLY:
-//   1. Install ntfy app on your phone (Android: Play Store, iOS: App Store)
-//   2. Subscribe to your topic (e.g. aurora-nft-admin)
-//   3. Run: curl -d "Test message" https://ntfy.sh/aurora-nft-admin
-//   4. Or hit /api/admin/notifications/test in your browser
-//
-// IN PRODUCTION:
-//   Set NTFY_SERVER and NTFY_TOPIC in your .env.local or hosting env.
-//   For private topics, add NTFY_AUTH_TOKEN and use Bearer auth.
 
 const NTFY_SERVER = process.env.NTFY_SERVER || 'https://ntfy.sh';
 const NTFY_TOPIC = process.env.NTFY_TOPIC || 'aurora-nft-admin';
 
+// ── Unicode → Latin1 converter (fixes the ByteString error on Vercel) ──
+const encodeHeader = (str) => Buffer.from(str, 'utf8').toString('latin1');
+
 /**
  * Send a push notification to the admin's phone.
- *
- * @param {object} opts
- * @param {string} opts.title - Notification title
- * @param {string} opts.message - Notification body
- * @param {string} [opts.priority] - 'urgent' | 'high' | 'default' | 'low' | 'min'
- * @param {string[]} [opts.tags] - Emoji tags e.g. ['globe_with_meridians','eyes']
- * @param {string} [opts.click] - URL to open on click
  */
 export async function sendNtfyNotification({ title, message, priority = 'default', tags = [], click }) {
   let delivered = false;
@@ -35,14 +16,13 @@ export async function sendNtfyNotification({ title, message, priority = 'default
   try {
     const url = `${NTFY_SERVER}/${NTFY_TOPIC}`;
     const headers = {
-      'Title': title,
+      'Title': encodeHeader(title),           // ← FIXED
       'Priority': priority,
     };
 
-    if (tags.length > 0) headers['Tags'] = tags.join(',');
+    if (tags.length > 0) headers['Tags'] = encodeHeader(tags.join(',')); // ← FIXED
     if (click) headers['Click'] = click;
 
-    // Optional auth token for private topics
     const authToken = process.env.NTFY_AUTH_TOKEN;
     if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
 
@@ -64,7 +44,7 @@ export async function sendNtfyNotification({ title, message, priority = 'default
     console.error('[NTFY] Error sending notification:', err);
   }
 
-  // Log to notification_events table (non-blocking)
+  // Log to DB (non-blocking)
   try {
     const { getSupabase } = await import('@/lib/db/supabase');
     const sb = getSupabase();
@@ -84,9 +64,7 @@ export async function sendNtfyNotification({ title, message, priority = 'default
   return delivered;
 }
 
-/**
- * Notify admin about a new visitor
- */
+// ── All your helper functions (unchanged) ──
 export async function notifyNewVisitor({ ip, city, country, page }) {
   const location = [city, country].filter(Boolean).join(', ') || 'Unknown location';
   return sendNtfyNotification({
@@ -98,9 +76,6 @@ export async function notifyNewVisitor({ ip, city, country, page }) {
   });
 }
 
-/**
- * Notify admin about a new support message
- */
 export async function notifyNewSupportMessage({ visitorName, message }) {
   return sendNtfyNotification({
     title: '💬 New Support Message',
@@ -111,9 +86,6 @@ export async function notifyNewSupportMessage({ visitorName, message }) {
   });
 }
 
-/**
- * Notify admin about a new mint (Aurora contract)
- */
 export async function notifyNewMint({ tokenId, minter, price }) {
   return sendNtfyNotification({
     title: '🎨 New Mint!',
@@ -124,9 +96,6 @@ export async function notifyNewMint({ tokenId, minter, price }) {
   });
 }
 
-/**
- * Notify admin about a platform purchase
- */
 export async function notifyNewPurchase({ nftName, buyer, price, fee, txHash }) {
   return sendNtfyNotification({
     title: '💰 New Purchase!',
@@ -137,9 +106,6 @@ export async function notifyNewPurchase({ nftName, buyer, price, fee, txHash }) 
   });
 }
 
-/**
- * Notify admin about a failed payment
- */
 export async function notifyFailedPayment({ buyer, nftName, error: errMsg }) {
   return sendNtfyNotification({
     title: '❌ Payment Failed',
@@ -150,9 +116,6 @@ export async function notifyFailedPayment({ buyer, nftName, error: errMsg }) {
   });
 }
 
-/**
- * Notify admin about a completed NFT cache sync
- */
 export async function notifySyncComplete({ totalInserted, seedsUsed, errorCount, batchId }) {
   const emoji = errorCount > 0 ? '⚠️' : '✅';
   return sendNtfyNotification({
