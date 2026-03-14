@@ -17,6 +17,9 @@ import Badge from "@/components/ui/Badge";
 import { Wallet, AlertTriangle, Check, Loader2, Heart, ExternalLink } from "lucide-react";
 import WalletConnectModal from "@/components/WalletConnectModal";
 
+// Import Supabase client
+import { supabase } from "@/lib/supabase";
+
 function MintPageContent() {
   const sp = useSearchParams();
   const contractParam = sp.get("contract");
@@ -63,6 +66,50 @@ function MintPageContent() {
   const [imgZoomed, setImgZoomed] = useState(false);
   const [favorited, setFavorited] = useState(false);
   const [showWalletModal, setShowWalletModal] = useState(false);
+  const [profileId, setProfileId] = useState(null);
+  const [savingToDb, setSavingToDb] = useState(false);
+
+  // Load or create profile when authed
+  useEffect(() => {
+    async function loadOrCreateProfile() {
+      if (!isAuthed) return;
+
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      let { data: profile, error } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('email', user.email)
+        .single();
+
+      if (error && error.code !== 'PGRST116') {
+        console.error("Profile fetch error:", error);
+      }
+
+      if (!profile?.id) {
+        const { data: newProfile, error: insertErr } = await supabase
+          .from('profiles')
+          .insert({
+            email: user.email || 'unknown@wallet.com',
+            first_name: user.user_metadata?.name?.split(' ')[0] || 'User',
+            username: `user_${user.id.slice(0, 8)}`,
+          })
+          .select('id')
+          .single();
+
+        if (insertErr || !newProfile?.id) {
+          console.error("Profile creation failed:", insertErr);
+          return;
+        }
+        profile = newProfile;
+      }
+
+      setProfileId(profile.id);
+    }
+
+    loadOrCreateProfile();
+  }, [isAuthed]);
 
   // Stable ref for auto-confirm
   const confirmRef = useRef({ confirmBuy, selectedNft, tokenIdParam, nftPrice, mintFee });
@@ -80,12 +127,47 @@ function MintPageContent() {
     }
   }, [isConfirmedOnChain, txHash, confirmResult, confirming]);
 
-  // Explorer link
-  const getExplorerBase = (chainId) => {
-    if (chainId === 8453) return "https://basescan.org";
-    if (chainId === 84532) return "https://sepolia.basescan.org";
-    return explorerUrl;
-  };
+  // Save to user_collections after confirmation
+  useEffect(() => {
+    if (confirmResult?.tokenIds?.length > 0 && profileId && !savingToDb) {
+      const saveMintedNfts = async () => {
+        setSavingToDb(true);
+        try {
+          const nftImage = selectedNft?.image || selectedNft?.image_url || resolveImage(selectedNft || {}) || '';
+          const nftName = selectedNft?.name || `Minted NFT #${confirmResult.tokenIds[0] || ''}`;
+          const nftDesc = selectedNft?.description || 'A unique minted NFT from AuroraNft';
+
+          const inserts = confirmResult.tokenIds.map((tid) => ({
+            profile_id: profileId,
+            chain_id: selectedNft?.chainId || targetChainId,
+            contract_address: selectedNft?.contractAddress?.toLowerCase() || '',
+            token_id: tid.toString(),
+            cached_nft_id: selectedNft?.dbId || null,
+            assigned_by: 'mint',
+            assigned_at: new Date().toISOString(),
+            // Metadata
+            image_url: nftImage,
+            nft_name: nftName,
+            description: nftDesc,
+          }));
+
+          const { error } = await supabase.from('user_collections').insert(inserts);
+
+          if (error) {
+            console.error("Failed to save minted NFTs:", error);
+          } else {
+            console.log(`Saved ${inserts.length} minted NFTs to profile ${profileId}`);
+          }
+        } catch (err) {
+          console.error("Save error:", err);
+        } finally {
+          setSavingToDb(false);
+        }
+      };
+
+      saveMintedNfts();
+    }
+  }, [confirmResult, profileId, selectedNft, targetChainId, savingToDb]);
 
   const nftExplorerLink =
     selectedNft?.contractAddress && (selectedNft?.tokenId || tokenIdParam)
@@ -94,16 +176,15 @@ function MintPageContent() {
         }`
       : null;
 
-  // State machine
-  let state = "disconnected";
-  if (isConnected && isWrongChain) state = "wrong_network";
-  else if (isConnected && !isAuthed) state = "needs_auth";
-  else if (confirmResult) state = "tx_success";
-  else if (confirmError || writeError) state = "tx_error";
-  else if (confirming) state = "confirming";
-  else if (isWaiting) state = "tx_pending";
-  else if (isSending) state = "tx_signing";
-  else if (isConnected && isAuthed) state = "ready";
+  // State machine (updated to prioritize auth check)
+  let state = isAuthed ? "disconnected" : "needs_auth";
+  if (isAuthed && isConnected && isWrongChain) state = "wrong_network";
+  if (isAuthed && isConnected && !isWrongChain) state = "ready";
+  if (confirmResult) state = "tx_success";
+  if (confirmError || writeError) state = "tx_error";
+  if (confirming) state = "confirming";
+  if (isWaiting) state = "tx_pending";
+  if (isSending) state = "tx_signing";
 
   const handleMint = useCallback(() => {
     if (!selectedNft) return;
@@ -306,7 +387,20 @@ function MintPageContent() {
                     </div>
                   </div>
 
-                  {/* ── Conditional UI based on connection / auth / tx state ── */}
+                  {/* Conditional UI */}
+                  {state === "needs_auth" && (
+                    <div className="space-y-4">
+                      <div className="text-center py-4 space-y-2">
+                        <Wallet size={32} className="mx-auto text-accent" />
+                        <p className="text-sm text-muted">Sign in to verify your wallet</p>
+                      </div>
+                      <Button variant="primary" size="lg" className="w-full" onClick={login} disabled={authLoading}>
+                        {authLoading ? <Loader2 size={16} className="animate-spin" /> : <Wallet size={16} />}
+                        Sign In (SIWE)
+                      </Button>
+                    </div>
+                  )}
+
                   {state === "disconnected" && (
                     <div className="space-y-4">
                       <div className="text-center py-4 space-y-2">
@@ -314,21 +408,10 @@ function MintPageContent() {
                         <p className="text-sm text-muted">Connect your wallet to mint</p>
                       </div>
                       <Button variant="primary" size="lg" className="w-full" onClick={() => setShowWalletModal(true)}>
-                        <Wallet size={16} /> Connect Wallet
+                        <Wallet size={16} />
+                        Connect Wallet
                       </Button>
                       <WalletConnectModal open={showWalletModal} onClose={() => setShowWalletModal(false)} />
-                    </div>
-                  )}
-
-                  {state === "needs_auth" && (
-                    <div className="space-y-4">
-                      <div className="text-center py-4 space-y-2">
-                        <Wallet size={32} className="mx-auto text-accent" />
-                        <p className="text-sm text-muted">Sign in to verify wallet</p>
-                      </div>
-                      <Button variant="primary" size="lg" className="w-full" onClick={login} disabled={authLoading}>
-                        {authLoading ? <Loader2 size={16} className="animate-spin" /> : <Wallet size={16} />} Sign In (SIWE)
-                      </Button>
                     </div>
                   )}
 
@@ -338,7 +421,7 @@ function MintPageContent() {
                         <AlertTriangle size={18} className="text-warning mt-0.5 shrink-0" />
                         <div>
                           <p className="text-sm font-medium text-warning">Wrong Network</p>
-                          <p className="text-xs text-muted mt-1">Switch to {chainName}.</p>
+                          <p className="text-xs text-muted mt-1">Please switch to {chainName} to continue.</p>
                         </div>
                       </div>
                       <Button variant="primary" size="lg" className="w-full" onClick={() => switchChain({ chainId: targetChainId })}>
@@ -349,8 +432,8 @@ function MintPageContent() {
 
                   {state === "ready" && (
                     <div className="space-y-4">
-                      <Button variant="primary" size="lg" className="w-full" onClick={handleMint}>
-                        Mint Now — {totalPrice} ETH
+                      <Button variant="primary" size="lg" className="w-full" onClick={handleMint} disabled={savingToDb || !profileId}>
+                        {savingToDb ? <Loader2 size={16} className="animate-spin" /> : ''} Mint Now — {totalPrice} ETH
                       </Button>
                     </div>
                   )}
@@ -359,16 +442,13 @@ function MintPageContent() {
                     <div className="text-center py-6 space-y-3">
                       <Loader2 size={36} className="mx-auto text-accent animate-spin" />
                       <p className="text-sm text-muted">
-                        {state === "tx_signing" ? "Confirm in wallet…" :
-                         state === "tx_pending" ? "Transaction pending…" : "Verifying…"}
+                        {state === "tx_signing" && 'Confirm in your wallet…'}
+                        {state === "tx_pending" && 'Transaction pending…'}
+                        {state === "confirming" && 'Verifying on server…'}
                       </p>
                       {txHash && (
-                        <a
-                          href={`${explorerUrl}/tx/${txHash}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-xs text-accent font-mono hover:underline"
-                        >
+                        <a href={`${explorerUrl}/tx/${txHash}`} target="_blank" rel="noopener noreferrer"
+                          className="text-xs text-accent font-mono hover:underline">
                           View on Basescan
                         </a>
                       )}
@@ -381,16 +461,16 @@ function MintPageContent() {
                         <Check size={28} className="text-success" />
                       </div>
                       <p className="text-text font-semibold">Successfully minted!</p>
-                      <p className="text-sm text-muted">This NFT is now in your profile.</p>
+                      <p className="text-sm text-muted">NFT saved to your collection.</p>
                       <div className="flex gap-3 justify-center">
                         {txHash && (
                           <a href={`${explorerUrl}/tx/${txHash}`} target="_blank" rel="noopener noreferrer">
                             <Button variant="secondary" size="md">View on Basescan</Button>
                           </a>
                         )}
-                        <Link href={`/profile/${address}`}>
-                          <Button variant="primary" size="md">View Profile</Button>
-                        </Link>
+                        <Button variant="secondary" size="md" onClick={() => { resetBuy(); }}>
+                          Mint Another
+                        </Button>
                       </div>
                     </div>
                   )}
@@ -402,11 +482,11 @@ function MintPageContent() {
                         <div>
                           <p className="text-sm font-medium text-danger">Transaction Failed</p>
                           <p className="text-xs text-muted mt-1 break-all">
-                            {writeError?.shortMessage || confirmError || "Rejected or insufficient funds."}
+                            {writeError?.shortMessage || confirmError || 'User rejected or insufficient funds.'}
                           </p>
                         </div>
                       </div>
-                      <Button variant="primary" size="lg" className="w-full" onClick={resetBuy}>
+                      <Button variant="primary" size="lg" className="w-full" onClick={() => { resetBuy(); }}>
                         Try Again
                       </Button>
                     </div>

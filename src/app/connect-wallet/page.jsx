@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import { Wallet, Loader2, ArrowRight, Check, AlertTriangle } from 'lucide-react';
 import { useConnect, useAccount, useDisconnect } from 'wagmi';
@@ -24,12 +24,13 @@ function getWalletTheme(connectorId) {
 
 export default function ConnectWalletPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { session, profile, isLoggedIn, refreshSession } = useSession();
-  const { connectors, connect, isPending, error: connectError } = useConnect();
+  const { connectors, connect, isPending } = useConnect();
   const { address, isConnected, connector: activeConnector } = useAccount();
   const { disconnect } = useDisconnect();
 
-  const [phase, setPhase] = useState('detect'); // detect | greeting | username | saving | done
+  const [phase, setPhase] = useState('detect'); // detect | username | saving | done
   const [detectedWallet, setDetectedWallet] = useState(null);
   const [username, setUsername] = useState('');
   const [saving, setSaving] = useState(false);
@@ -53,58 +54,55 @@ export default function ConnectWalletPage() {
     }
   }, [profile, router]);
 
-  // Detect available wallets
+  // ──────────────────────────────────────────────────────────────
+  // NEW: Detect return from /welcome after modal submit
+  // ──────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (searchParams.get('modal') === 'completed' && isConnected && address) {
+      const walletId = searchParams.get('wallet') || activeConnector?.id || 'injected';
+      setDetectedWallet(walletId);
+      setPhase('username');                    // jump to username so user can finish
+      // Clean URL (optional but recommended)
+      router.replace('/connect-wallet');
+    }
+  }, [searchParams, isConnected, address, activeConnector, router]);
+
+  // Auto-detect injected wallet on load (PC + some mobile)
   useEffect(() => {
     if (phase !== 'detect') return;
-    // Auto-detect injected wallet
     const hasInjected = typeof window !== 'undefined' && !!window.ethereum;
     if (hasInjected) {
-      // Try to identify the injected wallet
       const eth = window.ethereum;
       if (eth.isMetaMask) setDetectedWallet('metaMask');
       else if (eth.isCoinbaseWallet) setDetectedWallet('coinbaseWallet');
-      else if (eth.isBraveWallet) setDetectedWallet('injected');
-      else if (eth.isTrust) setDetectedWallet('injected');
+      else if (eth.isBraveWallet || eth.isTrust) setDetectedWallet('injected');
       else setDetectedWallet('injected');
     }
   }, [phase]);
 
-  // When wallet connects, move to greeting
-  useEffect(() => {
-    if (isConnected && address && phase === 'detect') {
-      const walletId = activeConnector?.id || detectedWallet || 'injected';
-      setDetectedWallet(walletId);
-      setPhase('greeting');
-      // Auto-advance to username after 2.5 seconds
-      setTimeout(() => setPhase('username'), 2500);
-    }
-  }, [isConnected, address, phase, activeConnector, detectedWallet]);
-
   const handleConnect = useCallback((connector) => {
     setConnectingId(connector.id);
     setError('');
+
     connect(
       { connector },
       {
         onSuccess: () => {
           setConnectingId(null);
-          setDetectedWallet(connector.id);
-          setPhase('greeting');
-          setTimeout(() => setPhase('username'), 2500);
+          const walletId = connector.id;   // this is the exact wallet that was just used
+          router.push(`/welcome?wallet=${walletId}`);
         },
         onError: (err) => {
           setConnectingId(null);
           if (err?.message?.includes('rejected')) {
             setError('Connection rejected. Try again.');
-          } else if (err?.message?.includes('provider') || err?.message?.includes('not found')) {
-            setError(`${connector.name || 'Wallet'} not detected. Try another wallet or install the extension.`);
           } else {
             setError(err?.shortMessage || err?.message || 'Connection failed');
           }
         },
       }
     );
-  }, [connect]);
+  }, [connect, router]);
 
   const handleSave = async () => {
     if (!username.trim()) {
@@ -126,6 +124,7 @@ export default function ConnectWalletPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to save');
+
       setPhase('done');
       await refreshSession();
       setTimeout(() => router.push('/profile'), 2000);
@@ -138,7 +137,7 @@ export default function ConnectWalletPage() {
 
   const theme = getWalletTheme(detectedWallet);
 
-  // Deduplicate connectors
+  // Deduplicate connectors for the list
   const wallets = connectors.reduce((acc, c) => {
     const t = getWalletTheme(c.id);
     if (!acc.find(w => w.theme.name === t.name)) acc.push({ connector: c, theme: t });
@@ -163,7 +162,7 @@ export default function ConnectWalletPage() {
           </div>
         </div>
 
-        {/* Phase: Detect / Choose Wallet */}
+        {/* Phase: Choose Wallet */}
         {phase === 'detect' && (
           <div className="glass-strong rounded-2xl p-8 space-y-6">
             <div className="text-center space-y-2">
@@ -207,40 +206,10 @@ export default function ConnectWalletPage() {
           </div>
         )}
 
-        {/* Phase: Greeting — styled with wallet theme */}
-        {phase === 'greeting' && (
-          <div
-            className="rounded-2xl p-10 text-center space-y-6 border animate-fade-in"
-            style={{
-              background: `linear-gradient(135deg, ${theme.color}12, ${theme.color}06)`,
-              borderColor: `${theme.color}30`,
-            }}
-          >
-            <div className="text-6xl animate-float">{theme.icon}</div>
-            <div>
-              <h2 className="font-display font-extrabold text-2xl" style={{ color: theme.color }}>
-                Welcome to {theme.name} Connect!
-              </h2>
-              <p className="text-muted text-sm mt-2">
-                Wallet detected and connected
-              </p>
-            </div>
-            <div className="flex items-center justify-center gap-2">
-              <Loader2 size={14} className="animate-spin" style={{ color: theme.color }} />
-              <span className="text-xs text-muted">Preparing your profile...</span>
-            </div>
-          </div>
-        )}
-
-        {/* Phase: Username Input */}
+        {/* Phase: Username (shown when returning from welcome) */}
         {phase === 'username' && (
-          <div
-            className="rounded-2xl p-8 border space-y-6 animate-fade-in"
-            style={{
-              background: `linear-gradient(135deg, ${theme.color}08, transparent)`,
-              borderColor: `${theme.color}25`,
-            }}
-          >
+          <div className="rounded-2xl p-8 border space-y-6 animate-fade-in"
+               style={{ background: `linear-gradient(135deg, ${theme.color}08, transparent)`, borderColor: `${theme.color}25` }}>
             <div className="text-center space-y-2">
               <span className="text-4xl">{theme.icon}</span>
               <h2 className="font-display font-bold text-xl text-text">Almost there!</h2>
@@ -258,9 +227,6 @@ export default function ConnectWalletPage() {
                 style={{ borderColor: username ? `${theme.color}40` : undefined, boxShadow: username ? `0 0 0 1px ${theme.color}20` : undefined }}
                 autoFocus
               />
-              <p className="text-[11px] text-muted-dim text-center leading-relaxed mt-4">
-                Enter your web3 alias — make it legendary! ✨
-              </p>
             </div>
 
             {error && <p className="text-danger text-xs text-center">{error}</p>}
