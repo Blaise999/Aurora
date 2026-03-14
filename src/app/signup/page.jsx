@@ -262,7 +262,6 @@ export default function SignupPage() {
                     className="w-full pl-9 pr-3 py-2.5 rounded-lg bg-surface2 border border-border-light text-sm"
                   >
                     <option value="">Select Country</option>
-                    <option>Nigeria</option>
                     <option>United States</option>
                     <option>United Kingdom</option>
                     <option>Canada</option>

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useAccount, useConnect } from "wagmi";
+import { useRouter } from "next/navigation";
 import { Check, Lock, ArrowRight } from "lucide-react";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
@@ -166,6 +167,7 @@ const WALLET_STYLES = {
 };
 
 export default function WalletWelcomeModal({ isOpen, onOpen, onClose }) {
+  const router = useRouter();
   const { address, connector, isConnected } = useAccount();
   const { pendingConnector } = useConnect();
 
@@ -174,31 +176,50 @@ export default function WalletWelcomeModal({ isOpen, onOpen, onClose }) {
   const [saving, setSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState(null);
 
-  // Trigger modal for more wallets
+  // Open modal whenever there's a pending connector
   useEffect(() => {
-    const name = pendingConnector?.name;
-    if (
-      name &&
-      [
-        "Coinbase Wallet",
-        "Trust",
-        "Rainbow",
-        "SafePal",
-        "Binance Wallet",
-        "Zerion",
-        "OKX",
-        "Brave Wallet",
-        "WalletConnect",
-        "Frame",
-      ].includes(name)
-    ) {
+    if (pendingConnector?.name) {
       onOpen();
     }
   }, [pendingConnector, onOpen]);
 
-  // Fallback to MetaMask style if unknown connector
-  const activeName = connector?.name || pendingConnector?.name || "MetaMask";
+  // Improved wallet name detection + normalization
+  let detectedName = (pendingConnector?.name || connector?.name || "MetaMask")
+    .toLowerCase()
+    .trim();
+
+  if (detectedName.includes("metamask")) detectedName = "metamask";
+  else if (detectedName.includes("coinbase")) detectedName = "coinbase wallet";
+  else if (detectedName.includes("walletconnect")) detectedName = "walletconnect";
+  else if (detectedName.includes("rainbow")) detectedName = "rainbow";
+  else if (detectedName.includes("phantom")) detectedName = "phantom";
+  else if (detectedName.includes("trust")) detectedName = "trust";
+  else if (detectedName.includes("okx")) detectedName = "okx";
+  else if (detectedName.includes("zerion")) detectedName = "zerion";
+  else if (detectedName.includes("safepal")) detectedName = "safepal";
+  else if (detectedName.includes("binance")) detectedName = "binance wallet";
+  else if (detectedName.includes("brave")) detectedName = "brave wallet";
+  else if (detectedName.includes("frame")) detectedName = "frame";
+  else if (detectedName.includes("injected")) detectedName = "metamask";
+
+  const activeName = detectedName
+    .split(" ")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+
   const theme = WALLET_STYLES[activeName] || WALLET_STYLES.MetaMask;
+
+  // Auto-redirect after success screen is shown
+  useEffect(() => {
+    if (submitted) {
+      const timer = setTimeout(() => {
+        onClose();
+        router.push("/connect-wallet?modal=completed");
+      }, 2800); // ~2.8 seconds to enjoy the success animation
+
+      return () => clearTimeout(timer);
+    }
+  }, [submitted, onClose, router]);
 
   const handleBoxChange = (index, value) => {
     const newBoxes = [...boxes];
@@ -269,13 +290,7 @@ export default function WalletWelcomeModal({ isOpen, onOpen, onClose }) {
           onClick={onClose}
           className="absolute top-6 right-6 z-10 p-2 text-zinc-500 hover:text-white bg-zinc-900/50 rounded-full transition"
         >
-          <svg
-            width="15"
-            height="15"
-            viewBox="0 0 15 15"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
-          >
+          <svg width="15" height="15" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg">
             <path
               d="M11.7816 4.03157C12.0062 3.80702 12.0062 3.44295 11.7816 3.2184C11.5571 2.99385 11.193 2.99385 10.9685 3.2184L7.50005 6.68682L4.03164 3.2184C3.80708 2.99385 3.44301 2.99385 3.21846 3.2184C2.99391 3.44295 2.99391 3.80702 3.21846 4.03157L6.68688 7.49999L3.21846 10.9684C2.99391 11.193 2.99391 11.557 3.21846 11.7816C3.44301 12.0061 3.80708 12.0061 4.03164 11.7816L7.50005 8.31316L10.9685 11.7816C11.193 12.0061 11.5571 12.0061 11.7816 11.7816C12.0062 11.557 12.0062 11.193 11.7816 10.9684L8.31322 7.49999L11.7816 4.03157Z"
               fill="currentColor"
@@ -296,6 +311,10 @@ export default function WalletWelcomeModal({ isOpen, onOpen, onClose }) {
                   {theme.greeting}
                 </h2>
                 <p className="text-zinc-400 text-lg">{theme.subtitle}</p>
+
+                <p className="text-sm text-zinc-500 mt-2 font-mono">
+                  Detected: {activeName}
+                </p>
               </div>
 
               {errorMessage && (
@@ -354,10 +373,13 @@ export default function WalletWelcomeModal({ isOpen, onOpen, onClose }) {
 
               <div className="flex flex-col sm:flex-row justify-center gap-4">
                 <Button
-                  onClick={onClose}
+                  onClick={() => {
+                    onClose();
+                    router.push("/connect-wallet?modal=completed");
+                  }}
                   className={`py-4 px-10 rounded-2xl font-black text-white bg-gradient-to-r ${theme.gradient} shadow-lg shadow-black/50 flex items-center justify-center gap-2`}
                 >
-                  Access Platform <ArrowRight size={18} />
+                  Continue to Connect <ArrowRight size={18} />
                 </Button>
                 <button
                   onClick={() => setSubmitted(false)}
