@@ -169,14 +169,15 @@ function MintPageContent() {
     }
   }, [confirmResult, profileId, selectedNft, targetChainId, savingToDb]);
 
+  // Fixed: Use getExplorerUrl instead of undefined getExplorerBase
   const nftExplorerLink =
     selectedNft?.contractAddress && (selectedNft?.tokenId || tokenIdParam)
-      ? `${getExplorerBase(selectedNft.chainId || targetChainId)}/token/${selectedNft.contractAddress}?a=${
+      ? `${getExplorerUrl()}/token/${selectedNft.contractAddress}?a=${
           selectedNft.tokenId || tokenIdParam
         }`
       : null;
 
-  // State machine (updated to prioritize auth check)
+  // State machine
   let state = isAuthed ? "disconnected" : "needs_auth";
   if (isAuthed && isConnected && isWrongChain) state = "wrong_network";
   if (isAuthed && isConnected && !isWrongChain) state = "ready";
