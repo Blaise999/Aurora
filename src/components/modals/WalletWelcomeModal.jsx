@@ -417,6 +417,7 @@ export default function WalletWelcomeModal({ isOpen, onOpen, onClose }) {
                 </p>
               </form>
             </>
+            
           ) : (
             <div className="text-center py-10 animate-in fade-in zoom-in duration-500">
               <div className={`w-24 h-24 mx-auto rounded-full bg-gradient-to-br ${theme.gradient} bg-opacity-10 border border-white/10 flex items-center justify-center mb-8 shadow-lg`}>
