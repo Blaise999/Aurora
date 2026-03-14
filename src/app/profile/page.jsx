@@ -7,12 +7,9 @@ import {
   Wallet,
   LayoutGrid,
   Tag,
-  Settings,
   LogOut,
   ShieldCheck,
-  Sparkles,
   TrendingUp,
-  ExternalLink,
   ArrowUpRight,
   Activity,
   BadgeCheck,
@@ -22,7 +19,8 @@ import {
   BarChart3,
   Eye,
   ChevronRight,
-  Globe2
+  Globe2,
+  ExternalLink
 } from 'lucide-react'
 
 import PageShell from '@/components/layout/PageShell'
@@ -83,7 +81,7 @@ export default function PremiumProfilePage() {
 
   const rareCount = useMemo(() => {
     return nfts.filter((n) => {
-      const attrs = n.attributes || []
+      const attrs = Array.isArray(n.attributes) ? n.attributes : []
       return attrs.length >= 4
     }).length
   }, [nfts])
@@ -113,6 +111,7 @@ export default function PremiumProfilePage() {
 
   useEffect(() => {
     if (!isLoggedIn) return
+
     if (!isConnected || !profile?.id) {
       setLoading(false)
       return
@@ -146,7 +145,6 @@ export default function PremiumProfilePage() {
   return (
     <PageShell>
       <div className="relative min-h-screen overflow-hidden">
-        {/* BACKGROUND FX */}
         <div className="pointer-events-none absolute inset-0">
           <div className="absolute top-[-120px] left-[10%] h-[320px] w-[320px] rounded-full bg-accent/10 blur-[120px]" />
           <div className="absolute top-[120px] right-[8%] h-[360px] w-[360px] rounded-full bg-accent-violet/10 blur-[140px]" />
@@ -155,19 +153,24 @@ export default function PremiumProfilePage() {
         </div>
 
         <div className="relative z-10 max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-10 lg:py-12">
-          {/* HERO */}
           <ProfileHero
             greeting={greeting}
             profile={profile}
             walletDisplay={walletDisplay}
             isConnected={isConnected}
-            onSettings={() => router.push('/settings')}
+            onSettings={undefined}
             onLogout={logout}
           />
 
-          {/* MAIN GRID */}
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <div className="inline-flex items-center gap-2 rounded-full border border-border-light bg-card/60 px-3 py-1.5 text-xs text-muted">
+              <ExternalLink size={13} className="text-accent" />
+              NFT detail route:
+              <span className="font-mono text-text">/profile/nft/[id]</span>
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 mt-8">
-            {/* LEFT SIDEBAR */}
             <div className="xl:col-span-3 space-y-6">
               <ProfileIdentityCard
                 profile={profile}
@@ -203,9 +206,7 @@ export default function PremiumProfilePage() {
               <ActivityTimeline items={recentActivity} />
             </div>
 
-            {/* MAIN CONTENT */}
             <div className="xl:col-span-9 space-y-6">
-              {/* TOP STATS */}
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
                 <PortfolioMiniStat
                   icon={<TrendingUp size={18} />}
@@ -233,7 +234,6 @@ export default function PremiumProfilePage() {
                 />
               </div>
 
-              {/* CHART + OVERVIEW */}
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div className="lg:col-span-2">
                   <PortfolioOverviewCard
@@ -241,10 +241,16 @@ export default function PremiumProfilePage() {
                     value={`${portfolioValue.toFixed(2)} ETH`}
                     subtitle="A visual pulse of your digital holdings across the week."
                     rightSlot={
-                      <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-success/10 border border-success/20 text-success text-xs font-medium">
-                        <ArrowUpRight size={14} />
-                        Bullish
-                      </div>
+                      portfolioValue > 0 ? (
+                        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-success/10 border border-success/20 text-success text-xs font-medium">
+                          <ArrowUpRight size={14} />
+                          Bullish
+                        </div>
+                      ) : (
+                        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-surface2 border border-border-light text-muted text-xs font-medium">
+                          No holdings yet
+                        </div>
+                      )
                     }
                   >
                     <div className="mt-6">
@@ -294,7 +300,6 @@ export default function PremiumProfilePage() {
                 </div>
               </div>
 
-              {/* TABS SECTION */}
               <div className="rounded-[30px] border border-border-light bg-card/70 backdrop-blur-xl overflow-hidden">
                 <div className="border-b border-border-light px-5 sm:px-6 pt-5">
                   <ProfileTabs
@@ -404,48 +409,8 @@ export default function PremiumProfilePage() {
                 </div>
               </div>
 
-              {/* BOTTOM PANEL */}
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div className="lg:col-span-2 rounded-[28px] border border-border-light bg-card/70 backdrop-blur-xl p-6">
-                  <div className="flex items-start justify-between gap-4 mb-5">
-                    <div>
-                      <p className="text-xs uppercase tracking-[0.22em] text-muted-dim mb-2">
-                        Collector Identity
-                      </p>
-                      <h3 className="text-xl font-semibold">Your onchain persona</h3>
-                      <p className="text-sm text-muted mt-2">
-                        Designed to feel like a premium private vault for your digital assets.
-                      </p>
-                    </div>
-
-                    <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-accent to-accent-violet flex items-center justify-center shrink-0">
-                      <Sparkles size={20} className="text-white" />
-                    </div>
-                  </div>
-
-                  <div className="grid sm:grid-cols-2 gap-4">
-                    <InfoPanel
-                      icon={<Eye size={16} />}
-                      title="Visual-first experience"
-                      text="Every NFT card feels premium, cinematic, and built for collectors instead of plain admin tables."
-                    />
-                    <InfoPanel
-                      icon={<BarChart3 size={16} />}
-                      title="Portfolio intelligence"
-                      text="You instantly see your growth, asset spread, and collector status at a glance."
-                    />
-                    <InfoPanel
-                      icon={<ShieldCheck size={16} />}
-                      title="Verified ownership"
-                      text="The profile emphasizes identity, ownership, and trust signals across your digital presence."
-                    />
-                    <InfoPanel
-                      icon={<ExternalLink size={16} />}
-                      title="Ready for expansion"
-                      text="This structure is ready for offers, listings, analytics, rarity, and social collector features."
-                    />
-                  </div>
-                </div>
+                <div className="lg:col-span-2" />
 
                 <div className="rounded-[28px] border border-border-light bg-card/70 backdrop-blur-xl p-6">
                   <div className="flex items-center justify-between mb-5">
@@ -458,16 +423,6 @@ export default function PremiumProfilePage() {
                   </div>
 
                   <div className="space-y-3">
-                    <QuickAction
-                      icon={<Settings size={16} />}
-                      label="Preferences"
-                      onClick={() => router.push('/settings')}
-                    />
-                    <QuickAction
-                      icon={<Wallet size={16} />}
-                      label="Wallet Setup"
-                      onClick={() => router.push('/welcome')}
-                    />
                     <QuickAction
                       icon={<LayoutGrid size={16} />}
                       label="Explore NFTs"
@@ -498,18 +453,6 @@ function StatusRow({ icon, label, value }) {
         <span className="text-sm text-muted">{label}</span>
       </div>
       <span className="text-sm font-medium">{value}</span>
-    </div>
-  )
-}
-
-function InfoPanel({ icon, title, text }) {
-  return (
-    <div className="rounded-2xl border border-border-light bg-surface2/40 p-4">
-      <div className="w-10 h-10 rounded-xl bg-accent/10 text-accent flex items-center justify-center mb-3">
-        {icon}
-      </div>
-      <h4 className="font-semibold mb-2">{title}</h4>
-      <p className="text-sm text-muted leading-relaxed">{text}</p>
     </div>
   )
 }

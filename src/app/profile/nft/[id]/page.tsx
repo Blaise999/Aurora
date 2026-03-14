@@ -22,7 +22,7 @@ import { getExplorerUrl } from '@/lib/web3/contract'
 export default function ProfileNftDetailPage() {
   const params = useParams()
   const router = useRouter()
-  const nftId = params?.id
+  const collectionRowId = params?.id
 
   const { address, isConnected } = useAccount()
   const { profile, isLoggedIn } = useSession()
@@ -34,37 +34,49 @@ export default function ProfileNftDetailPage() {
   const explorerUrl = getExplorerUrl()
 
   useEffect(() => {
-    if (!isLoggedIn) {
+    if (isLoggedIn === false) {
       router.push('/login')
-      return
     }
   }, [isLoggedIn, router])
 
   useEffect(() => {
-    if (!isLoggedIn || !profile?.id || !nftId) return
+    if (!collectionRowId || isLoggedIn !== true) return
 
     async function loadOwnedNft() {
       setLoading(true)
+
       try {
-        const res = await fetch(`/api/user/collections/${nftId}`)
+        const res = await fetch(`/api/user/collections/${collectionRowId}`)
         const json = await res.json()
 
         if (!res.ok || !json?.nft) {
-          router.push('/profile')
+          setNft(null)
           return
         }
 
         setNft(json.nft)
       } catch (err) {
         console.error('Failed to load NFT:', err)
-        router.push('/profile')
+        setNft(null)
       } finally {
         setLoading(false)
       }
     }
 
     loadOwnedNft()
-  }, [isLoggedIn, profile?.id, nftId, router])
+  }, [collectionRowId, isLoggedIn])
+
+  const parsedAttributes = useMemo(() => {
+    if (!nft?.attributes) return []
+    if (Array.isArray(nft.attributes)) return nft.attributes
+
+    try {
+      const parsed = JSON.parse(nft.attributes)
+      return Array.isArray(parsed) ? parsed : []
+    } catch {
+      return []
+    }
+  }, [nft])
 
   const nftName = nft?.nft_name || nft?.name || `Token #${nft?.token_id || ''}`
   const nftImage = nft?.image_url || nft?.image || '/placeholder-nft.png'
@@ -83,7 +95,7 @@ export default function ProfileNftDetailPage() {
       ? `${explorerUrl}/token/${nft.contract_address}?a=${nft.token_id}`
       : null
 
-  if (!isLoggedIn) return null
+  if (isLoggedIn === false) return null
 
   return (
     <PageShell>
@@ -143,10 +155,12 @@ export default function ProfileNftDetailPage() {
             <div className="max-w-xl mx-auto rounded-2xl border border-danger/20 bg-danger/10 p-6 text-center">
               <AlertTriangle className="mx-auto mb-3 text-danger" />
               <p className="font-medium text-danger">NFT not found</p>
+              <p className="text-sm text-muted mt-2">
+                This item may not belong to this user, or the collection row id is wrong.
+              </p>
             </div>
           ) : (
             <div className="grid lg:grid-cols-5 gap-6 lg:gap-10">
-              {/* LEFT */}
               <div className="lg:col-span-3 space-y-6">
                 <div
                   className={`relative rounded-card overflow-hidden border border-border-light shadow-card ${
@@ -199,7 +213,7 @@ export default function ProfileNftDetailPage() {
 
                     <div className="flex flex-wrap gap-2 mt-4">
                       <span className="px-3 py-1 rounded-pill bg-accent/10 text-xs text-accent font-medium border border-accent/20">
-                        {nft.tokenType || 'ERC-721'}
+                        {nft.token_type || nft.tokenType || 'ERC-721'}
                       </span>
                       <span className="px-3 py-1 rounded-pill bg-accent-violet/10 text-xs text-accent-violet font-medium border border-accent-violet/20">
                         {chainLabel}
@@ -250,13 +264,13 @@ export default function ProfileNftDetailPage() {
                     </div>
                   </div>
 
-                  {nft.attributes?.length > 0 && (
+                  {parsedAttributes.length > 0 && (
                     <div className="rounded-card bg-surface2 border border-border-light p-5 sm:p-6">
                       <h3 className="font-display font-semibold text-sm uppercase tracking-wider text-muted mb-4">
                         Attributes
                       </h3>
                       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                        {nft.attributes.map((a, i) => (
+                        {parsedAttributes.map((a, i) => (
                           <div
                             key={i}
                             className="rounded-xl bg-accent/5 border border-accent/10 p-3 text-center"
@@ -273,7 +287,6 @@ export default function ProfileNftDetailPage() {
                 </div>
               </div>
 
-              {/* RIGHT */}
               <div className="lg:col-span-2 space-y-6">
                 <div className="lg:sticky lg:top-24">
                   <div className="glass-card rounded-card p-6 sm:p-8 space-y-6">
@@ -312,6 +325,13 @@ export default function ProfileNftDetailPage() {
                       <div className="flex justify-between text-sm">
                         <span className="text-muted">Network</span>
                         <span className="text-text font-mono">{chainLabel}</span>
+                      </div>
+
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted">Portfolio Value</span>
+                        <span className="text-text font-semibold">
+                          {Number(nft.total_value_eth || 0).toFixed(3)} ETH
+                        </span>
                       </div>
 
                       {nft.assigned_at && (
