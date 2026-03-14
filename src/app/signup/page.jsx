@@ -1,48 +1,80 @@
-'use client';
+"use client";
 
-import { useState, useRef } from 'react';
-import { useRouter } from 'next/navigation';
-import Image from 'next/image';
-import { Mail, User, ArrowRight, Loader2, Sparkles } from 'lucide-react';
-import { useSession } from '@/hooks/useSession';
+import { useState, useRef } from "react";
+import { useRouter } from "next/navigation";
+import {
+  Mail,
+  User,
+  ArrowRight,
+  Loader2,
+  Sparkles,
+  Globe,
+  AtSign,
+} from "lucide-react";
+
+import { useSession } from "@/hooks/useSession";
 
 export default function SignupPage() {
   const router = useRouter();
   const { isLoggedIn } = useSession();
 
-  const [step, setStep] = useState('info'); // info | otp | success
-  const [email, setEmail] = useState('');
-  const [firstName, setFirstName] = useState('');
-  const [username, setUsername] = useState('');
-  const [otp, setOtp] = useState(['', '', '', '', '', '']);
+  const [step, setStep] = useState("info");
+
+  const [email, setEmail] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [username, setUsername] = useState("");
+
+  // UI only fields
+  const [lastName, setLastName] = useState("");
+  const [country, setCountry] = useState("");
+  const [twitter, setTwitter] = useState("");
+  const [bio, setBio] = useState("");
+
+  const [otp, setOtp] = useState(["", "", "", "", "", ""]);
+
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
+
   const otpRefs = useRef([]);
 
   if (isLoggedIn) {
-    router.replace('/profile');
+    router.replace("/profile");
     return null;
   }
 
   const handleSignupStart = async (e) => {
     e.preventDefault();
-    if (!email.includes('@') || !firstName.trim()) {
-      setError('Email and first name are required');
+
+    if (!email.includes("@") || !firstName.trim()) {
+      setError("Email and first name are required");
       return;
     }
+
     setLoading(true);
-    setError('');
+    setError("");
 
     try {
-      const res = await fetch('/api/auth/signup', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, firstName, username }),
+      const res = await fetch("/api/auth/signup", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email,
+          firstName,
+          username,
+        }),
       });
+
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed');
-      setStep('otp');
-      setTimeout(() => otpRefs.current[0]?.focus(), 100);
+
+      if (!res.ok) throw new Error(data.error || "Signup failed");
+
+      setStep("otp");
+
+      setTimeout(() => {
+        otpRefs.current[0]?.focus();
+      }, 100);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -50,117 +82,308 @@ export default function SignupPage() {
     }
   };
 
-  // handleOtpChange, handleOtpKeyDown, handleOtpPaste – copy from login page
+  const handleOtpChange = (index, value) => {
+    if (!/^\d*$/.test(value)) return;
+
+    const newOtp = [...otp];
+    newOtp[index] = value.slice(-1);
+    setOtp(newOtp);
+
+    if (value && index < 5) {
+      otpRefs.current[index + 1]?.focus();
+    }
+
+    if (newOtp.every((d) => d !== "")) {
+      handleVerifyOtp(newOtp.join(""));
+    }
+  };
+
+  const handleOtpKeyDown = (index, e) => {
+    if (e.key === "Backspace" && !otp[index] && index > 0) {
+      otpRefs.current[index - 1]?.focus();
+    }
+  };
+
+  const handleOtpPaste = (e) => {
+    e.preventDefault();
+
+    const text = e.clipboardData.getData("text").trim();
+
+    if (!/^\d{6}$/.test(text)) return;
+
+    const newOtp = text.split("");
+
+    setOtp(newOtp);
+
+    handleVerifyOtp(text);
+  };
 
   const handleVerifyOtp = async (code) => {
     setLoading(true);
-    setError('');
-    try {
-      const res = await fetch('/api/auth/verify-otp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, code }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Invalid code');
+    setError("");
 
-      // refreshSession() if you have it
-      setStep('success');
+    try {
+      const res = await fetch("/api/auth/verify-otp", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email,
+          code,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) throw new Error(data.error || "Invalid code");
+
+      setStep("success");
+
       setTimeout(() => {
-        router.push('/connect-wallet'); // new users → connect wallet
-      }, 1500);
+        router.push("/connect-wallet");
+      }, 1600);
     } catch (err) {
       setError(err.message);
-      setOtp(['', '', '', '', '', '']);
+      setOtp(["", "", "", "", "", ""]);
     } finally {
       setLoading(false);
     }
   };
 
-  // ────────────────────────────────────────────────
-  // UI – very similar structure to login, but with extra fields in 'info' step
-  // ────────────────────────────────────────────────
-
   return (
-    <div className="min-h-[85vh] flex items-center justify-center px-4">
-      {/* background effects same as login */}
+    <div className="min-h-screen flex items-center justify-center px-4 py-12">
 
-      <div className="relative z-10 w-full max-w-md">
+      <div className="w-full max-w-lg">
+
         <div className="text-center mb-10">
-          <div className="relative w-28 h-28 mx-auto mb-4">
-            <Image src="/pictures/logo.png" alt="AuroraNft" fill className="object-contain drop-shadow-[0_0_30px_rgba(0,229,255,0.3)]" />
-          </div>
-          <h1 className="font-display font-extrabold text-3xl text-text">
-            {step === 'info' ? 'Create Account' : step === 'otp' ? 'Verify Email' : 'Welcome!'}
+          <h1 className="text-3xl font-bold text-text">
+            {step === "info"
+              ? "Create Your Account"
+              : step === "otp"
+              ? "Verify Your Email"
+              : "Welcome"}
           </h1>
-          <p className="text-muted text-sm mt-2">
-            {step === 'info' ? 'Join AuroraNft – it only takes a moment'
-             : step === 'otp' ? `Code sent to ${email}`
-             : 'Setting up your profile...'}
+
+          <p className="text-sm text-muted mt-2">
+            {step === "info"
+              ? "Join the platform and start exploring digital assets"
+              : step === "otp"
+              ? `Enter the code sent to ${email}`
+              : "Preparing your wallet connection"}
           </p>
         </div>
 
-        <div className="glass-strong rounded-2xl p-8 space-y-6">
-          {step === 'info' && (
+        <div className="rounded-2xl border border-border-light bg-surface p-8 space-y-6">
+
+          {step === "info" && (
             <form onSubmit={handleSignupStart} className="space-y-5">
-              <div className="space-y-2">
-                <label className="text-xs text-muted-dim font-medium uppercase tracking-wider">First Name</label>
-                <div className="relative">
-                  <User size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-dim" />
+
+              <div className="grid grid-cols-2 gap-4">
+
+                <div>
+                  <label className="text-xs text-muted uppercase tracking-wider">
+                    First Name
+                  </label>
+
+                  <div className="relative mt-1">
+                    <User size={16} className="absolute left-3 top-3 text-muted" />
+
+                    <input
+                      value={firstName}
+                      onChange={(e) => setFirstName(e.target.value)}
+                      className="w-full pl-9 pr-3 py-2.5 rounded-lg bg-surface2 border border-border-light text-sm"
+                      placeholder="Alex"
+                      autoFocus
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-xs text-muted uppercase tracking-wider">
+                    Last Name
+                  </label>
+
                   <input
-                    value={firstName}
-                    onChange={(e) => setFirstName(e.target.value)}
-                    placeholder="Alex"
-                    className="w-full pl-12 pr-4 py-3.5 rounded-xl bg-surface2 border border-border-light text-text placeholder:text-muted-dim/50 focus:outline-none focus:border-accent/40 ..."
-                    autoFocus
+                    value={lastName}
+                    onChange={(e) => setLastName(e.target.value)}
+                    className="w-full mt-1 px-3 py-2.5 rounded-lg bg-surface2 border border-border-light text-sm"
+                    placeholder="Doe"
                   />
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <label className="text-xs text-muted-dim font-medium uppercase tracking-wider">Email</label>
-                <div className="relative">
-                  <Mail size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-dim" />
+              <div>
+                <label className="text-xs text-muted uppercase tracking-wider">
+                  Email
+                </label>
+
+                <div className="relative mt-1">
+                  <Mail size={16} className="absolute left-3 top-3 text-muted" />
+
                   <input
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="you@example.com"
-                    className="w-full pl-12 ..."
+                    className="w-full pl-9 pr-3 py-2.5 rounded-lg bg-surface2 border border-border-light text-sm"
+                    placeholder="you@email.com"
                   />
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <label className="text-xs text-muted-dim font-medium uppercase tracking-wider">Username (optional)</label>
+              <div>
+                <label className="text-xs text-muted uppercase tracking-wider">
+                  Username
+                </label>
+
+                <div className="relative mt-1">
+                  <AtSign size={16} className="absolute left-3 top-3 text-muted" />
+
+                  <input
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    className="w-full pl-9 pr-3 py-2.5 rounded-lg bg-surface2 border border-border-light text-sm"
+                    placeholder="username"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs text-muted uppercase tracking-wider">
+                  Country
+                </label>
+
+                <div className="relative mt-1">
+                  <Globe size={16} className="absolute left-3 top-3 text-muted" />
+
+                  <select
+                    value={country}
+                    onChange={(e) => setCountry(e.target.value)}
+                    className="w-full pl-9 pr-3 py-2.5 rounded-lg bg-surface2 border border-border-light text-sm"
+                  >
+                    <option value="">Select Country</option>
+                    <option>Nigeria</option>
+                    <option>United States</option>
+                    <option>United Kingdom</option>
+                    <option>Canada</option>
+                    <option>Germany</option>
+                    <option>France</option>
+                    <option>Brazil</option>
+                    <option>India</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs text-muted uppercase tracking-wider">
+                  Twitter / X
+                </label>
+
                 <input
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  placeholder="@yourhandle"
-                  className="w-full px-4 py-3.5 rounded-xl bg-surface2 border ..."
+                  value={twitter}
+                  onChange={(e) => setTwitter(e.target.value)}
+                  className="w-full mt-1 px-3 py-2.5 rounded-lg bg-surface2 border border-border-light text-sm"
+                  placeholder="@handle"
                 />
               </div>
 
-              {error && <p className="text-danger text-xs">{error}</p>}
+              <div>
+                <label className="text-xs text-muted uppercase tracking-wider">
+                  Bio
+                </label>
+
+                <textarea
+                  value={bio}
+                  onChange={(e) => setBio(e.target.value)}
+                  className="w-full mt-1 px-3 py-2.5 rounded-lg bg-surface2 border border-border-light text-sm resize-none"
+                  rows={3}
+                  placeholder="Tell us a little about yourself..."
+                />
+              </div>
+
+              {error && (
+                <p className="text-xs text-red-400">{error}</p>
+              )}
 
               <button
                 type="submit"
-                disabled={loading || !email || !firstName.trim()}
-                className="w-full py-3.5 rounded-xl bg-gradient-to-r from-accent to-accent-violet ..."
+                disabled={loading}
+                className="w-full py-3 rounded-lg bg-accent text-white flex items-center justify-center gap-2"
               >
-                {loading ? <Loader2 className="animate-spin" /> : <ArrowRight />}
-                {loading ? 'Creating...' : 'Sign Up'}
+                {loading ? (
+                  <Loader2 className="animate-spin" size={18} />
+                ) : (
+                  <ArrowRight size={18} />
+                )}
+                {loading ? "Creating Account..." : "Create Account"}
               </button>
             </form>
           )}
 
-          {/* OTP step – almost identical to login's OTP UI */}
-          {/* success step – same as login */}
+          {step === "otp" && (
+            <div className="space-y-6">
+
+              <div className="flex justify-center gap-3" onPaste={handleOtpPaste}>
+                {otp.map((digit, i) => (
+                  <input
+                    key={i}
+                    ref={(el) => (otpRefs.current[i] = el)}
+                    value={digit}
+                    onChange={(e) => handleOtpChange(i, e.target.value)}
+                    onKeyDown={(e) => handleOtpKeyDown(i, e)}
+                    maxLength={1}
+                    className="w-12 h-14 text-center text-xl font-bold rounded-lg bg-surface2 border border-border-light"
+                  />
+                ))}
+              </div>
+
+              {error && (
+                <p className="text-sm text-red-400 text-center">{error}</p>
+              )}
+
+              <button
+                onClick={() => handleVerifyOtp(otp.join(""))}
+                disabled={loading}
+                className="w-full py-3 rounded-lg bg-accent text-white flex items-center justify-center gap-2"
+              >
+                {loading ? (
+                  <Loader2 className="animate-spin" size={18} />
+                ) : (
+                  <ArrowRight size={18} />
+                )}
+                Verify Code
+              </button>
+
+            </div>
+          )}
+
+          {step === "success" && (
+            <div className="text-center py-8 space-y-4">
+
+              <Sparkles size={40} className="mx-auto text-accent" />
+
+              <h2 className="text-xl font-semibold">
+                Account Created
+              </h2>
+
+              <p className="text-sm text-muted">
+                Redirecting to wallet connection...
+              </p>
+
+              <Loader2 className="animate-spin mx-auto text-accent" />
+
+            </div>
+          )}
+
         </div>
 
         <p className="text-center text-sm text-muted mt-6">
-          Already have an account? <a href="/login" className="text-accent hover:underline">Log in</a>
+          Already have an account?{" "}
+          <a href="/login" className="text-accent hover:underline">
+            Log in
+          </a>
         </p>
+
       </div>
     </div>
   );
