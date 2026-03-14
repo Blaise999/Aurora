@@ -17,6 +17,7 @@ export async function POST(req: Request) {
 
     const body = await req.json();
     const { txHash, nftId, contractAddress, tokenId, pricePaid, priceEth, mintingFeeEth, name, description, imageUrl, ownerAddress } = body;
+
     wallet = wallet || ownerAddress || "";
     if (!wallet) return NextResponse.json({ error: "No wallet" }, { status: 401 });
     if (!txHash) return NextResponse.json({ error: "Missing txHash" }, { status: 400 });
@@ -60,7 +61,7 @@ export async function POST(req: Request) {
       status: "confirmed",
     }, { onConflict: "tx_hash" });
 
-    // 3. Write to transactions table (with admin wallet)
+    // 3. Write to transactions table
     await sb.from("transactions").upsert({
       wallet_address: wallet.toLowerCase(),
       profile_id: profileId,
@@ -88,7 +89,7 @@ export async function POST(req: Request) {
       }, { onConflict: "chain_id,contract_address,token_id" });
     }
 
-    // 5. Admin notification
+    // 5. Admin notification (DB)
     await sb.from("admin_notifications").insert({
       type: "mint",
       title: "New Purchase!",
@@ -96,7 +97,7 @@ export async function POST(req: Request) {
       metadata: { txHash, tokenId: tid, wallet, total },
     });
 
-    // 6. Ntfy push
+    // 6. Ntfy push (success)
     await sendNtfyNotification({
       title: "💰 New NFT Purchase!",
       message: `NFT #${tid} (${name || "—"}) by ${wallet}\nTotal: ${total} ETH\nTx: ${txHash}`,
@@ -123,14 +124,20 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, success: true, tokenId: tid, txHash });
   } catch (e: any) {
     console.error("[/api/nft/buy]", e);
+
+    // 6. Ntfy push (error) – FIXED + wrapped in try/catch
     try {
       await sendNtfyNotification({
         title: "❌ Purchase Failed",
-        message: `Error: ${e?.message}`,
+        message: `Error: ${e?.message || "Unknown error"}`,
         priority: "high",
         tags: ["warning"],
+        click: "/admin",
       });
-    } catch {}
+    } catch (ntfyErr) {
+      console.warn("[ntfy error notification failed]", ntfyErr);
+    }
+
     return NextResponse.json({ error: e?.message || "Failed" }, { status: 500 });
   }
 }
