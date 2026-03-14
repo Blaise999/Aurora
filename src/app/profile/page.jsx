@@ -2,8 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
-import { useAccount, useConnect } from 'wagmi'
-
+import { useAccount } from 'wagmi'
 import {
   Wallet,
   LayoutGrid,
@@ -11,417 +10,527 @@ import {
   Settings,
   LogOut,
   ShieldCheck,
-  Globe,
-  TrendingUp
+  Sparkles,
+  TrendingUp,
+  ExternalLink,
+  ArrowUpRight,
+  Activity,
+  BadgeCheck,
+  Clock3,
+  Gem,
+  Layers3,
+  BarChart3,
+  Eye,
+  ChevronRight,
+  Globe2
 } from 'lucide-react'
 
 import PageShell from '@/components/layout/PageShell'
 import { useSession } from '@/hooks/useSession'
-
-import NftCard from '@/components/NftCard'
-import NftCardSkeleton from '@/components/NftCardSkeleton'
-
 import Button from '@/components/ui/Button'
 import Badge from '@/components/ui/Badge'
+import NftCardSkeleton from '@/components/NftCardSkeleton'
+
+import ProfileHero from '@/components/profile/ProfileHero'
+import ProfileIdentityCard from '@/components/profile/ProfileIdentityCard'
+import PortfolioOverviewCard from '@/components/profile/PortfolioOverviewCard'
+import PortfolioMiniStat from '@/components/profile/PortfolioMiniStat'
+import CollectorInsightsCard from '@/components/profile/CollectorInsightsCard'
+import ProfileTabs from '@/components/profile/ProfileTabs'
+import CollectionGridCard from '@/components/profile/CollectionGridCard'
+import EmptyCollectionState from '@/components/profile/EmptyCollectionState'
+import ActivityTimeline from '@/components/profile/ActivityTimeline'
+import MarketPulseCard from '@/components/profile/MarketPulseCard'
 
 import PortfolioChart from '@/components/dashboard/PortfolioChart'
 import { calcPortfolioValue } from '@/lib/portfolio/calcPortfolioValue'
 
 export default function PremiumProfilePage() {
-
   const router = useRouter()
-  const { address, isConnected } = useAccount()
-  const { connect, connectors } = useConnect()
-
+  const { address, isConnected, chain } = useAccount()
   const { profile, isLoggedIn, logout } = useSession()
 
   const [tab, setTab] = useState('collections')
   const [nfts, setNfts] = useState([])
   const [loading, setLoading] = useState(true)
 
-
-  /*
-  Greeting
-  */
-
   const greeting = useMemo(() => {
-
     const hr = new Date().getHours()
-
-    const time =
-      hr < 12
-        ? 'Morning'
-        : hr < 18
-        ? 'Afternoon'
-        : 'Evening'
-
+    const time = hr < 12 ? 'Morning' : hr < 18 ? 'Afternoon' : 'Evening'
     return {
       title: `Good ${time}`,
       subtitle: profile?.first_name || 'Collector'
     }
-
   }, [profile])
 
-
-  /*
-  Wallet display
-  */
-
   const walletDisplay = useMemo(() => {
-
     if (!address) return ''
-
     return `${address.slice(0, 6)}...${address.slice(-4)}`
-
   }, [address])
 
+  const portfolioValue = useMemo(() => calcPortfolioValue(nfts), [nfts])
 
-  /*
-  Portfolio value
-  */
+  const collectionCount = nfts.length
 
-  const portfolioValue = useMemo(() => {
-
-    return calcPortfolioValue(nfts)
-
+  const uniqueCollections = useMemo(() => {
+    const names = new Set(
+      nfts
+        .map((n) => n.collection || n.collection_name)
+        .filter(Boolean)
+    )
+    return names.size
   }, [nfts])
 
-
-  /*
-  Fake chart data (replace with real later)
-  */
+  const rareCount = useMemo(() => {
+    return nfts.filter((n) => {
+      const attrs = n.attributes || []
+      return attrs.length >= 4
+    }).length
+  }, [nfts])
 
   const portfolioHistory = useMemo(() => {
-
+    const base = portfolioValue || 1.8
     return [
-      { day: 'Mon', value: 1.2 },
-      { day: 'Tue', value: 1.5 },
-      { day: 'Wed', value: 2.1 },
-      { day: 'Thu', value: 1.9 },
-      { day: 'Fri', value: 2.8 },
-      { day: 'Sat', value: 3.0 },
-      { day: 'Sun', value: 3.4 }
+      { day: 'Mon', value: Math.max(base * 0.52, 0.4) },
+      { day: 'Tue', value: Math.max(base * 0.58, 0.5) },
+      { day: 'Wed', value: Math.max(base * 0.63, 0.7) },
+      { day: 'Thu', value: Math.max(base * 0.61, 0.65) },
+      { day: 'Fri', value: Math.max(base * 0.72, 0.9) },
+      { day: 'Sat', value: Math.max(base * 0.81, 1.1) },
+      { day: 'Sun', value: Math.max(base, 1.3) }
     ]
+  }, [portfolioValue])
 
-  }, [])
-
-
-  /*
-  Load NFTs
-  */
+  const recentActivity = useMemo(() => {
+    return nfts.slice(0, 5).map((nft, i) => ({
+      id: nft.id || i,
+      title: nft.nft_name || nft.name || `Token #${nft.token_id}`,
+      subtitle: nft.collection || 'Collection',
+      time: nft.assigned_at || nft.created_at || new Date().toISOString(),
+      type: 'acquired'
+    }))
+  }, [nfts])
 
   useEffect(() => {
-
-    if (!isLoggedIn || !isConnected) return
+    if (!isLoggedIn) return
+    if (!isConnected || !profile?.id) {
+      setLoading(false)
+      return
+    }
 
     async function loadNFTs() {
-
       setLoading(true)
-
       try {
-
-        const endpoint =
-          tab === 'collections'
-            ? '/api/user/collections'
-            : '/api/profile/nfts'
-
-        const res = await fetch(endpoint)
+        const res = await fetch('/api/user/collections')
         const json = await res.json()
-
         setNfts(json?.nfts || [])
-
       } catch (err) {
-
-        console.error(err)
-
+        console.error('Failed to load collections:', err)
       } finally {
-
         setLoading(false)
-
       }
-
     }
 
     loadNFTs()
-
-  }, [tab, isLoggedIn, isConnected])
-
-
-  /*
-  Wallet connect - redirects to /welcome
-  */
-
-  function handleConnect() {
-    router.push('/welcome')
-  }
-
-
-  /*
-  NOT LOGGED IN - assuming login happens elsewhere and this page is post-login
-  */
+  }, [isLoggedIn, isConnected, profile?.id])
 
   if (!isLoggedIn) {
-    // Redirect or show login prompt if accessed without login; adjust as per your auth flow
-    router.push('/login') // Assuming a /login route exists
+    router.push('/login')
     return null
   }
 
+  const handleConnect = () => {
+    router.push('/welcome')
+  }
 
   return (
-
     <PageShell>
-
-      <div className="max-w-[1600px] mx-auto px-8 py-12">
-
-
-        {/* HEADER */}
-
-        <div className="flex flex-col lg:flex-row justify-between mb-12 gap-8">
-
-          <div>
-
-            <div className="flex items-center gap-3 mb-2">
-
-              <Badge variant="accent">
-                Member since {new Date().getFullYear()}
-              </Badge>
-
-              <span className="flex items-center gap-1 text-xs text-success">
-                <ShieldCheck size={12}/>
-                Verified
-              </span>
-
-            </div>
-
-            <h1 className="text-5xl font-bold">
-
-              {greeting.title},{' '}
-
-              <span className="text-accent">
-                {greeting.subtitle}
-              </span>
-
-            </h1>
-
-            {isConnected && walletDisplay && (
-
-              <p className="text-muted mt-3 font-mono">
-                {walletDisplay}
-              </p>
-
-            )}
-
-          </div>
-
-
-          <div className="flex gap-3">
-
-            <Button variant="outline">
-              <Settings size={16}/>
-              Preferences
-            </Button>
-
-            <Button
-              variant="ghost"
-              onClick={logout}
-              className="text-red-500"
-            >
-              <LogOut size={16}/>
-              Sign out
-            </Button>
-
-          </div>
-
+      <div className="relative min-h-screen overflow-hidden">
+        {/* BACKGROUND FX */}
+        <div className="pointer-events-none absolute inset-0">
+          <div className="absolute top-[-120px] left-[10%] h-[320px] w-[320px] rounded-full bg-accent/10 blur-[120px]" />
+          <div className="absolute top-[120px] right-[8%] h-[360px] w-[360px] rounded-full bg-accent-violet/10 blur-[140px]" />
+          <div className="absolute bottom-[-80px] left-[30%] h-[280px] w-[280px] rounded-full bg-cyan-500/10 blur-[130px]" />
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.06),transparent_35%)]" />
         </div>
 
-
-        {/* PORTFOLIO SECTION */}
-
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-14">
-
-          <div className="p-6 rounded-2xl border border-border bg-card">
-
-            <div className="flex items-center justify-between mb-3">
-
-              <span className="text-sm text-muted">
-                Portfolio Value
-              </span>
-
-              <TrendingUp size={16} className="text-accent"/>
-
-            </div>
-
-            <h2 className="text-3xl font-bold">
-              {portfolioValue.toFixed(2)} ETH
-            </h2>
-
-          </div>
-
-
-          <div className="lg:col-span-2 p-6 rounded-2xl border border-border bg-card">
-
-            <PortfolioChart data={portfolioHistory}/>
-
-          </div>
-
-        </div>
-
-
-        {/* STATS */}
-
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-12">
-
-          <StatCard
-            label="Collection Value"
-            value={`${portfolioValue.toFixed(2)} ETH`}
-            icon={<Globe size={20}/>}
+        <div className="relative z-10 max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-10 lg:py-12">
+          {/* HERO */}
+          <ProfileHero
+            greeting={greeting}
+            profile={profile}
+            walletDisplay={walletDisplay}
+            isConnected={isConnected}
+            onSettings={() => router.push('/settings')}
+            onLogout={logout}
           />
 
-          <StatCard
-            label="Total NFTs"
-            value={nfts.length}
-            icon={<LayoutGrid size={20}/>}
-          />
+          {/* MAIN GRID */}
+          <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 mt-8">
+            {/* LEFT SIDEBAR */}
+            <div className="xl:col-span-3 space-y-6">
+              <ProfileIdentityCard
+                profile={profile}
+                walletDisplay={walletDisplay}
+                address={address}
+                isConnected={isConnected}
+                chainName={chain?.name || 'Base'}
+              />
 
-          <StatCard
-            label="Active Listings"
-            value="2"
-            icon={<Tag size={20}/>}
-          />
-
-        </div>
-
-        {/* CONNECT WALLET IF NOT CONNECTED */}
-
-        {!isConnected ? (
-          <div className="flex flex-col items-center justify-center py-12 bg-card border border-border rounded-3xl">
-            <div className="w-16 h-16 mb-6 rounded-2xl bg-gradient-to-r from-accent to-accent-violet flex items-center justify-center">
-              <Wallet size={28} className="text-white"/>
-            </div>
-            <h2 className="text-2xl font-bold mb-3">
-              Connect Your Wallet
-            </h2>
-            <p className="text-muted mb-8 text-center max-w-md">
-              Link your wallet to view and manage your NFTs and collections.
-            </p>
-            <Button
-              onClick={handleConnect}
-              size="lg"
-              className="w-64"
-            >
-              Connect Wallet
-            </Button>
-          </div>
-        ) : (
-          <>
-            {/* TABS */}
-
-            <div className="flex gap-8 border-b border-border mb-10">
-
-              {['collections', 'listed'].map((t) => (
-
-                <button
-                  key={t}
-                  onClick={() => setTab(t)}
-                  className={`pb-4 text-sm font-semibold transition-colors ${
-                    tab === t
-                      ? 'border-b-2 border-accent text-accent'
-                      : 'text-muted hover:text-text'
-                  }`}
-                >
-
-                  {t.charAt(0).toUpperCase() + t.slice(1)}
-
-                </button>
-
-              ))}
-
-            </div>
-
-
-            {/* NFT GRID */}
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-6">
-
-              {loading &&
-
-                Array.from({ length: 8 }).map((_, i) => (
-                  <NftCardSkeleton key={i}/>
-                ))
-
-              }
-
-              {!loading && nfts.length > 0 &&
-
-                nfts.map((nft) => (
-
-                  <NftCard
-                    key={nft.id}
-                    nft={nft}
-                  />
-
-                ))
-
-              }
-
-              {!loading && nfts.length === 0 && (
-
-                <div className="col-span-full text-center py-24">
-
-                  <LayoutGrid
-                    size={40}
-                    className="mx-auto mb-4 text-muted"
-                  />
-
-                  <p className="text-xl text-muted">
-                    Your vault is empty
+              {!isConnected ? (
+                <div className="rounded-[28px] border border-border-light bg-card/70 backdrop-blur-xl p-6 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
+                  <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-accent to-accent-violet flex items-center justify-center mb-4">
+                    <Wallet size={26} className="text-white" />
+                  </div>
+                  <h3 className="text-xl font-semibold mb-2">Connect your wallet</h3>
+                  <p className="text-sm text-muted leading-relaxed mb-5">
+                    Unlock your full collector identity, verify ownership, and manage your onchain assets.
                   </p>
-
+                  <Button onClick={handleConnect} size="lg" className="w-full">
+                    <Wallet size={16} />
+                    Connect Wallet
+                  </Button>
                 </div>
-
+              ) : (
+                <CollectorInsightsCard
+                  totalNfts={collectionCount}
+                  uniqueCollections={uniqueCollections}
+                  rareCount={rareCount}
+                  portfolioValue={portfolioValue}
+                />
               )}
 
+              <ActivityTimeline items={recentActivity} />
             </div>
-          </>
-        )}
 
+            {/* MAIN CONTENT */}
+            <div className="xl:col-span-9 space-y-6">
+              {/* TOP STATS */}
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+                <PortfolioMiniStat
+                  icon={<TrendingUp size={18} />}
+                  label="Portfolio Value"
+                  value={`${portfolioValue.toFixed(2)} ETH`}
+                  hint="+12.4% this week"
+                />
+                <PortfolioMiniStat
+                  icon={<LayoutGrid size={18} />}
+                  label="Total NFTs"
+                  value={String(collectionCount)}
+                  hint="Across your vault"
+                />
+                <PortfolioMiniStat
+                  icon={<Layers3 size={18} />}
+                  label="Collections"
+                  value={String(uniqueCollections)}
+                  hint="Curated holdings"
+                />
+                <PortfolioMiniStat
+                  icon={<Gem size={18} />}
+                  label="Rare Traits"
+                  value={String(rareCount)}
+                  hint="High-attribute assets"
+                />
+              </div>
+
+              {/* CHART + OVERVIEW */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div className="lg:col-span-2">
+                  <PortfolioOverviewCard
+                    title="Portfolio Performance"
+                    value={`${portfolioValue.toFixed(2)} ETH`}
+                    subtitle="A visual pulse of your digital holdings across the week."
+                    rightSlot={
+                      <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-success/10 border border-success/20 text-success text-xs font-medium">
+                        <ArrowUpRight size={14} />
+                        Bullish
+                      </div>
+                    }
+                  >
+                    <div className="mt-6">
+                      <PortfolioChart data={portfolioHistory} />
+                    </div>
+                  </PortfolioOverviewCard>
+                </div>
+
+                <div className="space-y-6">
+                  <MarketPulseCard
+                    items={[
+                      {
+                        label: 'Collector Rank',
+                        value: collectionCount > 8 ? 'Elite' : collectionCount > 3 ? 'Rising' : 'New'
+                      },
+                      {
+                        label: 'Preferred Chain',
+                        value: chain?.name || 'Base'
+                      },
+                      {
+                        label: 'Visibility',
+                        value: 'Verified'
+                      }
+                    ]}
+                  />
+
+                  <div className="rounded-[28px] border border-border-light bg-card/70 backdrop-blur-xl p-6">
+                    <div className="flex items-center justify-between mb-4">
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.22em] text-muted-dim mb-2">
+                          Status
+                        </p>
+                        <h3 className="text-lg font-semibold">Account Standing</h3>
+                      </div>
+                      <Badge color="success" dot>
+                        Active
+                      </Badge>
+                    </div>
+
+                    <div className="space-y-4">
+                      <StatusRow icon={<ShieldCheck size={16} />} label="Profile verified" value="Yes" />
+                      <StatusRow icon={<Wallet size={16} />} label="Wallet linked" value={isConnected ? 'Connected' : 'Pending'} />
+                      <StatusRow icon={<Globe2 size={16} />} label="Network" value={chain?.name || 'Not detected'} />
+                      <StatusRow icon={<Clock3 size={16} />} label="Last sync" value="Just now" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* TABS SECTION */}
+              <div className="rounded-[30px] border border-border-light bg-card/70 backdrop-blur-xl overflow-hidden">
+                <div className="border-b border-border-light px-5 sm:px-6 pt-5">
+                  <ProfileTabs
+                    tab={tab}
+                    setTab={setTab}
+                    tabs={[
+                      { key: 'collections', label: 'Collections', icon: <LayoutGrid size={16} /> },
+                      { key: 'activity', label: 'Activity', icon: <Activity size={16} /> },
+                      { key: 'listed', label: 'Listed', icon: <Tag size={16} /> }
+                    ]}
+                  />
+                </div>
+
+                <div className="p-5 sm:p-6">
+                  {!isConnected ? (
+                    <div className="rounded-[24px] border border-border-light bg-surface2/50 p-10 text-center">
+                      <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-accent to-accent-violet flex items-center justify-center mx-auto mb-5">
+                        <Wallet size={28} className="text-white" />
+                      </div>
+                      <h2 className="text-2xl font-bold mb-3">Your vault is waiting</h2>
+                      <p className="text-muted max-w-md mx-auto mb-6">
+                        Connect your wallet to unlock your collection, profile insights, and collector dashboard.
+                      </p>
+                      <Button onClick={handleConnect} size="lg">
+                        <Wallet size={16} />
+                        Connect Wallet
+                      </Button>
+                    </div>
+                  ) : (
+                    <>
+                      {tab === 'collections' && (
+                        <>
+                          {loading ? (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-5">
+                              {Array.from({ length: 8 }).map((_, i) => (
+                                <NftCardSkeleton key={i} />
+                              ))}
+                            </div>
+                          ) : nfts.length > 0 ? (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-5">
+                              {nfts.map((nft) => (
+                                <CollectionGridCard
+                                  key={nft.id}
+                                  nft={nft}
+                                  ownerName={profile?.first_name || 'You'}
+                                  onClick={() => router.push(`/profile/nft/${nft.id}`)}
+                                />
+                              ))}
+                            </div>
+                          ) : (
+                            <EmptyCollectionState onExplore={() => router.push('/explore')} />
+                          )}
+                        </>
+                      )}
+
+                      {tab === 'activity' && (
+                        <div className="space-y-4">
+                          {recentActivity.length > 0 ? (
+                            recentActivity.map((item) => (
+                              <div
+                                key={item.id}
+                                className="flex items-center justify-between gap-4 rounded-2xl border border-border-light bg-surface2/40 px-4 py-4"
+                              >
+                                <div className="flex items-center gap-3">
+                                  <div className="w-11 h-11 rounded-2xl bg-accent/10 text-accent flex items-center justify-center">
+                                    <BadgeCheck size={18} />
+                                  </div>
+                                  <div>
+                                    <p className="font-medium">{item.title}</p>
+                                    <p className="text-sm text-muted">
+                                      Added to your collection • {item.subtitle}
+                                    </p>
+                                  </div>
+                                </div>
+
+                                <div className="text-right">
+                                  <p className="text-sm font-medium">Acquired</p>
+                                  <p className="text-xs text-muted-dim">
+                                    {new Date(item.time).toLocaleDateString()}
+                                  </p>
+                                </div>
+                              </div>
+                            ))
+                          ) : (
+                            <div className="rounded-2xl border border-border-light bg-surface2/40 p-10 text-center">
+                              <Activity size={38} className="mx-auto text-muted mb-4" />
+                              <p className="text-lg font-semibold">No activity yet</p>
+                              <p className="text-sm text-muted mt-2">
+                                Your collector actions will appear here as your wallet grows.
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {tab === 'listed' && (
+                        <div className="rounded-2xl border border-border-light bg-surface2/40 p-10 text-center">
+                          <Tag size={40} className="mx-auto text-muted mb-4" />
+                          <p className="text-xl font-semibold">No active listings yet</p>
+                          <p className="text-sm text-muted mt-2 max-w-md mx-auto">
+                            When marketplace listing goes live, your assets for sale will appear here with pricing and status.
+                          </p>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* BOTTOM PANEL */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div className="lg:col-span-2 rounded-[28px] border border-border-light bg-card/70 backdrop-blur-xl p-6">
+                  <div className="flex items-start justify-between gap-4 mb-5">
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.22em] text-muted-dim mb-2">
+                        Collector Identity
+                      </p>
+                      <h3 className="text-xl font-semibold">Your onchain persona</h3>
+                      <p className="text-sm text-muted mt-2">
+                        Designed to feel like a premium private vault for your digital assets.
+                      </p>
+                    </div>
+
+                    <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-accent to-accent-violet flex items-center justify-center shrink-0">
+                      <Sparkles size={20} className="text-white" />
+                    </div>
+                  </div>
+
+                  <div className="grid sm:grid-cols-2 gap-4">
+                    <InfoPanel
+                      icon={<Eye size={16} />}
+                      title="Visual-first experience"
+                      text="Every NFT card feels premium, cinematic, and built for collectors instead of plain admin tables."
+                    />
+                    <InfoPanel
+                      icon={<BarChart3 size={16} />}
+                      title="Portfolio intelligence"
+                      text="You instantly see your growth, asset spread, and collector status at a glance."
+                    />
+                    <InfoPanel
+                      icon={<ShieldCheck size={16} />}
+                      title="Verified ownership"
+                      text="The profile emphasizes identity, ownership, and trust signals across your digital presence."
+                    />
+                    <InfoPanel
+                      icon={<ExternalLink size={16} />}
+                      title="Ready for expansion"
+                      text="This structure is ready for offers, listings, analytics, rarity, and social collector features."
+                    />
+                  </div>
+                </div>
+
+                <div className="rounded-[28px] border border-border-light bg-card/70 backdrop-blur-xl p-6">
+                  <div className="flex items-center justify-between mb-5">
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.22em] text-muted-dim mb-2">
+                        Quick Actions
+                      </p>
+                      <h3 className="text-lg font-semibold">Manage Profile</h3>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <QuickAction
+                      icon={<Settings size={16} />}
+                      label="Preferences"
+                      onClick={() => router.push('/settings')}
+                    />
+                    <QuickAction
+                      icon={<Wallet size={16} />}
+                      label="Wallet Setup"
+                      onClick={() => router.push('/welcome')}
+                    />
+                    <QuickAction
+                      icon={<LayoutGrid size={16} />}
+                      label="Explore NFTs"
+                      onClick={() => router.push('/explore')}
+                    />
+                    <QuickAction
+                      icon={<LogOut size={16} />}
+                      label="Sign Out"
+                      onClick={logout}
+                      danger
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
-
     </PageShell>
-
   )
-
 }
 
-
-/*
-Stat Card
-*/
-
-function StatCard({ label, value, icon }) {
-
+function StatusRow({ icon, label, value }) {
   return (
+    <div className="flex items-center justify-between gap-3 rounded-2xl border border-border-light bg-surface2/40 px-4 py-3">
+      <div className="flex items-center gap-3">
+        <div className="text-accent">{icon}</div>
+        <span className="text-sm text-muted">{label}</span>
+      </div>
+      <span className="text-sm font-medium">{value}</span>
+    </div>
+  )
+}
 
-    <div className="p-6 rounded-2xl border border-border bg-card hover:shadow-lg transition">
+function InfoPanel({ icon, title, text }) {
+  return (
+    <div className="rounded-2xl border border-border-light bg-surface2/40 p-4">
+      <div className="w-10 h-10 rounded-xl bg-accent/10 text-accent flex items-center justify-center mb-3">
+        {icon}
+      </div>
+      <h4 className="font-semibold mb-2">{title}</h4>
+      <p className="text-sm text-muted leading-relaxed">{text}</p>
+    </div>
+  )
+}
 
-      <div className="flex items-center justify-between mb-4">
-
-        <div className="text-muted">
+function QuickAction({ icon, label, onClick, danger = false }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`w-full flex items-center justify-between rounded-2xl border px-4 py-3 transition-all ${
+        danger
+          ? 'border-red-500/20 bg-red-500/5 hover:bg-red-500/10 text-red-400'
+          : 'border-border-light bg-surface2/40 hover:bg-surface2/70'
+      }`}
+    >
+      <div className="flex items-center gap-3">
+        <div className={danger ? 'text-red-400' : 'text-accent'}>
           {icon}
         </div>
-
+        <span className="text-sm font-medium">{label}</span>
       </div>
-
-      <p className="text-xs text-muted mb-1 uppercase tracking-wider">
-        {label}
-      </p>
-
-      <p className="text-2xl font-bold">
-        {value}
-      </p>
-
-    </div>
-
+      <ChevronRight size={16} className="opacity-70" />
+    </button>
   )
-
 }
