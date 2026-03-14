@@ -3,13 +3,14 @@
 import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
-import { Mail, ArrowRight, Loader2, ShieldCheck, Sparkles } from 'lucide-react';
+import { Mail, ArrowRight, Loader2, ShieldCheck, Sparkles, AlertCircle } from 'lucide-react';
 import { useSession } from '@/hooks/useSession';
 
 export default function LoginPage() {
   const router = useRouter();
   const { isLoggedIn, profile, refreshSession } = useSession();
-  const [step, setStep] = useState('email'); // email | otp | success
+
+  const [step, setStep] = useState('email'); // 'email' | 'otp' | 'success'
   const [email, setEmail] = useState('');
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
   const [loading, setLoading] = useState(false);
@@ -25,28 +26,35 @@ export default function LoginPage() {
         router.replace('/profile');
       }
     }
-  }, [isLoggedIn, profile, router]);
+  }, [isLoggedIn, profile?.wallet_address, router]);
 
   const handleSendOtp = async (e) => {
-    e?.preventDefault();
+    e.preventDefault();
     if (!email || !email.includes('@')) {
-      setError('Please enter a valid email');
+      setError('Please enter a valid email address');
       return;
     }
+
     setLoading(true);
     setError('');
+
     try {
       const res = await fetch('/api/auth/send-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email }),
       });
+
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to send OTP');
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to send verification code');
+      }
+
       setStep('otp');
-      setTimeout(() => otpRefs.current[0]?.focus(), 100);
+      setTimeout(() => otpRefs.current[0]?.focus(), 150);
     } catch (err) {
-      setError(err.message);
+      setError(err.message || 'Something went wrong. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -55,12 +63,17 @@ export default function LoginPage() {
   const handleOtpChange = (index, value) => {
     if (value.length > 1) value = value.slice(-1);
     if (value && !/^\d$/.test(value)) return;
+
     const newOtp = [...otp];
     newOtp[index] = value;
     setOtp(newOtp);
-    if (value && index < 5) otpRefs.current[index + 1]?.focus();
-    // Auto-submit when all 6 digits entered
-    if (value && index === 5 && newOtp.every(d => d)) {
+
+    if (value && index < 5) {
+      otpRefs.current[index + 1]?.focus();
+    }
+
+    // Auto-submit when complete
+    if (value && index === 5 && newOtp.every((d) => d)) {
       handleVerifyOtp(newOtp.join(''));
     }
   };
@@ -76,38 +89,58 @@ export default function LoginPage() {
   };
 
   const handleOtpPaste = (e) => {
-    const paste = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);
-    if (paste.length === 6) {
-      const newOtp = paste.split('');
+    e.preventDefault();
+    const pasted = e.clipboardData
+      .getData('text')
+      .replace(/\D/g, '')
+      .slice(0, 6);
+
+    if (pasted.length > 0) {
+      const newOtp = [...otp];
+      for (let i = 0; i < pasted.length && i < 6; i++) {
+        newOtp[i] = pasted[i];
+      }
       setOtp(newOtp);
-      otpRefs.current[5]?.focus();
-      setTimeout(() => handleVerifyOtp(paste), 100);
+
+      const nextFocus = Math.min(pasted.length, 5);
+      otpRefs.current[nextFocus]?.focus();
+
+      if (pasted.length === 6) {
+        setTimeout(() => handleVerifyOtp(pasted), 80);
+      }
     }
   };
 
   const handleVerifyOtp = async (code) => {
     setLoading(true);
     setError('');
+
     try {
       const res = await fetch('/api/auth/verify-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, code }),
       });
+
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Invalid code');
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Invalid or expired code');
+      }
+
+      // Success
       setStep('success');
-      await refreshSession();
-      // Route based on wallet status
+      await refreshSession?.();
+
       setTimeout(() => {
         if (data.profile?.walletAddress) {
           router.push('/profile');
         } else {
           router.push('/connect-wallet');
         }
-      }, 1500);
+      }, 1400);
     } catch (err) {
-      setError(err.message);
+      setError(err.message || 'Verification failed. Please try again.');
       setOtp(['', '', '', '', '', '']);
       otpRefs.current[0]?.focus();
     } finally {
@@ -116,69 +149,107 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-[85vh] flex items-center justify-center px-4">
-      {/* Background effects */}
+    <div className="min-h-screen flex items-center justify-center px-4 py-12 bg-gradient-to-b from-black to-zinc-950">
+      {/* Subtle background glows */}
       <div className="fixed inset-0 pointer-events-none">
-        <div className="absolute top-1/4 left-1/3 w-[600px] h-[600px] bg-accent/5 rounded-full blur-[200px]" />
-        <div className="absolute bottom-1/4 right-1/3 w-[500px] h-[500px] bg-accent-violet/5 rounded-full blur-[200px]" />
+        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-500/5 rounded-full blur-3xl" />
+        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-purple-500/5 rounded-full blur-3xl" />
       </div>
 
       <div className="relative z-10 w-full max-w-md">
-        {/* Logo */}
+        {/* Logo & Title */}
         <div className="text-center mb-10">
-          <div className="relative w-28 h-28 mx-auto mb-4">
-            <Image src="/pictures/logo.png" alt="AuroraNft" fill className="object-contain drop-shadow-[0_0_30px_rgba(0,229,255,0.3)]" />
+          <div className="relative w-24 h-24 mx-auto mb-6">
+            <Image
+              src="/pictures/logo.png"
+              alt="AuroraNft"
+              fill
+              className="object-contain drop-shadow-2xl drop-shadow-[0_0_40px_rgba(59,130,246,0.4)]"
+              priority
+            />
           </div>
-          <h1 className="font-display font-extrabold text-3xl text-text">
-            {step === 'email' ? 'Welcome' : step === 'otp' ? 'Check Your Email' : 'Welcome In!'}
+
+          <h1 className="text-4xl font-bold text-white tracking-tight">
+            {step === 'email' ? 'Welcome Back' : step === 'otp' ? 'Verify Email' : 'Success!'}
           </h1>
-          <p className="text-muted text-sm mt-2">
+
+          <p className="mt-3 text-zinc-400 text-base">
             {step === 'email'
-              ? 'Sign in or create your account with email'
+              ? 'Sign in to your account'
               : step === 'otp'
-                ? `We sent a 6-digit code to ${email}`
-                : 'Redirecting you...'}
+              ? `We sent a 6-digit code to ${email}`
+              : 'You’re being redirected...'}
           </p>
         </div>
 
-        {/* Card */}
-        <div className="glass-strong rounded-2xl p-8 space-y-6">
+        {/* Main Card */}
+        <div className="glass-strong rounded-3xl p-8 md:p-10 border border-zinc-800/50 shadow-2xl shadow-black/40 backdrop-blur-xl">
           {step === 'email' && (
-            <form onSubmit={handleSendOtp} className="space-y-5">
+            <form onSubmit={handleSendOtp} className="space-y-6">
               <div className="space-y-2">
-                <label className="text-xs text-muted-dim font-medium uppercase tracking-wider">Email Address</label>
+                <label className="block text-sm font-medium text-zinc-300">
+                  Email address
+                </label>
                 <div className="relative">
-                  <Mail size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-dim" />
+                  <Mail className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-zinc-500" />
                   <input
                     type="email"
                     value={email}
-                    onChange={(e) => { setEmail(e.target.value); setError(''); }}
-                    placeholder="you@example.com"
-                    className="w-full pl-12 pr-4 py-3.5 rounded-xl bg-surface2 border border-border-light text-text placeholder:text-muted-dim/50 focus:outline-none focus:border-accent/40 focus:ring-1 focus:ring-accent/20 transition-all text-sm"
+                    onChange={(e) => {
+                      setEmail(e.target.value);
+                      setError('');
+                    }}
+                    placeholder="name@example.com"
+                    className="w-full pl-12 pr-4 py-3.5 bg-zinc-900/60 border border-zinc-700 rounded-xl text-white placeholder:text-zinc-500 focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/30 transition-all"
                     autoFocus
                     autoComplete="email"
+                    disabled={loading}
                   />
                 </div>
               </div>
-              {error && <p className="text-danger text-xs font-medium">{error}</p>}
+
+              {error && (
+                <div className="flex items-center gap-2 text-red-400 text-sm bg-red-950/30 border border-red-800/40 rounded-lg p-3">
+                  <AlertCircle size={16} />
+                  <span>{error}</span>
+                </div>
+              )}
+
               <button
                 type="submit"
-                disabled={loading || !email}
-                className="w-full py-3.5 rounded-xl bg-gradient-to-r from-accent to-accent-violet text-bg font-display font-bold text-sm flex items-center justify-center gap-2 hover:opacity-90 disabled:opacity-50 transition-all"
+                disabled={loading || !email.trim()}
+                className="w-full py-3.5 px-6 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-medium rounded-xl shadow-lg shadow-blue-900/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
-                {loading ? <Loader2 size={16} className="animate-spin" /> : <ArrowRight size={16} />}
-                {loading ? 'Sending Code...' : 'Continue with Email'}
+                {loading ? (
+                  <>
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                    Sending code...
+                  </>
+                ) : (
+                  <>
+                    Continue
+                    <ArrowRight size={18} />
+                  </>
+                )}
               </button>
-              <div className="flex items-center gap-2 text-[11px] text-muted-dim justify-center">
-                <ShieldCheck size={12} />
-                <span>Secure login via one-time code. No password needed.</span>
+
+              <div className="text-center text-sm text-zinc-500 flex items-center justify-center gap-2 mt-4">
+                <ShieldCheck size={14} className="text-emerald-400" />
+                <span>Secure one-time code login • No password needed</span>
               </div>
+
+              <p className="text-center text-sm text-zinc-500 mt-6">
+                Don't have an account?{' '}
+                <a href="/signup" className="text-blue-400 hover:text-blue-300 font-medium">
+                  Sign up
+                </a>
+              </p>
             </form>
           )}
 
           {step === 'otp' && (
-            <div className="space-y-5">
-              <div className="flex justify-center gap-2" onPaste={handleOtpPaste}>
+            <div className="space-y-8">
+              <div className="flex justify-center gap-3 sm:gap-4" onPaste={handleOtpPaste}>
                 {otp.map((digit, i) => (
                   <input
                     key={i}
@@ -189,40 +260,57 @@ export default function LoginPage() {
                     value={digit}
                     onChange={(e) => handleOtpChange(i, e.target.value)}
                     onKeyDown={(e) => handleOtpKeyDown(i, e)}
-                    className="w-12 h-14 text-center text-xl font-mono font-bold rounded-xl bg-surface2 border border-border-light text-accent focus:outline-none focus:border-accent/50 focus:ring-1 focus:ring-accent/30 transition-all"
+                    className="w-14 h-14 text-center text-2xl font-bold bg-zinc-900/70 border border-zinc-700 rounded-xl text-white focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30 transition-all"
+                    disabled={loading}
                   />
                 ))}
               </div>
-              {error && <p className="text-danger text-xs font-medium text-center">{error}</p>}
-              {loading && (
-                <div className="flex items-center justify-center gap-2 text-accent text-sm">
-                  <Loader2 size={16} className="animate-spin" />
-                  <span>Verifying...</span>
+
+              {error && (
+                <div className="flex items-center justify-center gap-2 text-red-400 text-sm bg-red-950/30 border border-red-800/40 rounded-lg p-3">
+                  <AlertCircle size={16} />
+                  <span>{error}</span>
                 </div>
               )}
-              <button
-                onClick={() => { setStep('email'); setOtp(['', '', '', '', '', '']); setError(''); }}
-                className="text-xs text-muted hover:text-accent transition-colors mx-auto block"
-              >
-                ← Use a different email
-              </button>
-              <button
-                onClick={handleSendOtp}
-                disabled={loading}
-                className="text-xs text-muted hover:text-accent transition-colors mx-auto block disabled:opacity-50"
-              >
-                Resend code
-              </button>
+
+              {loading && (
+                <div className="flex items-center justify-center gap-3 text-blue-400">
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                  <span>Verifying code...</span>
+                </div>
+              )}
+
+              <div className="flex flex-col items-center gap-4 text-sm text-zinc-400">
+                <button
+                  onClick={() => {
+                    setStep('email');
+                    setOtp(['', '', '', '', '', '']);
+                    setError('');
+                  }}
+                  className="hover:text-white transition-colors"
+                >
+                  ← Use a different email
+                </button>
+
+                <button
+                  onClick={handleSendOtp}
+                  disabled={loading}
+                  className="hover:text-white transition-colors disabled:opacity-50"
+                >
+                  Resend code
+                </button>
+              </div>
             </div>
           )}
 
           {step === 'success' && (
-            <div className="text-center py-4 space-y-4">
-              <div className="w-16 h-16 rounded-full bg-success/10 border border-success/20 flex items-center justify-center mx-auto">
-                <Sparkles size={28} className="text-success" />
+            <div className="text-center py-10 space-y-6">
+              <div className="w-20 h-20 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center mx-auto">
+                <Sparkles className="h-10 w-10 text-emerald-400" />
               </div>
-              <p className="font-display font-bold text-lg text-text">You're in!</p>
-              <Loader2 size={20} className="animate-spin text-accent mx-auto" />
+              <h2 className="text-2xl font-bold text-white">You're in!</h2>
+              <p className="text-zinc-400">Redirecting you...</p>
+              <Loader2 className="h-8 w-8 animate-spin text-blue-400 mx-auto" />
             </div>
           )}
         </div>

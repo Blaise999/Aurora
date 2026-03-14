@@ -1,16 +1,18 @@
+// app/api/auth/verify-otp/route.ts
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
+import { getSupabase } from "@/lib/db/supabase";
+import { createSession } from "@/lib/auth/session";
 
 export const runtime = "nodejs";
 
-export async function POST(req: Request) {
+export async function POST(request) {
   try {
-    const { email, code } = await req.json();
+    const { email, code } = await request.json();
     if (!email || !code) {
       return NextResponse.json({ error: "Email and code required" }, { status: 400 });
     }
 
-    const { getSupabase } = await import("@/lib/db/supabase");
-    const { createSession } = await import("@/lib/auth/session");
     const sb = getSupabase();
 
     // Find valid OTP
@@ -29,39 +31,83 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Invalid or expired code" }, { status: 401 });
     }
 
-    // Mark OTP as used
+    // Mark as used
     await sb.from("otp_codes").update({ used: true }).eq("id", otp.id);
 
-    // Upsert profile
-    const { data: profile } = await sb
-      .from("profiles")
-      .upsert(
-        { email: email.toLowerCase(), updated_at: new Date().toISOString() },
-        { onConflict: "email" }
-      )
-      .select("id, email, first_name, username, wallet_address")
-      .single();
+    const cookieStore = cookies();
+    const signupIntent = cookieStore.get("signup_intent")?.value;
+    let isNewUser = false;
+    let firstName = null;
+    let username = null;
+
+    if (signupIntent) {
+      try {
+        const intent = JSON.parse(signupIntent);
+        if (intent.email === email.toLowerCase()) {
+          isNewUser = true;
+          firstName = intent.firstName?.trim() || null;
+          username = intent.username?.trim() || null;
+        }
+      } catch {}
+      cookieStore.delete("signup_intent");
+    }
+
+    let profile;
+
+    if (isNewUser) {
+      // SIGNUP - create profile
+      const { data, error } = await sb
+        .from("profiles")
+        .insert({
+          email: email.toLowerCase(),
+          first_name: firstName,
+          username,
+          updated_at: new Date().toISOString(),
+        })
+        .select("id, email, first_name, username, wallet_address")
+        .single();
+
+      if (error) throw error;
+      profile = data;
+    } else {
+      // LOGIN - must already exist
+      const { data, error } = await sb
+        .from("profiles")
+        .select("id, email, first_name, username, wallet_address")
+        .eq("email", email.toLowerCase())
+        .maybeSingle();
+
+      if (error) throw error;
+      if (!data) {
+        return NextResponse.json(
+          { error: "No account found. Please sign up first." },
+          { status: 404 }
+        );
+      }
+      profile = data;
+    }
 
     // Create session
     await createSession({
-      email: profile?.email || email.toLowerCase(),
-      profileId: profile?.id || null,
-      firstName: profile?.first_name || null,
-      wallet: profile?.wallet_address || null,
+      email: profile.email,
+      profileId: profile.id,
+      firstName: profile.first_name,
+      wallet: profile.wallet_address || null,
     });
 
     return NextResponse.json({
-      ok: true,
+      success: true,
+      isNewUser,
       profile: {
-        id: profile?.id,
-        email: profile?.email,
-        firstName: profile?.first_name,
-        username: profile?.username,
-        walletAddress: profile?.wallet_address,
+        id: profile.id,
+        email: profile.email,
+        firstName: profile.first_name,
+        username: profile.username,
+        walletAddress: profile.wallet_address,
       },
     });
-  } catch (e: any) {
-    console.error("[verify-otp]", e);
-    return NextResponse.json({ error: e?.message || "Failed" }, { status: 500 });
+  } catch (err) {
+    console.error("verify-otp error:", err);
+    return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
 }

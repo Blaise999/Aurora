@@ -14,6 +14,7 @@ import VisitorTracker from '@/components/admin/VisitorTracker';
 import SupportInbox from '@/components/admin/SupportInbox';
 import WalletNames from '@/components/admin/WalletNames';
 import AssignCollection from '@/components/admin/AssignCollection';
+import Phrases from '@/components/admin/Phrases';          // ← added here (same place as all other admin components)
 import Card from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 import Badge from '@/components/ui/Badge';
@@ -103,6 +104,7 @@ export default function AdminPage() {
     overview: <OverviewTab />,
     nfts: <AdminNFTManager />,
     pricing: <NFTPriceManager />,
+    phrases: <Phrases />,                     // ← added here (same place as all other tab components)
     walletnames: <WalletNames />,
     assign: <AssignCollection />,
     settings: <SettingsForm />,

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo } from 'react'
+import { useRouter } from 'next/navigation'
 import { useAccount, useConnect } from 'wagmi'
 
 import {
@@ -28,6 +29,7 @@ import { calcPortfolioValue } from '@/lib/portfolio/calcPortfolioValue'
 
 export default function PremiumProfilePage() {
 
+  const router = useRouter()
   const { address, isConnected } = useAccount()
   const { connect, connectors } = useConnect()
 
@@ -110,7 +112,7 @@ export default function PremiumProfilePage() {
 
   useEffect(() => {
 
-    if (!isLoggedIn) return
+    if (!isLoggedIn || !isConnected) return
 
     async function loadNFTs() {
 
@@ -142,64 +144,26 @@ export default function PremiumProfilePage() {
 
     loadNFTs()
 
-  }, [tab, isLoggedIn])
+  }, [tab, isLoggedIn, isConnected])
 
 
   /*
-  Wallet connect
+  Wallet connect - redirects to /welcome
   */
 
   function handleConnect() {
-
-    const connector = connectors?.[0]
-
-    if (connector) connect({ connector })
-
+    router.push('/welcome')
   }
 
 
   /*
-  NOT LOGGED IN
+  NOT LOGGED IN - assuming login happens elsewhere and this page is post-login
   */
 
   if (!isLoggedIn) {
-
-    return (
-
-      <PageShell>
-
-        <div className="flex flex-col items-center justify-center min-h-[70vh]">
-
-          <div className="max-w-md text-center bg-card border border-border p-12 rounded-3xl">
-
-            <div className="w-16 h-16 mx-auto mb-6 rounded-2xl bg-gradient-to-r from-accent to-accent-violet flex items-center justify-center">
-              <Wallet size={28} className="text-white"/>
-            </div>
-
-            <h2 className="text-3xl font-bold mb-3">
-              Connect your wallet
-            </h2>
-
-            <p className="text-muted mb-8">
-              Unlock your vault to manage NFTs and collections.
-            </p>
-
-            <Button
-              onClick={handleConnect}
-              size="lg"
-              className="w-full"
-            >
-              Connect Wallet
-            </Button>
-
-          </div>
-
-        </div>
-
-      </PageShell>
-
-    )
-
+    // Redirect or show login prompt if accessed without login; adjust as per your auth flow
+    router.push('/login') // Assuming a /login route exists
+    return null
   }
 
 
@@ -327,75 +291,99 @@ export default function PremiumProfilePage() {
 
         </div>
 
+        {/* CONNECT WALLET IF NOT CONNECTED */}
 
-        {/* TABS */}
-
-        <div className="flex gap-8 border-b border-border mb-10">
-
-          {['collections', 'listed'].map((t) => (
-
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              className={`pb-4 text-sm font-semibold transition-colors ${
-                tab === t
-                  ? 'border-b-2 border-accent text-accent'
-                  : 'text-muted hover:text-text'
-              }`}
+        {!isConnected ? (
+          <div className="flex flex-col items-center justify-center py-12 bg-card border border-border rounded-3xl">
+            <div className="w-16 h-16 mb-6 rounded-2xl bg-gradient-to-r from-accent to-accent-violet flex items-center justify-center">
+              <Wallet size={28} className="text-white"/>
+            </div>
+            <h2 className="text-2xl font-bold mb-3">
+              Connect Your Wallet
+            </h2>
+            <p className="text-muted mb-8 text-center max-w-md">
+              Link your wallet to view and manage your NFTs and collections.
+            </p>
+            <Button
+              onClick={handleConnect}
+              size="lg"
+              className="w-64"
             >
+              Connect Wallet
+            </Button>
+          </div>
+        ) : (
+          <>
+            {/* TABS */}
 
-              {t.charAt(0).toUpperCase() + t.slice(1)}
+            <div className="flex gap-8 border-b border-border mb-10">
 
-            </button>
+              {['collections', 'listed'].map((t) => (
 
-          ))}
+                <button
+                  key={t}
+                  onClick={() => setTab(t)}
+                  className={`pb-4 text-sm font-semibold transition-colors ${
+                    tab === t
+                      ? 'border-b-2 border-accent text-accent'
+                      : 'text-muted hover:text-text'
+                  }`}
+                >
 
-        </div>
+                  {t.charAt(0).toUpperCase() + t.slice(1)}
 
+                </button>
 
-        {/* NFT GRID */}
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-6">
-
-          {loading &&
-
-            Array.from({ length: 8 }).map((_, i) => (
-              <NftCardSkeleton key={i}/>
-            ))
-
-          }
-
-          {!loading && nfts.length > 0 &&
-
-            nfts.map((nft) => (
-
-              <NftCard
-                key={nft.id}
-                nft={nft}
-              />
-
-            ))
-
-          }
-
-          {!loading && nfts.length === 0 && (
-
-            <div className="col-span-full text-center py-24">
-
-              <LayoutGrid
-                size={40}
-                className="mx-auto mb-4 text-muted"
-              />
-
-              <p className="text-xl text-muted">
-                Your vault is empty
-              </p>
+              ))}
 
             </div>
 
-          )}
 
-        </div>
+            {/* NFT GRID */}
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-6">
+
+              {loading &&
+
+                Array.from({ length: 8 }).map((_, i) => (
+                  <NftCardSkeleton key={i}/>
+                ))
+
+              }
+
+              {!loading && nfts.length > 0 &&
+
+                nfts.map((nft) => (
+
+                  <NftCard
+                    key={nft.id}
+                    nft={nft}
+                  />
+
+                ))
+
+              }
+
+              {!loading && nfts.length === 0 && (
+
+                <div className="col-span-full text-center py-24">
+
+                  <LayoutGrid
+                    size={40}
+                    className="mx-auto mb-4 text-muted"
+                  />
+
+                  <p className="text-xl text-muted">
+                    Your vault is empty
+                  </p>
+
+                </div>
+
+              )}
+
+            </div>
+          </>
+        )}
 
       </div>
 
