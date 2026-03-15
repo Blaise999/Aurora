@@ -292,7 +292,7 @@ function MintPageContent() {
 
   const nftExplorerLink =
     currentContract && currentTokenId
-      ? `${explorerUrl}/nft/${currentContract}/${currentTokenId}`
+      ? `${explorerUrl}/token/${currentContract}?a=${currentTokenId}`
       : null;
 
   const contractExplorerLink = currentContract
@@ -427,7 +427,9 @@ function MintPageContent() {
                   >
                     <Heart
                       size={18}
-                      className={favorited ? "text-hot fill-hot" : "text-white/70"}
+                      className={
+                        favorited ? "text-hot fill-hot" : "text-white/70"
+                      }
                     />
                   </button>
                 )}
@@ -493,10 +495,7 @@ function MintPageContent() {
                       {
                         l: "Contract",
                         v: currentContract
-                          ? `${currentContract.slice(
-                              0,
-                              6
-                            )}...${currentContract.slice(-4)}`
+                          ? `${currentContract.slice(0, 6)}...${currentContract.slice(-4)}`
                           : "—",
                       },
                       { l: "Collection", v: dn.collection || "—" },
