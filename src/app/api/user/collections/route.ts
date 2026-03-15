@@ -59,22 +59,22 @@ export async function GET(req: Request) {
           nft_pricing (mint_price_eth, mint_fee_eth, is_featured, is_listed)
         )
       `)
-      .eq("profile_id", parseInt(profileId))
+      .eq("profile_id", Number(profileId))
       .order("assigned_at", { ascending: false });
 
-    if (error) throw error;
+    if (error) {
+      throw error;
+    }
 
-    const nfts = (data || []).map((item: any) => {
-      const cn = item.cached_nfts;
+    const nfts = (data || []).map((raw: any) => {
+      const item = raw as any;
+      const cn = item.cached_nfts as any;
       const pricing = Array.isArray(cn?.nft_pricing)
-        ? (cn.nft_pricing[0] || {})
-        : (cn?.nft_pricing || {});
+        ? (cn.nft_pricing[0] ?? {})
+        : (cn?.nft_pricing ?? {});
 
       return {
-        // KEEP THE REAL DB ROW ID
         id: item.id,
-
-        // optional extra aliases
         profile_id: item.profile_id,
         cached_nft_id: item.cached_nft_id,
 
@@ -112,7 +112,7 @@ export async function GET(req: Request) {
                 ? "Base Sepolia"
                 : `Chain ${item.chain_id}`),
 
-        // keep old aliases too if your frontend still uses some of them
+        // old aliases
         contractAddress: item.contract_address,
         tokenId: item.token_id,
         chainId: item.chain_id,
@@ -123,7 +123,6 @@ export async function GET(req: Request) {
         mintFee: item.mint_fee_eth ?? pricing?.mint_fee_eth ?? "0.001",
         source: "collection",
 
-        // helpful for debugging if needed
         route_id: item.id,
         composite_id: `${item.contract_address}_${item.token_id}`,
       };
@@ -131,6 +130,9 @@ export async function GET(req: Request) {
 
     return NextResponse.json({ nfts, total: nfts.length });
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message, nfts: [] }, { status: 500 });
+    return NextResponse.json(
+      { error: e?.message || "Failed to fetch collections", nfts: [] },
+      { status: 500 }
+    );
   }
 }
