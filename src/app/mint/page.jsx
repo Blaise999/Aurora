@@ -7,7 +7,7 @@ import Link from "next/link";
 import { useCachedNft, useSettings, useCachedNfts } from "@/hooks/useNfts";
 import { useBuy } from "@/hooks/useBuy";
 import { resolveImage } from "@/lib/utils";
-import { useAccount, useConnect, useSwitchChain } from "wagmi";
+import { useAccount, useSwitchChain } from "wagmi";
 import { useAuth } from "@/hooks/useAuth";
 import { getChainId, getExplorerUrl } from "@/lib/web3/contract";
 import NftCard from "@/components/NftCard";
@@ -41,7 +41,6 @@ function MintPageContent() {
   const { nfts: relatedNfts, loading: relatedLoading } = useCachedNfts(12);
 
   const { address, isConnected, chain } = useAccount();
-  const { useConnectors, connect } = useConnect();
   const { switchChain } = useSwitchChain();
   const { isAuthed, login, loading: authLoading } = useAuth();
 
@@ -73,10 +72,15 @@ function MintPageContent() {
   const [showWalletModal, setShowWalletModal] = useState(false);
   const [profileId, setProfileId] = useState(null);
   const [savingToDb, setSavingToDb] = useState(false);
+  const [alreadyOwned, setAlreadyOwned] = useState(false);
+  const [checkingOwned, setCheckingOwned] = useState(false);
 
   useEffect(() => {
     async function loadOrCreateProfile() {
-      if (!isAuthed) return;
+      if (!isAuthed) {
+        setProfileId(null);
+        return;
+      }
 
       const {
         data: { user },
@@ -148,9 +152,61 @@ function MintPageContent() {
       } = confirmRef.current;
 
       if (!nft) return;
-      cb(txHash, nft.tokenId || tid || "0", price, fee, nft.name || "NFT");
+      cb(
+        txHash,
+        nft.tokenId || nft.token_id || tid || "0",
+        price,
+        fee,
+        nft.name || "NFT"
+      );
     }
   }, [isConfirmedOnChain, txHash, confirmResult, confirming]);
+
+  const currentContract =
+    selectedNft?.contractAddress ||
+    selectedNft?.contract_address ||
+    contractParam ||
+    null;
+
+  const currentTokenId =
+    confirmResult?.tokenIds?.[0]?.toString() ||
+    selectedNft?.tokenId ||
+    selectedNft?.token_id ||
+    tokenIdParam ||
+    null;
+
+  const currentChainId =
+    selectedNft?.chainId || selectedNft?.chain_id || targetChainId;
+
+  useEffect(() => {
+    async function checkOwnership() {
+      if (!profileId || !currentContract || !currentTokenId) {
+        setAlreadyOwned(false);
+        return;
+      }
+
+      setCheckingOwned(true);
+
+      const { data, error } = await supabase
+        .from("user_collections")
+        .select("id")
+        .eq("profile_id", profileId)
+        .eq("contract_address", currentContract.toLowerCase())
+        .eq("token_id", currentTokenId.toString())
+        .limit(1);
+
+      if (error) {
+        console.error("Ownership check failed:", error);
+        setAlreadyOwned(false);
+      } else {
+        setAlreadyOwned(!!data?.length);
+      }
+
+      setCheckingOwned(false);
+    }
+
+    checkOwnership();
+  }, [profileId, currentContract, currentTokenId]);
 
   useEffect(() => {
     if (confirmResult?.tokenIds?.length > 0 && profileId && !savingToDb) {
@@ -182,8 +238,8 @@ function MintPageContent() {
 
           const inserts = confirmResult.tokenIds.map((tid) => ({
             profile_id: profileId,
-            chain_id: selectedNft?.chainId || targetChainId,
-            contract_address: selectedNft?.contractAddress?.toLowerCase() || "",
+            chain_id: currentChainId,
+            contract_address: (currentContract || "").toLowerCase(),
             token_id: tid.toString(),
             cached_nft_id: selectedNft?.dbId || null,
             assigned_by: "mint",
@@ -193,7 +249,8 @@ function MintPageContent() {
             nft_name: nftName,
             description: nftDesc,
             collection: selectedNft?.collection || null,
-            token_type: selectedNft?.tokenType || "ERC-721",
+            token_type:
+              selectedNft?.tokenType || selectedNft?.token_type || "ERC-721",
             attributes: selectedNft?.attributes || [],
 
             nft_price_eth: liveNftPrice,
@@ -202,7 +259,9 @@ function MintPageContent() {
             pricing_source: "mint",
           }));
 
-          const { error } = await supabase.from("user_collections").insert(inserts);
+          const { error } = await supabase
+            .from("user_collections")
+            .insert(inserts);
 
           if (error) {
             console.error("Failed to save minted NFTs:", error);
@@ -210,6 +269,7 @@ function MintPageContent() {
             console.log(
               `Saved ${inserts.length} minted NFTs to profile ${profileId}`
             );
+            setAlreadyOwned(true);
           }
         } catch (err) {
           console.error("Save error:", err);
@@ -220,14 +280,26 @@ function MintPageContent() {
 
       saveMintedNfts();
     }
-  }, [confirmResult, profileId, selectedNft, targetChainId, savingToDb, settings]);
+  }, [
+    confirmResult,
+    profileId,
+    selectedNft,
+    currentChainId,
+    currentContract,
+    savingToDb,
+    settings,
+  ]);
 
   const nftExplorerLink =
-    selectedNft?.contractAddress && (selectedNft?.tokenId || tokenIdParam)
-      ? `${getExplorerUrl()}/token/${selectedNft.contractAddress}?a=${
-          selectedNft.tokenId || tokenIdParam
-        }`
+    currentContract && currentTokenId
+      ? `${explorerUrl}/nft/${currentContract}/${currentTokenId}`
       : null;
+
+  const contractExplorerLink = currentContract
+    ? `${explorerUrl}/address/${currentContract}`
+    : null;
+
+  const txExplorerLink = txHash ? `${explorerUrl}/tx/${txHash}` : null;
 
   let state = isAuthed ? "disconnected" : "needs_auth";
   if (isAuthed && isConnected && isWrongChain) state = "wrong_network";
@@ -239,19 +311,38 @@ function MintPageContent() {
   if (isSending) state = "tx_signing";
 
   const handleMint = useCallback(() => {
-    if (!selectedNft) return;
+    if (!selectedNft || alreadyOwned) return;
     resetBuy();
-    buy(selectedNft.tokenId || tokenIdParam || "0", nftPrice, mintFee);
-  }, [selectedNft, tokenIdParam, nftPrice, mintFee, buy, resetBuy]);
+    buy(
+      selectedNft.tokenId || selectedNft.token_id || tokenIdParam || "0",
+      nftPrice,
+      mintFee
+    );
+  }, [
+    selectedNft,
+    alreadyOwned,
+    tokenIdParam,
+    nftPrice,
+    mintFee,
+    buy,
+    resetBuy,
+  ]);
 
   const handleFavorite = async (e) => {
     e?.preventDefault();
     e?.stopPropagation();
     if (!isConnected || !selectedNft) return;
 
+    const favoriteContract =
+      selectedNft.contractAddress || selectedNft.contract_address;
+    const favoriteTokenId = selectedNft.tokenId || selectedNft.token_id;
+    const favoriteChainId = selectedNft.chainId || selectedNft.chain_id;
+
+    if (!favoriteContract || !favoriteTokenId) return;
+
     if (favorited) {
       await fetch(
-        `/api/favorites?wallet=${address}&contract=${selectedNft.contractAddress}&tokenId=${selectedNft.tokenId}&chainId=${selectedNft.chainId}`,
+        `/api/favorites?wallet=${address}&contract=${favoriteContract}&tokenId=${favoriteTokenId}&chainId=${favoriteChainId}`,
         { method: "DELETE" }
       );
       setFavorited(false);
@@ -261,9 +352,9 @@ function MintPageContent() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           wallet: address,
-          contractAddress: selectedNft.contractAddress,
-          tokenId: selectedNft.tokenId,
-          chainId: selectedNft.chainId,
+          contractAddress: favoriteContract,
+          tokenId: favoriteTokenId,
+          chainId: favoriteChainId,
           cachedNftId: selectedNft.dbId,
         }),
       });
@@ -354,7 +445,7 @@ function MintPageContent() {
                       size={18}
                       className="group-hover:rotate-12 transition-transform"
                     />
-                    View on {chainName} Explorer
+                    View NFT on {chainName} Explorer
                   </a>
                 </div>
               )}
@@ -365,9 +456,10 @@ function MintPageContent() {
                     {dn.name}
                   </h1>
                   <p className="text-sm text-muted leading-relaxed">{nftDesc}</p>
+
                   <div className="flex flex-wrap gap-2 mt-4">
                     <span className="px-3 py-1 rounded-pill bg-accent/10 text-xs text-accent font-medium border border-accent/20">
-                      {dn.tokenType || "ERC-721"}
+                      {dn.tokenType || dn.token_type || "ERC-721"}
                     </span>
                     <span className="px-3 py-1 rounded-pill bg-accent-violet/10 text-xs text-accent-violet font-medium border border-accent-violet/20">
                       {dn.chain || "Base"}
@@ -375,6 +467,18 @@ function MintPageContent() {
                     <span className="px-3 py-1 rounded-pill bg-warning/10 text-xs text-warning font-medium border border-warning/20">
                       Chain-Verifiable
                     </span>
+
+                    {checkingOwned && (
+                      <span className="px-3 py-1 rounded-pill bg-surface border border-border-light text-xs">
+                        Checking ownership...
+                      </span>
+                    )}
+
+                    {!checkingOwned && alreadyOwned && (
+                      <span className="px-3 py-1 rounded-pill bg-success/10 text-xs text-success font-medium border border-success/20">
+                        Already in your collection
+                      </span>
+                    )}
                   </div>
                 </div>
 
@@ -382,13 +486,17 @@ function MintPageContent() {
                   <h3 className="font-display font-semibold text-sm uppercase tracking-wider text-muted mb-4">
                     Details
                   </h3>
+
                   <div className="grid grid-cols-2 gap-4">
                     {[
-                      { l: "Token ID", v: dn.tokenId || "—" },
+                      { l: "Token ID", v: currentTokenId || "—" },
                       {
                         l: "Contract",
-                        v: dn.contractAddress
-                          ? `${dn.contractAddress.slice(0, 6)}...${dn.contractAddress.slice(-4)}`
+                        v: currentContract
+                          ? `${currentContract.slice(
+                              0,
+                              6
+                            )}...${currentContract.slice(-4)}`
                           : "—",
                       },
                       { l: "Collection", v: dn.collection || "—" },
@@ -396,7 +504,21 @@ function MintPageContent() {
                     ].map((item) => (
                       <div key={item.l} className="space-y-1">
                         <p className="text-xs text-muted-dim">{item.l}</p>
-                        {item.l === "Contract" && nftExplorerLink ? (
+
+                        {item.l === "Contract" && contractExplorerLink ? (
+                          <a
+                            href={contractExplorerLink}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-sm font-mono text-accent hover:underline flex items-center gap-1 group"
+                          >
+                            {item.v}
+                            <ExternalLink
+                              size={14}
+                              className="opacity-70 group-hover:opacity-100 transition-opacity"
+                            />
+                          </a>
+                        ) : item.l === "Token ID" && nftExplorerLink ? (
                           <a
                             href={nftExplorerLink}
                             target="_blank"
@@ -431,7 +553,9 @@ function MintPageContent() {
                           <p className="text-[10px] text-accent uppercase tracking-wider mb-1">
                             {a.trait_type}
                           </p>
-                          <p className="text-sm font-semibold truncate">{a.value}</p>
+                          <p className="text-sm font-semibold truncate">
+                            {a.value}
+                          </p>
                         </div>
                       ))}
                     </div>
@@ -448,15 +572,40 @@ function MintPageContent() {
                       <h2 className="font-display text-xl font-semibold text-text">
                         Mint
                       </h2>
-                      {state === "ready" && <Badge color="success" dot>Ready</Badge>}
-                      {["tx_pending", "tx_signing", "confirming"].includes(state) && (
-                        <Badge color="warning" dot>Pending</Badge>
+
+                      {state === "ready" && (
+                        <Badge color="success" dot>
+                          Ready
+                        </Badge>
                       )}
+
+                      {["tx_pending", "tx_signing", "confirming"].includes(
+                        state
+                      ) && (
+                        <Badge color="warning" dot>
+                          Pending
+                        </Badge>
+                      )}
+
                       {state === "tx_success" && (
-                        <Badge color="success" dot>Complete</Badge>
+                        <Badge color="success" dot>
+                          Complete
+                        </Badge>
                       )}
-                      {state === "tx_error" && <Badge color="danger" dot>Error</Badge>}
+
+                      {state === "tx_error" && (
+                        <Badge color="danger" dot>
+                          Error
+                        </Badge>
+                      )}
+
+                      {!checkingOwned && alreadyOwned && (
+                        <Badge color="success" dot>
+                          Owned
+                        </Badge>
+                      )}
                     </div>
+
                     <p className="text-sm text-muted">{dn.name}</p>
                   </div>
 
@@ -493,6 +642,7 @@ function MintPageContent() {
                           Sign in to verify your wallet
                         </p>
                       </div>
+
                       <Button
                         variant="primary"
                         size="lg"
@@ -518,6 +668,7 @@ function MintPageContent() {
                           Connect your wallet to mint
                         </p>
                       </div>
+
                       <Button
                         variant="primary"
                         size="lg"
@@ -527,6 +678,7 @@ function MintPageContent() {
                         <Wallet size={16} />
                         Connect Wallet
                       </Button>
+
                       <WalletConnectModal
                         open={showWalletModal}
                         onClose={() => setShowWalletModal(false)}
@@ -550,6 +702,7 @@ function MintPageContent() {
                           </p>
                         </div>
                       </div>
+
                       <Button
                         variant="primary"
                         size="lg"
@@ -563,20 +716,34 @@ function MintPageContent() {
 
                   {state === "ready" && (
                     <div className="space-y-4">
-                      <Button
-                        variant="primary"
-                        size="lg"
-                        className="w-full"
-                        onClick={handleMint}
-                        disabled={savingToDb || !profileId}
-                      >
-                        {savingToDb ? (
-                          <Loader2 size={16} className="animate-spin" />
-                        ) : (
-                          ""
-                        )}{" "}
-                        Mint Now — {totalPrice} ETH
-                      </Button>
+                      {alreadyOwned ? (
+                        <div className="bg-success/10 border border-success/20 rounded-xl p-4">
+                          <p className="text-sm font-medium text-success">
+                            You already have this NFT in your collection.
+                          </p>
+                          <p className="text-xs text-muted mt-1">
+                            Minting is disabled for this item.
+                          </p>
+                        </div>
+                      ) : (
+                        <Button
+                          variant="primary"
+                          size="lg"
+                          className="w-full"
+                          onClick={handleMint}
+                          disabled={
+                            savingToDb ||
+                            !profileId ||
+                            checkingOwned ||
+                            alreadyOwned
+                          }
+                        >
+                          {savingToDb ? (
+                            <Loader2 size={16} className="animate-spin" />
+                          ) : null}{" "}
+                          Mint Now — {totalPrice} ETH
+                        </Button>
+                      )}
                     </div>
                   )}
 
@@ -591,14 +758,15 @@ function MintPageContent() {
                         {state === "tx_pending" && "Transaction pending…"}
                         {state === "confirming" && "Verifying on server…"}
                       </p>
-                      {txHash && (
+
+                      {txExplorerLink && (
                         <a
-                          href={`${explorerUrl}/tx/${txHash}`}
+                          href={txExplorerLink}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-xs text-accent font-mono hover:underline"
                         >
-                          View on Basescan
+                          View transaction on {chainName} Explorer
                         </a>
                       )}
                     </div>
@@ -609,24 +777,39 @@ function MintPageContent() {
                       <div className="w-14 h-14 rounded-full bg-success/10 flex items-center justify-center mx-auto">
                         <Check size={28} className="text-success" />
                       </div>
+
                       <p className="text-text font-semibold">
                         Successfully minted!
                       </p>
                       <p className="text-sm text-muted">
                         NFT saved to your collection.
                       </p>
-                      <div className="flex gap-3 justify-center">
-                        {txHash && (
+
+                      <div className="flex gap-3 justify-center flex-wrap">
+                        {txExplorerLink && (
                           <a
-                            href={`${explorerUrl}/tx/${txHash}`}
+                            href={txExplorerLink}
                             target="_blank"
                             rel="noopener noreferrer"
                           >
                             <Button variant="secondary" size="md">
-                              View on Basescan
+                              View Transaction
                             </Button>
                           </a>
                         )}
+
+                        {nftExplorerLink && (
+                          <a
+                            href={nftExplorerLink}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            <Button variant="secondary" size="md">
+                              View NFT
+                            </Button>
+                          </a>
+                        )}
+
                         <Button
                           variant="secondary"
                           size="md"
@@ -658,6 +841,7 @@ function MintPageContent() {
                           </p>
                         </div>
                       </div>
+
                       <Button
                         variant="primary"
                         size="lg"
@@ -712,6 +896,7 @@ function MintPageContent() {
                   Browse & Mint
                 </span>
               </div>
+
               <h1 className="font-display font-extrabold text-3xl sm:text-4xl lg:text-5xl mb-4">
                 Choose an NFT to <span className="text-gradient">Mint</span>
               </h1>
@@ -728,7 +913,9 @@ function MintPageContent() {
                 {relatedLoading ? (
                   <NftCardSkeleton count={10} />
                 ) : relatedNfts.length > 0 ? (
-                  relatedNfts.map((n, i) => <NftCard key={n.id || i} nft={n} index={i} />)
+                  relatedNfts.map((n, i) => (
+                    <NftCard key={n.id || i} nft={n} index={i} />
+                  ))
                 ) : (
                   <NftCardSkeleton count={10} />
                 )}
