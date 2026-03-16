@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { getSupabase } from "@/lib/db/supabase";
-import { getSession } from "@/lib/auth/session";
+import { getSessionData } from "@/lib/auth/session";
 
 export async function POST(request: Request) {
   try {
     // getSession returns email string
-    const email = await getSession();
+    const email = await getSessionData();
 
     if (!email) {
       return NextResponse.json(
