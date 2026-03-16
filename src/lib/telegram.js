@@ -6,7 +6,7 @@
 //
 // SETUP:
 //   1. Talk to @BotFather on Telegram, create a bot, copy the token
-//   2. Add the bot to your group
+//   2. Add the bot to your group/channel
 //   3. Get chat ID: curl https://api.telegram.org/bot<TOKEN>/getUpdates
 //      Look for "chat":{"id":-100xxxxx} in the response
 //   4. Set env vars TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID
@@ -16,9 +16,9 @@ const CHAT_ID = process.env.TELEGRAM_CHAT_ID || '';
 
 /**
  * Send a message to the Telegram group
- * @param {string} text - Message text (supports MarkdownV2)
+ * @param {string} text - Message text (supports HTML)
  * @param {object} [opts]
- * @param {string} [opts.parse_mode] - 'MarkdownV2' | 'HTML'
+ * @param {string} [opts.parse_mode] - 'HTML' | 'MarkdownV2'
  * @param {boolean} [opts.disable_preview] - Disable link previews
  */
 export async function sendTelegramMessage(text, opts = {}) {
@@ -52,10 +52,11 @@ export async function sendTelegramMessage(text, opts = {}) {
   }
 }
 
-/** Truncate wallet for display: 0x7B2e...4f1A */
-function truncWallet(addr) {
-  if (!addr || addr.length < 10) return addr || '???';
-  return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
+/** Truncate wallet/email for display */
+function truncId(str) {
+  if (!str || str.length < 10) return str || '???';
+  if (str.includes('@')) return str; // show full email
+  return `${str.slice(0, 6)}...${str.slice(-4)}`;
 }
 
 /**
@@ -67,32 +68,20 @@ export async function telegramNotifyMint({
   buyer,
   price,
   fee,
-  txHash,
   contractAddress,
   chainId,
 }) {
   const total = (parseFloat(price || 0) + parseFloat(fee || 0)).toFixed(4);
-  const explorerBase = chainId === 8453
-    ? 'https://basescan.org'
-    : chainId === 1
-      ? 'https://etherscan.io'
-      : 'https://sepolia.basescan.org';
-
-  const txLink = txHash ? `${explorerBase}/tx/${txHash}` : '#';
-  const nftLink = contractAddress && tokenId
-    ? `${explorerBase}/nft/${contractAddress}/${tokenId}`
-    : '#';
 
   const msg = [
     `🎨 <b>New Mint!</b>`,
     ``,
     `NFT: <b>${nftName || `#${tokenId}`}</b>`,
-    `Buyer: <code>${truncWallet(buyer)}</code>`,
+    `Buyer: <code>${truncId(buyer)}</code>`,
     `Amount: <b>${total} ETH</b>`,
-    ``,
-    `🔗 <a href="${txLink}">View Transaction</a>`,
-    `🖼 <a href="${nftLink}">View NFT</a>`,
-  ].join('\n');
+    contractAddress ? `Contract: <code>${truncId(contractAddress)}</code>` : '',
+    `Chain: ${chainId === 8453 ? 'Base' : chainId === 1 ? 'Ethereum' : 'Base Sepolia'}`,
+  ].filter(Boolean).join('\n');
 
   return sendTelegramMessage(msg);
 }
@@ -107,7 +96,7 @@ export async function telegramNotifyNewUser({ firstName, username, email, wallet
     `Name: <b>${firstName || '—'}</b>`,
     `Username: <b>${username || '—'}</b>`,
     `Email: <code>${email || '—'}</code>`,
-    walletAddress ? `Wallet: <code>${truncWallet(walletAddress)}</code>` : '',
+    walletAddress ? `Wallet: <code>${truncId(walletAddress)}</code>` : '',
   ].filter(Boolean).join('\n');
 
   return sendTelegramMessage(msg);
@@ -121,7 +110,7 @@ export async function telegramNotifyWalletConnect({ firstName, username, walletA
     `🔗 <b>Wallet Connected!</b>`,
     ``,
     `User: <b>${firstName || username || '—'}</b>`,
-    `Wallet: <code>${truncWallet(walletAddress)}</code>`,
+    `Wallet: <code>${truncId(walletAddress)}</code>`,
     `Type: ${walletType || 'Unknown'}`,
   ].join('\n');
 

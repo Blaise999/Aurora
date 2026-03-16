@@ -1,7 +1,7 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { Suspense, useState, useEffect, useCallback, useRef } from "react";
+import { Suspense, useState, useEffect, useCallback } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useCachedNft, useSettings, useCachedNfts } from "@/hooks/useNfts";
@@ -49,9 +49,6 @@ function MintPageContent() {
     txHash,
     isSending,
     isWaiting,
-    isConfirmedOnChain,
-    writeError,
-    confirmBuy,
     confirming,
     confirmResult,
     confirmError,
@@ -63,15 +60,14 @@ function MintPageContent() {
   const chainName = targetChainId === 8453 ? "Base" : "Base Sepolia";
   const explorerUrl = getExplorerUrl();
 
-  const mintFee = selectedNft?.mintFee || settings?.minting_fee || "0.002";
-  const nftPrice = selectedNft?.mintPrice || settings?.minting_fee || "0.002";
+  const mintFee = String(selectedNft?.mintFee || settings?.minting_fee || "0.002");
+  const nftPrice = String(selectedNft?.mintPrice || settings?.minting_fee || "0.002");
   const totalPrice = (parseFloat(nftPrice) + parseFloat(mintFee)).toFixed(6);
 
   const [imgZoomed, setImgZoomed] = useState(false);
   const [favorited, setFavorited] = useState(false);
   const [showWalletModal, setShowWalletModal] = useState(false);
   const [profileId, setProfileId] = useState(null);
-  const [savingToDb, setSavingToDb] = useState(false);
   const [alreadyOwned, setAlreadyOwned] = useState(false);
   const [checkingOwned, setCheckingOwned] = useState(false);
 
@@ -123,45 +119,6 @@ function MintPageContent() {
     loadOrCreateProfile();
   }, [isAuthed]);
 
-  const confirmRef = useRef({
-    confirmBuy,
-    selectedNft,
-    tokenIdParam,
-    nftPrice,
-    mintFee,
-  });
-
-  useEffect(() => {
-    confirmRef.current = {
-      confirmBuy,
-      selectedNft,
-      tokenIdParam,
-      nftPrice,
-      mintFee,
-    };
-  }, [confirmBuy, selectedNft, tokenIdParam, nftPrice, mintFee]);
-
-  useEffect(() => {
-    if (isConfirmedOnChain && txHash && !confirmResult && !confirming) {
-      const {
-        confirmBuy: cb,
-        selectedNft: nft,
-        tokenIdParam: tid,
-        nftPrice: price,
-        mintFee: fee,
-      } = confirmRef.current;
-
-      if (!nft) return;
-      cb(
-        txHash,
-        nft.tokenId || nft.token_id || tid || "0",
-        price,
-        fee,
-        nft.name || "NFT"
-      );
-    }
-  }, [isConfirmedOnChain, txHash, confirmResult, confirming]);
-
   const currentContract =
     selectedNft?.contractAddress ||
     selectedNft?.contract_address ||
@@ -169,14 +126,15 @@ function MintPageContent() {
     null;
 
   const currentTokenId =
-    confirmResult?.tokenIds?.[0]?.toString() ||
     selectedNft?.tokenId ||
     selectedNft?.token_id ||
     tokenIdParam ||
     null;
 
   const currentChainId =
-    selectedNft?.chainId || selectedNft?.chain_id || targetChainId;
+    selectedNft?.chainId ||
+    selectedNft?.chain_id ||
+    targetChainId;
 
   useEffect(() => {
     async function checkOwnership() {
@@ -191,8 +149,8 @@ function MintPageContent() {
         .from("user_collections")
         .select("id")
         .eq("profile_id", profileId)
-        .eq("contract_address", currentContract.toLowerCase())
-        .eq("token_id", currentTokenId.toString())
+        .eq("contract_address", String(currentContract).toLowerCase())
+        .eq("token_id", String(currentTokenId))
         .limit(1);
 
       if (error) {
@@ -209,86 +167,10 @@ function MintPageContent() {
   }, [profileId, currentContract, currentTokenId]);
 
   useEffect(() => {
-    if (confirmResult?.tokenIds?.length > 0 && profileId && !savingToDb) {
-      const saveMintedNfts = async () => {
-        setSavingToDb(true);
-
-        try {
-          const nftImage =
-            selectedNft?.image ||
-            selectedNft?.image_url ||
-            resolveImage(selectedNft || {}) ||
-            "";
-          const nftName =
-            selectedNft?.name ||
-            `Minted NFT #${confirmResult.tokenIds[0] || ""}`;
-          const nftDesc =
-            selectedNft?.description ||
-            "A unique minted NFT from AuroraNft";
-
-          const liveMintFee = parseFloat(
-            selectedNft?.mintFee || settings?.minting_fee || "0.002"
-          );
-          const liveNftPrice = parseFloat(
-            selectedNft?.mintPrice || settings?.minting_fee || "0.002"
-          );
-          const liveTotalValue = Number(
-            (liveNftPrice + liveMintFee).toFixed(6)
-          );
-
-          const inserts = confirmResult.tokenIds.map((tid) => ({
-            profile_id: profileId,
-            chain_id: currentChainId,
-            contract_address: (currentContract || "").toLowerCase(),
-            token_id: tid.toString(),
-            cached_nft_id: selectedNft?.dbId || null,
-            assigned_by: "mint",
-            assigned_at: new Date().toISOString(),
-
-            image_url: nftImage,
-            nft_name: nftName,
-            description: nftDesc,
-            collection: selectedNft?.collection || null,
-            token_type:
-              selectedNft?.tokenType || selectedNft?.token_type || "ERC-721",
-            attributes: selectedNft?.attributes || [],
-
-            nft_price_eth: liveNftPrice,
-            mint_fee_eth: liveMintFee,
-            total_value_eth: liveTotalValue,
-            pricing_source: "mint",
-          }));
-
-          const { error } = await supabase
-            .from("user_collections")
-            .insert(inserts);
-
-          if (error) {
-            console.error("Failed to save minted NFTs:", error);
-          } else {
-            console.log(
-              `Saved ${inserts.length} minted NFTs to profile ${profileId}`
-            );
-            setAlreadyOwned(true);
-          }
-        } catch (err) {
-          console.error("Save error:", err);
-        } finally {
-          setSavingToDb(false);
-        }
-      };
-
-      saveMintedNfts();
+    if (confirmResult?.success) {
+      setAlreadyOwned(true);
     }
-  }, [
-    confirmResult,
-    profileId,
-    selectedNft,
-    currentChainId,
-    currentContract,
-    savingToDb,
-    settings,
-  ]);
+  }, [confirmResult]);
 
   const nftExplorerLink =
     currentContract && currentTokenId
@@ -304,26 +186,64 @@ function MintPageContent() {
   let state = isAuthed ? "disconnected" : "needs_auth";
   if (isAuthed && isConnected && isWrongChain) state = "wrong_network";
   if (isAuthed && isConnected && !isWrongChain) state = "ready";
-  if (confirmResult) state = "tx_success";
-  if (confirmError || writeError) state = "tx_error";
+  if (confirmResult?.success) state = "tx_success";
+  if (confirmError) state = "tx_error";
   if (confirming) state = "confirming";
   if (isWaiting) state = "tx_pending";
   if (isSending) state = "tx_signing";
 
   const handleMint = useCallback(() => {
     if (!selectedNft || alreadyOwned) return;
-    resetBuy();
-    buy(
-      selectedNft.tokenId || selectedNft.token_id || tokenIdParam || "0",
-      nftPrice,
-      mintFee
+
+    const tokenId = String(
+      selectedNft.tokenId || selectedNft.token_id || tokenIdParam || "0"
     );
+
+    const contractAddress = String(
+      selectedNft.contractAddress ||
+        selectedNft.contract_address ||
+        contractParam ||
+        ""
+    ).toLowerCase();
+
+    const chainId = Number(
+      selectedNft.chainId || selectedNft.chain_id || targetChainId
+    );
+
+    const image =
+      selectedNft.image ||
+      selectedNft.image_url ||
+      resolveImage(selectedNft || {}) ||
+      "";
+
+    resetBuy();
+
+    buy({
+      dbId: selectedNft.dbId || selectedNft.id || null,
+      tokenId,
+      contractAddress,
+      chainId,
+      chain: selectedNft.chain || chainName,
+      name: selectedNft.name || null,
+      image,
+      description: selectedNft.description || null,
+      collection: selectedNft.collection || selectedNft.collection_name || null,
+      tokenType: selectedNft.tokenType || selectedNft.token_type || "ERC721",
+      attributes: selectedNft.attributes || [],
+      nftPrice,
+      mintFee,
+      totalPrice,
+    });
   }, [
     selectedNft,
     alreadyOwned,
     tokenIdParam,
+    contractParam,
+    targetChainId,
+    chainName,
     nftPrice,
     mintFee,
+    totalPrice,
     buy,
     resetBuy,
   ]);
@@ -417,7 +337,7 @@ function MintPageContent() {
                 </div>
 
                 <div className="absolute top-4 left-4 px-3 py-1.5 rounded-pill bg-surface/80 backdrop-blur-sm border border-border-light text-xs font-display font-semibold">
-                  {dn.collection || "Collection"}
+                  {dn.collection || dn.collection_name || "Collection"}
                 </div>
 
                 {isConnected && (
@@ -498,7 +418,10 @@ function MintPageContent() {
                           ? `${currentContract.slice(0, 6)}...${currentContract.slice(-4)}`
                           : "—",
                       },
-                      { l: "Collection", v: dn.collection || "—" },
+                      {
+                        l: "Collection",
+                        v: dn.collection || dn.collection_name || "—",
+                      },
                       { l: "Chain", v: dn.chain || "Base" },
                     ].map((item) => (
                       <div key={item.l} className="space-y-1">
@@ -578,9 +501,7 @@ function MintPageContent() {
                         </Badge>
                       )}
 
-                      {["tx_pending", "tx_signing", "confirming"].includes(
-                        state
-                      ) && (
+                      {["tx_pending", "tx_signing", "confirming"].includes(state) && (
                         <Badge color="warning" dot>
                           Pending
                         </Badge>
@@ -730,16 +651,8 @@ function MintPageContent() {
                           size="lg"
                           className="w-full"
                           onClick={handleMint}
-                          disabled={
-                            savingToDb ||
-                            !profileId ||
-                            checkingOwned ||
-                            alreadyOwned
-                          }
+                          disabled={!profileId || checkingOwned || alreadyOwned}
                         >
-                          {savingToDb ? (
-                            <Loader2 size={16} className="animate-spin" />
-                          ) : null}{" "}
                           Mint Now — {totalPrice} ETH
                         </Button>
                       )}
@@ -834,9 +747,7 @@ function MintPageContent() {
                             Transaction Failed
                           </p>
                           <p className="text-xs text-muted mt-1 break-all">
-                            {writeError?.shortMessage ||
-                              confirmError ||
-                              "User rejected or insufficient funds."}
+                            {confirmError || "User rejected or insufficient funds."}
                           </p>
                         </div>
                       </div>

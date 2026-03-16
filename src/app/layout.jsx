@@ -1,8 +1,8 @@
 import "./globals.css";
 import { DM_Sans, Outfit, JetBrains_Mono } from "next/font/google";
 import dynamic from "next/dynamic";
-import Navbar from "@/components/Navbar";
-import Footer from "@/components/Footer";
+import Header from "@/components/layout/Header";
+import Footer from "@/components/layout/Footer";
 
 // ── CRITICAL FIX: Load wallet provider ONLY on client (no more indexedDB crash) ──
 const ClientProviders = dynamic(
@@ -61,7 +61,10 @@ export default function RootLayout({ children }) {
     >
       <body className="grain bg-bg text-text antialiased font-body min-h-screen flex flex-col">
         <ClientProviders>
-          <Navbar />
+          {/* Header auto-detects home route and goes transparent/fused over the hero */}
+          <Header />
+          {/* pt-16/pt-20 reserves space for the fixed header on non-hero pages.
+              HeroCarousel uses -mt-16/-mt-20 to slide under the transparent header. */}
           <main className="flex-1 pt-16 sm:pt-20">{children}</main>
           <Footer />
           <ToastProvider />

@@ -41,17 +41,9 @@ export default function Header() {
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
-  // Auto-SIWE login when wallet connects — connect = login
-  useEffect(() => {
-    if (!isConnected || !address) {
-      loginAttempted.current = false;
-      return;
-    }
-    if (!isAuthed && !authLoading && !loginAttempted.current) {
-      loginAttempted.current = true;
-      login().catch(() => { loginAttempted.current = false; });
-    }
-  }, [isConnected, address, isAuthed, authLoading, login]);
+  // NOTE: Auto-SIWE removed — wallet signature only on explicit user click.
+  // The old code fired login() on every page load if a wallet was previously
+  // connected, causing an unwanted wallet popup.
 
   // Close mobile menu on route change
   useEffect(() => {

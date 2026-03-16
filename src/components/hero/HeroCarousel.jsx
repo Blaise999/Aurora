@@ -3,7 +3,15 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { ArrowRight, Radio, Shield, Zap, Clock, Flame, ChevronDown } from "lucide-react";
+import {
+  ArrowRight,
+  Radio,
+  Shield,
+  Zap,
+  Clock,
+  Flame,
+  ChevronDown,
+} from "lucide-react";
 
 import Button from "@/components/ui/Button";
 import Badge from "@/components/ui/Badge";
@@ -18,7 +26,6 @@ const HERO_BG_IMAGES = [
   "/pictures/hero-bg-3.webp",
 ];
 
-
 const HERO_CARD_IMAGES = [
   ["/pictures/hero-card-1-1.webp", "/pictures/hero-card-1-2.webp", "/pictures/hero-card-1-3.webp"],
   ["/pictures/hero-card-2-1.webp", "/pictures/hero-card-2-2.webp", "/pictures/hero-card-2-3.webp"],
@@ -26,9 +33,9 @@ const HERO_CARD_IMAGES = [
 ];
 
 const SLIDE_BADGES = [
-  { label: 'Trending', icon: Flame, color: 'hot' },
-  { label: 'Live Now', icon: Radio, color: 'success' },
-  { label: 'Ending Soon', icon: Clock, color: 'warning' },
+  { label: "Trending", icon: Flame, color: "hot" },
+  { label: "Live Now", icon: Radio, color: "success" },
+  { label: "Ending Soon", icon: Clock, color: "warning" },
 ];
 
 export default function HeroCarousel() {
@@ -58,6 +65,7 @@ export default function HeroCarousel() {
   const goToSlide = useCallback(
     (nextIdx) => {
       if (transitioning || nextIdx === activeIndex) return;
+
       setTransitioning(true);
       setFrontIndex(nextIdx);
 
@@ -87,28 +95,44 @@ export default function HeroCarousel() {
         },
       });
 
-      if (prevCopy) tl.to(prevCopy, { opacity: 0, y: -18, duration: 0.45, ease: "power2.in" }, 0);
-      if (prevCards) tl.to(prevCards, { opacity: 0, y: -12, duration: 0.45, ease: "power2.in" }, 0.05);
-      if (prevSlide) tl.to(prevSlide, { opacity: 0, scale: 1.02, duration: 0.65, ease: "power2.in" }, 0.08);
+      if (prevCopy) {
+        tl.to(prevCopy, { opacity: 0, y: -18, duration: 0.45, ease: "power2.in" }, 0);
+      }
+      if (prevCards) {
+        tl.to(prevCards, { opacity: 0, y: -12, duration: 0.45, ease: "power2.in" }, 0.05);
+      }
+      if (prevSlide) {
+        tl.to(prevSlide, { opacity: 0, scale: 1.02, duration: 0.65, ease: "power2.in" }, 0.08);
+      }
 
       if (nextSlide) gsap.set(nextSlide, { opacity: 0, scale: 1.02 });
       if (nextCopy) gsap.set(nextCopy, { opacity: 0, y: 22 });
       if (nextCards) gsap.set(nextCards, { opacity: 0, y: 18 });
 
-      if (nextSlide) tl.to(nextSlide, { opacity: 1, scale: 1.0, duration: 0.95, ease: "sine.inOut" }, 0.22);
-      if (nextCopy) tl.to(nextCopy, { opacity: 1, y: 0, duration: 0.75, ease: "power2.out" }, 0.45);
-      if (nextCards) tl.to(nextCards, { opacity: 1, y: 0, duration: 0.75, ease: "power2.out" }, 0.55);
+      if (nextSlide) {
+        tl.to(nextSlide, { opacity: 1, scale: 1.0, duration: 0.95, ease: "sine.inOut" }, 0.22);
+      }
+      if (nextCopy) {
+        tl.to(nextCopy, { opacity: 1, y: 0, duration: 0.75, ease: "power2.out" }, 0.45);
+      }
+      if (nextCards) {
+        tl.to(nextCards, { opacity: 1, y: 0, duration: 0.75, ease: "power2.out" }, 0.55);
+      }
     },
     [activeIndex, transitioning, motionReady]
   );
 
   useEffect(() => {
     if (timerRef.current) clearInterval(timerRef.current);
+
     timerRef.current = setInterval(() => {
       const nextIdx = (activeIndex + 1) % slideCount;
       goToSlide(nextIdx);
     }, INTERVAL);
-    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
   }, [activeIndex, goToSlide, slideCount]);
 
   const handleDot = (idx) => {
@@ -118,52 +142,82 @@ export default function HeroCarousel() {
 
   useEffect(() => {
     let cancelled = false;
+
     const init = async () => {
       try {
         const prefersReduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-        if (prefersReduced) { setMotionReady(false); return; }
+        if (prefersReduced) {
+          setMotionReady(false);
+          return;
+        }
 
         const mod = await import("gsap");
         const gsap = mod.default || mod.gsap || mod;
         gsapRef.current = gsap;
+
         if (cancelled) return;
         setMotionReady(true);
 
         slideRefs.current.forEach((el, i) => {
           if (!el) return;
-          gsap.set(el, { opacity: i === 0 ? 1 : 0, scale: i === 0 ? 1.02 : 1, zIndex: i === 0 ? 3 : 1 });
+          gsap.set(el, {
+            opacity: i === 0 ? 1 : 0,
+            scale: i === 0 ? 1.02 : 1,
+            zIndex: i === 0 ? 3 : 1,
+          });
         });
+
         copyRefs.current.forEach((el, i) => {
           if (!el) return;
           gsap.set(el, { opacity: i === 0 ? 1 : 0, y: i === 0 ? 0 : 18 });
         });
+
         cardGroupRefs.current.forEach((el, i) => {
           if (!el) return;
           gsap.set(el, { opacity: i === 0 ? 1 : 0, y: i === 0 ? 0 : 18 });
         });
 
         const tl = gsap.timeline({ delay: 0.12 });
-        if (slideRefs.current[0]) tl.to(slideRefs.current[0], { scale: 1.0, duration: 1.2, ease: "sine.inOut" }, 0);
-        if (copyRefs.current[0])
-          tl.fromTo(copyRefs.current[0], { opacity: 0, y: 18 }, { opacity: 1, y: 0, duration: 0.75, ease: "power2.out" }, 0.25);
-        if (cardGroupRefs.current[0])
-          tl.fromTo(cardGroupRefs.current[0], { opacity: 0, y: 18 }, { opacity: 1, y: 0, duration: 0.75, ease: "power2.out" }, 0.38);
-      } catch { setMotionReady(false); }
+
+        if (slideRefs.current[0]) {
+          tl.to(slideRefs.current[0], { scale: 1.0, duration: 1.2, ease: "sine.inOut" }, 0);
+        }
+        if (copyRefs.current[0]) {
+          tl.fromTo(
+            copyRefs.current[0],
+            { opacity: 0, y: 18 },
+            { opacity: 1, y: 0, duration: 0.75, ease: "power2.out" },
+            0.25
+          );
+        }
+        if (cardGroupRefs.current[0]) {
+          tl.fromTo(
+            cardGroupRefs.current[0],
+            { opacity: 0, y: 18 },
+            { opacity: 1, y: 0, duration: 0.75, ease: "power2.out" },
+            0.38
+          );
+        }
+      } catch {
+        setMotionReady(false);
+      }
     };
+
     init();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const handleScrollCue = () => {
-    window.scrollTo({ top: window.innerHeight - 80, behavior: 'smooth' });
+    window.scrollTo({ top: window.innerHeight - 80, behavior: "smooth" });
   };
 
   return (
     <section
-      ref={(el) => (heroRef.current = el)}
+      ref={heroRef}
       className="relative w-full h-screen min-h-[580px] sm:min-h-[700px] max-h-[1000px] overflow-hidden -mt-16 sm:-mt-20"
     >
-      {/* BACKGROUNDS */}
       {slides.map((slide, i) => {
         const shouldMountImage = keepBg.has(i);
         const isInitialLCP = i === 0 && activeIndex === 0 && frontIndex === 0;
@@ -174,7 +228,14 @@ export default function HeroCarousel() {
             key={slide.id}
             ref={(el) => (slideRefs.current[i] = el)}
             className={`absolute inset-0 will-change-transform ${motionReady ? "opacity-0" : ""}`}
-            style={motionReady ? undefined : { opacity: i === activeIndex ? 1 : 0, zIndex: i === activeIndex ? 3 : 1 }}
+            style={
+              motionReady
+                ? undefined
+                : {
+                    opacity: i === activeIndex ? 1 : 0,
+                    zIndex: i === activeIndex ? 3 : 1,
+                  }
+            }
           >
             {shouldMountImage ? (
               <Image
@@ -183,7 +244,7 @@ export default function HeroCarousel() {
                 aria-hidden="true"
                 fill
                 sizes="100vw"
-                quality={95}
+                quality={70}
                 priority={isInitialLCP}
                 loading={isInitialLCP ? "eager" : "lazy"}
                 fetchPriority={isInitialLCP ? "high" : "auto"}
@@ -197,40 +258,47 @@ export default function HeroCarousel() {
         );
       })}
 
-      {/* SCRIM */}
       <div className="absolute inset-0 z-[2]" aria-hidden="true">
         <div className="absolute inset-0 bg-gradient-to-r from-bg/95 via-bg/70 to-bg/20" />
         <div className="absolute inset-x-0 bottom-0 h-48 bg-gradient-to-t from-bg via-bg/60 to-transparent" />
         <div className="absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-bg/50 to-transparent" />
       </div>
 
-      {/* AMBIENT GLOW */}
       <div className="absolute inset-0 z-[2] pointer-events-none" aria-hidden="true">
         <div className="absolute top-1/3 left-[10%] w-[500px] h-[500px] rounded-full bg-accent/[0.03] blur-[140px] animate-pulse-glow" />
-        <div className="absolute bottom-1/4 right-[15%] w-[400px] h-[400px] rounded-full bg-accent-violet/[0.03] blur-[120px] animate-pulse-glow" style={{ animationDelay: "2s" }} />
+        <div
+          className="absolute bottom-1/4 right-[15%] w-[400px] h-[400px] rounded-full bg-accent-violet/[0.03] blur-[120px] animate-pulse-glow"
+          style={{ animationDelay: "2s" }}
+        />
       </div>
 
       <CursorSpotlight />
 
-      {/* CONTENT */}
       <div className="relative z-[3] h-full max-w-[1400px] mx-auto px-6 md:px-8 flex items-center">
         <div className="grid lg:grid-cols-2 gap-10 lg:gap-16 items-center w-full pt-16">
-          {/* LEFT COPY */}
           <div className="relative min-h-[340px]">
             {slides.map((slide, i) => {
               const badge = SLIDE_BADGES[i % SLIDE_BADGES.length];
               const BadgeIcon = badge.icon;
+              const isBaseSlide = i === 0;
+              const visibleIndex = motionReady ? frontIndex : activeIndex;
+
               return (
                 <div
                   key={slide.id}
                   ref={(el) => (copyRefs.current[i] = el)}
-                  className={`${i === 0 ? "" : "absolute inset-0"} space-y-6 ${motionReady ? "opacity-0" : ""}`}
+                  className={[
+                    isBaseSlide ? "relative" : "absolute inset-0",
+                    "space-y-6",
+                    motionReady ? "opacity-0" : "",
+                  ].join(" ")}
                   style={{
-                    pointerEvents: i === (motionReady ? frontIndex : activeIndex) ? "auto" : "none",
+                    pointerEvents: i === visibleIndex ? "auto" : "none",
                     ...(motionReady ? {} : { opacity: i === activeIndex ? 1 : 0 }),
+                    zIndex: i === visibleIndex ? 2 : 1,
                   }}
+                  aria-hidden={i !== visibleIndex}
                 >
-                  {/* Status badges */}
                   <div className="flex items-center gap-2">
                     <Badge color={badge.color} dot>
                       {badge.label}
@@ -244,7 +312,10 @@ export default function HeroCarousel() {
                   <h1 className="font-display text-3xl sm:text-4xl md:text-5xl lg:text-[58px] font-bold leading-[1.08] tracking-tight text-balance">
                     {slide.heading.split(" ").map((word, wi) => {
                       const gradientWords = ["collection", "rarity", "clarity"];
-                      const isGradient = gradientWords.some((gw) => word.toLowerCase().includes(gw));
+                      const isGradient = gradientWords.some((gw) =>
+                        word.toLowerCase().includes(gw)
+                      );
+
                       return (
                         <span key={wi}>
                           {isGradient ? <span className="gradient-text">{word}</span> : word}{" "}
@@ -253,7 +324,9 @@ export default function HeroCarousel() {
                     })}
                   </h1>
 
-                  <p className="text-base sm:text-lg text-muted leading-relaxed max-w-lg">{slide.sub}</p>
+                  <p className="text-base sm:text-lg text-muted leading-relaxed max-w-lg">
+                    {slide.sub}
+                  </p>
 
                   <div className="flex flex-wrap gap-3 pt-1">
                     <Link href="/explore">
@@ -268,7 +341,6 @@ export default function HeroCarousel() {
                     </Link>
                   </div>
 
-                  {/* Trust pills */}
                   <div className="flex flex-wrap items-center gap-2 pt-1">
                     <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-pill bg-white/[0.03] border border-white/[0.06]">
                       <Shield size={11} className="text-accent" />
@@ -280,7 +352,9 @@ export default function HeroCarousel() {
                     </div>
                     <div className="flex items-center gap-1 px-2.5 py-1 rounded-pill bg-success/10 border border-success/20">
                       <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
-                      <span className="text-[10px] text-success font-mono font-medium">Ethereum</span>
+                      <span className="text-[10px] text-success font-mono font-medium">
+                        Ethereum
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -288,106 +362,143 @@ export default function HeroCarousel() {
             })}
           </div>
 
-          {/* RIGHT TRIPTYCH CARDS */}
           <div className="relative hidden lg:flex items-center justify-center min-h-[420px]">
-            {slides.map((slide, i) => (
-              <div
-                key={slide.id}
-                ref={(el) => (cardGroupRefs.current[i] = el)}
-                className={`${i === 0 ? "" : "absolute inset-0"} flex items-center justify-center ${motionReady ? "opacity-0" : ""}`}
-                style={{
-                  pointerEvents: i === (motionReady ? frontIndex : activeIndex) ? "auto" : "none",
-                  ...(motionReady ? {} : { opacity: i === activeIndex ? 1 : 0 }),
-                }}
-              >
-                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                  <div className="w-[360px] h-[360px] rounded-full bg-gradient-radial from-accent/[0.05] via-transparent to-transparent animate-pulse-glow" />
-                </div>
+            {slides.map((slide, i) => {
+              const isBaseSlide = i === 0;
+              const visibleIndex = motionReady ? frontIndex : activeIndex;
 
-                <div className="relative w-full max-w-[500px] h-[400px]">
-                  {(slide.cards || []).slice(0, 3).map((nft, ci) => {
-                    const positions = [
-                      { left: "0%", top: "12%", rotate: "-7deg", scale: "0.88", z: 1 },
-                      { left: "50%", top: "0%", rotate: "0deg", scale: "1", z: 3, transform: "translateX(-50%)" },
-                      { right: "0%", top: "12%", rotate: "7deg", scale: "0.88", z: 2 },
-                    ];
-                    const pos = positions[ci] || positions[1];
-                    const heroOverride = HERO_CARD_IMAGES[i]?.[ci] || null;
-                    const fallbackImg = nft?.normalized_metadata?.image || nft?.image || "/pictures/nft-00.svg";
-                    const imgSrc = heroOverride || fallbackImg;
+              return (
+                <div
+                  key={slide.id}
+                  ref={(el) => (cardGroupRefs.current[i] = el)}
+                  className={[
+                    isBaseSlide ? "relative w-full" : "absolute inset-0",
+                    "flex items-center justify-center",
+                    motionReady ? "opacity-0" : "",
+                  ].join(" ")}
+                  style={{
+                    pointerEvents: i === visibleIndex ? "auto" : "none",
+                    ...(motionReady ? {} : { opacity: i === activeIndex ? 1 : 0 }),
+                    zIndex: i === visibleIndex ? 2 : 1,
+                  }}
+                  aria-hidden={i !== visibleIndex}
+                >
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                    <div className="w-[360px] h-[360px] rounded-full bg-gradient-radial from-accent/[0.05] via-transparent to-transparent animate-pulse-glow" />
+                  </div>
 
-                    return (
-                      <div
-                        key={nft?.id ?? `card-${i}-${ci}`}
-                        className="absolute group cursor-pointer"
-                        style={{
-                          left: pos.left,
-                          right: pos.right,
-                          top: pos.top,
-                          transform: `${pos.transform || ""} rotate(${pos.rotate}) scale(${pos.scale})`,
-                          zIndex: pos.z,
-                          width: "52%",
-                        }}
-                      >
-                        <div className="glass-card rounded-card overflow-hidden card-hover shadow-card">
-                          <div className="aspect-[3/4] w-full relative overflow-hidden">
-                            <Image
-                              src={imgSrc}
-                              alt={nft?.name || "NFT"}
-                              fill
-                              sizes="(min-width: 1024px) 260px, 0px"
-                              quality={88}
-                              className="object-cover transition-transform duration-700 group-hover:scale-[1.04]"
-                              loading="lazy"
-                            />
-                            <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent" />
-                            <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 bg-gradient-to-tr from-accent/10 via-transparent to-accent-violet/10" />
-                          </div>
-                          <div className="p-3.5 space-y-1">
-                            <p className="text-[10px] text-muted-dim font-mono truncate">{nft?.collectionName}</p>
-                            <p className="text-[13px] font-display font-semibold text-text truncate">{nft?.name}</p>
-                            <div className="flex items-center justify-between pt-1">
-                              <span className="text-[11px] text-accent font-mono">{nft?.price}</span>
-                              <span className="text-[10px] text-muted-dim">#{nft?.token_id}</span>
+                  <div className="relative w-full max-w-[500px] h-[400px]">
+                    {(slide.cards || []).slice(0, 3).map((nft, ci) => {
+                      const positions = [
+                        { left: "0%", top: "12%", rotate: "-7deg", scale: "0.88", z: 1 },
+                        {
+                          left: "50%",
+                          top: "0%",
+                          rotate: "0deg",
+                          scale: "1",
+                          z: 3,
+                          transform: "translateX(-50%)",
+                        },
+                        { right: "0%", top: "12%", rotate: "7deg", scale: "0.88", z: 2 },
+                      ];
+
+                      const pos = positions[ci] || positions[1];
+                      const heroOverride = HERO_CARD_IMAGES[i]?.[ci] || null;
+                      const fallbackImg =
+                        nft?.normalized_metadata?.image ||
+                        nft?.image ||
+                        "/pictures/nft-00.svg";
+                      const imgSrc = heroOverride || fallbackImg;
+
+                      return (
+                        <div
+                          key={nft?.id ?? `card-${i}-${ci}`}
+                          className="absolute group cursor-pointer"
+                          style={{
+                            left: pos.left,
+                            right: pos.right,
+                            top: pos.top,
+                            transform: `${pos.transform || ""} rotate(${pos.rotate}) scale(${pos.scale})`,
+                            zIndex: pos.z,
+                            width: "52%",
+                          }}
+                        >
+                          <div className="glass-card rounded-card overflow-hidden card-hover shadow-card">
+                            <div className="aspect-[3/4] w-full relative overflow-hidden">
+                              <Image
+                                src={imgSrc}
+                                alt={nft?.name || "NFT"}
+                                fill
+                                sizes="(min-width: 1024px) 260px, 0px"
+                                quality={75}
+                                className="object-cover transition-transform duration-700 group-hover:scale-[1.04]"
+                                loading="lazy"
+                              />
+                              <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent" />
+                              <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 bg-gradient-to-tr from-accent/10 via-transparent to-accent-violet/10" />
+                            </div>
+                            <div className="p-3.5 space-y-1">
+                              <p className="text-[10px] text-muted-dim font-mono truncate">
+                                {nft?.collectionName}
+                              </p>
+                              <p className="text-[13px] font-display font-semibold text-text truncate">
+                                {nft?.name}
+                              </p>
+                              <div className="flex items-center justify-between pt-1">
+                                <span className="text-[11px] text-accent font-mono">
+                                  {nft?.price}
+                                </span>
+                                <span className="text-[10px] text-muted-dim">
+                                  #{nft?.token_id}
+                                </span>
+                              </div>
                             </div>
                           </div>
                         </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       </div>
 
-      {/* DOTS */}
       <div className="absolute bottom-24 sm:bottom-10 left-1/2 -translate-x-1/2 z-[4] flex items-center gap-2.5">
-        {slides.map((_, i) => (
-          <button
-            key={i}
-            onClick={() => handleDot(i)}
-            aria-label={`Go to slide ${i + 1}`}
-            className={`
-              relative h-1.5 rounded-full transition-all duration-500 ease-out
-              ${i === (motionReady ? frontIndex : activeIndex) ? "w-8 bg-accent shadow-glow" : "w-2 bg-white/20 hover:bg-white/40"}
-            `}
-          >
-            {i === (motionReady ? frontIndex : activeIndex) && (
-              <span
-                key={`${(motionReady ? frontIndex : activeIndex)}-fill`}
-                className="absolute inset-0 rounded-full bg-accent/60 origin-left"
-                style={{ animation: `dot-fill ${INTERVAL}ms linear` }}
-              />
-            )}
-          </button>
-        ))}
+        {slides.map((_, i) => {
+          const visibleIndex = motionReady ? frontIndex : activeIndex;
+
+          return (
+            <button
+              key={i}
+              onClick={() => handleDot(i)}
+              aria-label={`Go to slide ${i + 1}`}
+              className={`relative h-1.5 rounded-full transition-all duration-500 ease-out ${
+                i === visibleIndex
+                  ? "w-8 bg-accent shadow-glow"
+                  : "w-2 bg-white/20 hover:bg-white/40"
+              }`}
+            >
+              {i === visibleIndex && (
+                <span
+                  key={`${visibleIndex}-fill`}
+                  className="absolute inset-0 rounded-full bg-accent/60 origin-left"
+                  style={{ animation: `dot-fill ${INTERVAL}ms linear` }}
+                />
+              )}
+            </button>
+          );
+        })}
       </div>
 
-      {/* Scroll cue */}
-      <button onClick={handleScrollCue} className="absolute bottom-4 left-1/2 -translate-x-1/2 z-[4] flex flex-col items-center gap-1 text-muted-dim hover:text-muted transition-colors animate-float">
-        <span className="text-[10px] font-mono tracking-widest uppercase hidden sm:block">Scroll</span>
+      <button
+        onClick={handleScrollCue}
+        className="absolute bottom-4 left-1/2 -translate-x-1/2 z-[4] flex flex-col items-center gap-1 text-muted-dim hover:text-muted transition-colors animate-float"
+      >
+        <span className="text-[10px] font-mono tracking-widest uppercase hidden sm:block">
+          Scroll
+        </span>
         <ChevronDown size={16} />
       </button>
 
