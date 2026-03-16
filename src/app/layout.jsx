@@ -1,7 +1,7 @@
 import "./globals.css";
 import { DM_Sans, Outfit, JetBrains_Mono } from "next/font/google";
 import dynamic from "next/dynamic";
-import Header from "@/components/layout/Header";
+import Navbar from "@/components/Navbar";
 import Footer from "@/components/layout/Footer";
 
 // ── CRITICAL FIX: Load wallet provider ONLY on client (no more indexedDB crash) ──
@@ -52,7 +52,6 @@ export const metadata = {
   icons: { icon: "/pictures/logo.png" },
 };
 
-// This is still a SERVER COMPONENT
 export default function RootLayout({ children }) {
   return (
     <html
@@ -61,10 +60,7 @@ export default function RootLayout({ children }) {
     >
       <body className="grain bg-bg text-text antialiased font-body min-h-screen flex flex-col">
         <ClientProviders>
-          {/* Header auto-detects home route and goes transparent/fused over the hero */}
-          <Header />
-          {/* pt-16/pt-20 reserves space for the fixed header on non-hero pages.
-              HeroCarousel uses -mt-16/-mt-20 to slide under the transparent header. */}
+          <Navbar />
           <main className="flex-1 pt-16 sm:pt-20">{children}</main>
           <Footer />
           <ToastProvider />
