@@ -1,4 +1,3 @@
-// app/api/auth/verify-otp/route.ts
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { getSupabase } from "@/lib/db/supabase";
@@ -6,21 +5,27 @@ import { createSession } from "@/lib/auth/session";
 
 export const runtime = "nodejs";
 
-export async function POST(request) {
+export async function POST(request: Request) {
   try {
     const { email, code } = await request.json();
+
     if (!email || !code) {
-      return NextResponse.json({ error: "Email and code required" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Email and code required" },
+        { status: 400 }
+      );
     }
+
+    const normalizedEmail = String(email).toLowerCase().trim();
+    const normalizedCode = String(code).trim();
 
     const sb = getSupabase();
 
-    // Find valid OTP
     const { data: otp, error: otpErr } = await sb
       .from("otp_codes")
       .select("*")
-      .eq("email", email.toLowerCase())
-      .eq("code", code)
+      .eq("email", normalizedEmail)
+      .eq("code", normalizedCode)
       .eq("used", false)
       .gte("expires_at", new Date().toISOString())
       .order("created_at", { ascending: false })
@@ -28,82 +33,116 @@ export async function POST(request) {
       .maybeSingle();
 
     if (otpErr || !otp) {
-      return NextResponse.json({ error: "Invalid or expired code" }, { status: 401 });
+      return NextResponse.json(
+        { error: "Invalid or expired code" },
+        { status: 401 }
+      );
     }
 
-    // Mark as used
-    await sb.from("otp_codes").update({ used: true }).eq("id", otp.id);
+    const { error: usedErr } = await sb
+      .from("otp_codes")
+      .update({ used: true })
+      .eq("id", otp.id);
 
-    const cookieStore = cookies();
+    if (usedErr) throw usedErr;
+
+    const cookieStore = await cookies();
     const signupIntent = cookieStore.get("signup_intent")?.value;
+
     let isNewUser = false;
-    let firstName = null;
-    let username = null;
+    let firstName: string | null = null;
+    let username: string | null = null;
 
     if (signupIntent) {
       try {
         const intent = JSON.parse(signupIntent);
-        if (intent.email === email.toLowerCase()) {
+        if (intent.email === normalizedEmail) {
           isNewUser = true;
           firstName = intent.firstName?.trim() || null;
           username = intent.username?.trim() || null;
         }
-      } catch {}
+      } catch (err) {
+        console.error("signup_intent parse error:", err);
+      }
+
       cookieStore.delete("signup_intent");
     }
 
-    let profile;
+    let profile: any = null;
 
     if (isNewUser) {
-      // SIGNUP - create profile
       const { data, error } = await sb
         .from("profiles")
         .insert({
-          email: email.toLowerCase(),
+          email: normalizedEmail,
           first_name: firstName,
           username,
           updated_at: new Date().toISOString(),
         })
-        .select("id, email, first_name, username, wallet_address")
+        .select("id")
         .single();
 
       if (error) throw error;
-      profile = data;
+      if (!data?.id) throw new Error("Failed to create profile");
+
+      const { data: freshProfile, error: freshErr } = await sb
+        .from("profiles")
+        .select("id, email, first_name, username, wallet_address, avatar_url, bio")
+        .eq("id", data.id)
+        .single();
+
+      if (freshErr) throw freshErr;
+
+      profile = freshProfile;
     } else {
-      // LOGIN - must already exist
       const { data, error } = await sb
         .from("profiles")
-        .select("id, email, first_name, username, wallet_address")
-        .eq("email", email.toLowerCase())
+        .select("id, email, first_name, username, wallet_address, avatar_url, bio")
+        .eq("email", normalizedEmail)
         .maybeSingle();
 
       if (error) throw error;
+
       if (!data) {
         return NextResponse.json(
           { error: "No account found. Please sign up first." },
           { status: 404 }
         );
       }
+
       profile = data;
     }
 
-    // Create session
+    const walletAddress = profile?.wallet_address
+      ? String(profile.wallet_address).toLowerCase()
+      : null;
+
     await createSession({
       email: profile.email,
       profileId: profile.id,
-      firstName: profile.first_name,
-      wallet: profile.wallet_address || null,
+      firstName: profile.first_name || null,
+      username: profile.username || null,
+      wallet: walletAddress,
     });
 
     return NextResponse.json({
       success: true,
       isNewUser,
+      session: {
+        email: profile.email,
+        wallet: walletAddress,
+        profileId: profile.id,
+        firstName: profile.first_name || null,
+        username: profile.username || null,
+      },
       profile: {
         id: profile.id,
         email: profile.email,
-        firstName: profile.first_name,
+        first_name: profile.first_name,
         username: profile.username,
-        walletAddress: profile.wallet_address,
+        wallet_address: walletAddress,
+        avatar_url: profile.avatar_url || null,
+        bio: profile.bio || null,
       },
     });
   } catch (err) {

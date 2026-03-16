@@ -2,14 +2,33 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
-import { Menu, X } from "lucide-react";
+import {
+  Menu,
+  X,
+  User,
+  LogOut,
+  ChevronDown,
+  Loader2,
+} from "lucide-react";
+import { useAuth } from "@/hooks/useAuth";
 
 export default function Navbar() {
   const pathname = usePathname();
+  const {
+    isAuthed,
+    login,
+    logout,
+    loading,
+    profile,
+  } = useAuth();
+
   const [mobileOpen, setMobileOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+
+  const userMenuRef = useRef(null);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 20);
@@ -26,13 +45,41 @@ export default function Navbar() {
 
   useEffect(() => {
     setMobileOpen(false);
+    setUserMenuOpen(false);
   }, [pathname]);
+
+  useEffect(() => {
+    function handleOutsideClick(e) {
+      if (!userMenuRef.current?.contains(e.target)) {
+        setUserMenuOpen(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handleOutsideClick);
+    return () => {
+      document.removeEventListener("mousedown", handleOutsideClick);
+    };
+  }, []);
 
   const navLinks = [
     { label: "Explore", href: "/explore" },
     { label: "Drops", href: "/drops" },
     { label: "Rankings", href: "/rankings" },
   ];
+
+  const displayName = useMemo(() => {
+    if (!profile) return "User";
+    return (
+      profile.first_name ||
+      profile.username ||
+      (profile.email ? profile.email.split("@")[0] : null) ||
+      "User"
+    );
+  }, [profile]);
+
+  const avatarLetter = useMemo(() => {
+    return displayName?.charAt(0)?.toUpperCase() || "U";
+  }, [displayName]);
 
   return (
     <>
@@ -84,18 +131,80 @@ export default function Navbar() {
               })}
             </div>
 
-            {/* RIGHT: LOGIN ONLY, NO CONNECT */}
+            {/* RIGHT: AUTH AWARE */}
             <div className="hidden md:flex items-center">
-              <Link
-                href="/login"
-                className="inline-flex items-center justify-center rounded-2xl px-6 py-3 text-[15px] font-semibold text-[#071019] transition-transform duration-200 hover:scale-[1.02]"
-                style={{
-                  background:
-                    "linear-gradient(135deg, #22d3ee 0%, #8b5cf6 100%)",
-                }}
-              >
-                Login / Sign Up
-              </Link>
+              {!isAuthed ? (
+                <button
+                  onClick={login}
+                  disabled={loading}
+                  className="inline-flex items-center justify-center gap-2 rounded-2xl px-6 py-3 text-[15px] font-semibold text-[#071019] transition-transform duration-200 hover:scale-[1.02] disabled:opacity-70"
+                  style={{
+                    background:
+                      "linear-gradient(135deg, #22d3ee 0%, #8b5cf6 100%)",
+                  }}
+                >
+                  {loading ? (
+                    <Loader2 size={16} className="animate-spin" />
+                  ) : (
+                    <User size={16} />
+                  )}
+                  Login / Sign Up
+                </button>
+              ) : (
+                <div className="relative" ref={userMenuRef}>
+                  <button
+                    onClick={() => setUserMenuOpen((prev) => !prev)}
+                    className="inline-flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-white transition-colors hover:bg-white/10"
+                  >
+                    {profile?.avatar_url ? (
+                      <div className="relative h-10 w-10 overflow-hidden rounded-full border border-white/10">
+                        <Image
+                          src={profile.avatar_url}
+                          alt={displayName}
+                          fill
+                          className="object-cover"
+                        />
+                      </div>
+                    ) : (
+                      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-cyan-400 to-violet-500 text-sm font-bold text-[#071019]">
+                        {avatarLetter}
+                      </div>
+                    )}
+
+                    <div className="text-left">
+                      <p className="max-w-[140px] truncate text-sm font-semibold text-white">
+                        {displayName}
+                      </p>
+                      <p className="max-w-[160px] truncate text-xs text-white/50">
+                        {profile?.email || "Authenticated"}
+                      </p>
+                    </div>
+
+                    <ChevronDown size={16} className="text-white/60" />
+                  </button>
+
+                  {userMenuOpen && (
+                    <div className="absolute right-0 top-[calc(100%+10px)] w-56 overflow-hidden rounded-2xl border border-white/10 bg-[#0b0f19]/95 shadow-2xl backdrop-blur-xl">
+                      <Link
+                        href="/profile"
+                        onClick={() => setUserMenuOpen(false)}
+                        className="flex items-center gap-3 px-4 py-3 text-sm text-white/85 transition-colors hover:bg-white/5 hover:text-white"
+                      >
+                        <User size={16} />
+                        Profile
+                      </Link>
+
+                      <button
+                        onClick={logout}
+                        className="flex w-full items-center gap-3 px-4 py-3 text-sm text-red-300 transition-colors hover:bg-red-500/10"
+                      >
+                        <LogOut size={16} />
+                        Logout
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* MOBILE BUTTON */}
@@ -142,17 +251,73 @@ export default function Navbar() {
               })}
 
               <div className="mt-2 border-t border-white/10 pt-3">
-                <Link
-                  href="/login"
-                  onClick={() => setMobileOpen(false)}
-                  className="block rounded-xl px-4 py-3 text-center text-sm font-semibold text-[#071019]"
-                  style={{
-                    background:
-                      "linear-gradient(135deg, #22d3ee 0%, #8b5cf6 100%)",
-                  }}
-                >
-                  Login / Sign Up
-                </Link>
+                {!isAuthed ? (
+                  <button
+                    onClick={async () => {
+                      setMobileOpen(false);
+                      await login();
+                    }}
+                    disabled={loading}
+                    className="flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3 text-center text-sm font-semibold text-[#071019] disabled:opacity-70"
+                    style={{
+                      background:
+                        "linear-gradient(135deg, #22d3ee 0%, #8b5cf6 100%)",
+                    }}
+                  >
+                    {loading ? (
+                      <Loader2 size={16} className="animate-spin" />
+                    ) : (
+                      <User size={16} />
+                    )}
+                    Login / Sign Up
+                  </button>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-4 py-3">
+                      {profile?.avatar_url ? (
+                        <div className="relative h-10 w-10 overflow-hidden rounded-full border border-white/10">
+                          <Image
+                            src={profile.avatar_url}
+                            alt={displayName}
+                            fill
+                            className="object-cover"
+                          />
+                        </div>
+                      ) : (
+                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-cyan-400 to-violet-500 text-sm font-bold text-[#071019]">
+                          {avatarLetter}
+                        </div>
+                      )}
+
+                      <div>
+                        <p className="text-sm font-semibold text-white">
+                          {displayName}
+                        </p>
+                        <p className="text-xs text-white/50">
+                          {profile?.email || "Authenticated"}
+                        </p>
+                      </div>
+                    </div>
+
+                    <Link
+                      href="/profile"
+                      onClick={() => setMobileOpen(false)}
+                      className="block rounded-xl px-4 py-3 text-sm font-medium text-white/80 transition-colors hover:bg-white/5 hover:text-white"
+                    >
+                      Profile
+                    </Link>
+
+                    <button
+                      onClick={() => {
+                        setMobileOpen(false);
+                        logout();
+                      }}
+                      className="block w-full rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-center text-sm font-semibold text-red-300"
+                    >
+                      Logout
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           </div>

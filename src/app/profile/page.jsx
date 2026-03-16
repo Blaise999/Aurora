@@ -16,11 +16,9 @@ import {
   Clock3,
   Gem,
   Layers3,
-  BarChart3,
-  Eye,
-  ChevronRight,
   Globe2,
-  ExternalLink
+  ExternalLink,
+  ChevronRight,
 } from 'lucide-react'
 
 import PageShell from '@/components/layout/PageShell'
@@ -28,6 +26,7 @@ import { useSession } from '@/hooks/useSession'
 import Button from '@/components/ui/Button'
 import Badge from '@/components/ui/Badge'
 import NftCardSkeleton from '@/components/NftCardSkeleton'
+import WalletConnectModal from '@/components/WalletConnectModal'
 
 import ProfileHero from '@/components/profile/ProfileHero'
 import ProfileIdentityCard from '@/components/profile/ProfileIdentityCard'
@@ -46,25 +45,38 @@ import { calcPortfolioValue } from '@/lib/portfolio/calcPortfolioValue'
 export default function PremiumProfilePage() {
   const router = useRouter()
   const { address, isConnected, chain } = useAccount()
-  const { profile, isLoggedIn, logout } = useSession()
+  const {
+    profile,
+    isLoggedIn,
+    logout,
+    refreshSession,
+    linkedWallet,
+    hasLinkedWallet,
+  } = useSession()
 
   const [tab, setTab] = useState('collections')
   const [nfts, setNfts] = useState([])
   const [loading, setLoading] = useState(true)
+  const [showWalletModal, setShowWalletModal] = useState(false)
+  const [syncingWallet, setSyncingWallet] = useState(false)
+
+  const liveWallet = address ? String(address).toLowerCase() : null
+  const savedWallet = linkedWallet ? String(linkedWallet).toLowerCase() : null
+  const effectiveWallet = liveWallet || savedWallet || null
 
   const greeting = useMemo(() => {
     const hr = new Date().getHours()
     const time = hr < 12 ? 'Morning' : hr < 18 ? 'Afternoon' : 'Evening'
     return {
       title: `Good ${time}`,
-      subtitle: profile?.first_name || 'Collector'
+      subtitle: profile?.first_name || 'Collector',
     }
   }, [profile])
 
   const walletDisplay = useMemo(() => {
-    if (!address) return ''
-    return `${address.slice(0, 6)}...${address.slice(-4)}`
-  }, [address])
+    if (!effectiveWallet) return ''
+    return `${effectiveWallet.slice(0, 6)}...${effectiveWallet.slice(-4)}`
+  }, [effectiveWallet])
 
   const portfolioValue = useMemo(() => calcPortfolioValue(nfts), [nfts])
 
@@ -72,9 +84,7 @@ export default function PremiumProfilePage() {
 
   const uniqueCollections = useMemo(() => {
     const names = new Set(
-      nfts
-        .map((n) => n.collection || n.collection_name)
-        .filter(Boolean)
+      nfts.map((n) => n.collection || n.collection_name).filter(Boolean)
     )
     return names.size
   }, [nfts])
@@ -95,7 +105,7 @@ export default function PremiumProfilePage() {
       { day: 'Thu', value: Math.max(base * 0.61, 0.65) },
       { day: 'Fri', value: Math.max(base * 0.72, 0.9) },
       { day: 'Sat', value: Math.max(base * 0.81, 1.1) },
-      { day: 'Sun', value: Math.max(base, 1.3) }
+      { day: 'Sun', value: Math.max(base, 1.3) },
     ]
   }, [portfolioValue])
 
@@ -103,20 +113,19 @@ export default function PremiumProfilePage() {
     return nfts.slice(0, 5).map((nft, i) => ({
       id: nft.id || i,
       title: nft.nft_name || nft.name || `Token #${nft.token_id}`,
-      subtitle: nft.collection || 'Collection',
+      subtitle: nft.collection || nft.collection_name || 'Collection',
       time: nft.assigned_at || nft.created_at || new Date().toISOString(),
-      type: 'acquired'
+      type: 'acquired',
     }))
   }, [nfts])
 
   useEffect(() => {
     if (!isLoggedIn) return
 
-    // Start fetch immediately — the API resolves profileId from session
     async function loadNFTs() {
       setLoading(true)
       try {
-        const res = await fetch('/api/user/collections')
+        const res = await fetch('/api/user/collections', { cache: 'no-store' })
         const json = await res.json()
         setNfts(json?.nfts || [])
       } catch (err) {
@@ -129,14 +138,50 @@ export default function PremiumProfilePage() {
     loadNFTs()
   }, [isLoggedIn])
 
+  // if wallet is live-connected, persist it into profile once
+  useEffect(() => {
+    if (!isLoggedIn || !liveWallet) return
+    if (savedWallet && savedWallet === liveWallet) return
+
+    async function syncWalletToProfile() {
+      try {
+        setSyncingWallet(true)
+
+        const res = await fetch('/api/profile/link-wallet', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ walletAddress: liveWallet }),
+        })
+
+        const json = await res.json()
+
+        if (!res.ok) {
+          console.error('Failed to sync wallet:', json?.error)
+          return
+        }
+
+        await refreshSession()
+      } catch (err) {
+        console.error('Wallet sync crashed:', err)
+      } finally {
+        setSyncingWallet(false)
+      }
+    }
+
+    syncWalletToProfile()
+  }, [isLoggedIn, liveWallet, savedWallet, refreshSession])
+
   if (!isLoggedIn) {
     router.push('/login')
     return null
   }
 
   const handleConnect = () => {
-    router.push('/welcome')
+    setShowWalletModal(true)
   }
+
+  const hasUsableWallet = Boolean(effectiveWallet)
+  const needsFirstWalletLink = !hasLinkedWallet
 
   return (
     <PageShell>
@@ -164,6 +209,20 @@ export default function PremiumProfilePage() {
               NFT detail route:
               <span className="font-mono text-text">/profile/nft/[id]</span>
             </div>
+
+            {hasLinkedWallet && (
+              <div className="inline-flex items-center gap-2 rounded-full border border-success/20 bg-success/10 px-3 py-1.5 text-xs text-success">
+                <Wallet size={13} />
+                Linked wallet:
+                <span className="font-mono">{walletDisplay}</span>
+              </div>
+            )}
+
+            {syncingWallet && (
+              <div className="inline-flex items-center gap-2 rounded-full border border-border-light bg-card/60 px-3 py-1.5 text-xs text-muted">
+                Syncing wallet...
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 mt-8">
@@ -171,19 +230,19 @@ export default function PremiumProfilePage() {
               <ProfileIdentityCard
                 profile={profile}
                 walletDisplay={walletDisplay}
-                address={address}
+                address={effectiveWallet}
                 isConnected={isConnected}
                 chainName={chain?.name || 'Base'}
               />
 
-              {!isConnected ? (
+              {needsFirstWalletLink ? (
                 <div className="rounded-[28px] border border-border-light bg-card/70 backdrop-blur-xl p-6 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
                   <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-accent to-accent-violet flex items-center justify-center mb-4">
                     <Wallet size={26} className="text-white" />
                   </div>
                   <h3 className="text-xl font-semibold mb-2">Connect your wallet</h3>
                   <p className="text-sm text-muted leading-relaxed mb-5">
-                    Unlock your full collector identity, verify ownership, and manage your onchain assets.
+                    Link your wallet once and we’ll save it to your profile for future logins.
                   </p>
                   <Button onClick={handleConnect} size="lg" className="w-full">
                     <Wallet size={16} />
@@ -260,16 +319,16 @@ export default function PremiumProfilePage() {
                     items={[
                       {
                         label: 'Collector Rank',
-                        value: collectionCount > 8 ? 'Elite' : collectionCount > 3 ? 'Rising' : 'New'
+                        value: collectionCount > 8 ? 'Elite' : collectionCount > 3 ? 'Rising' : 'New',
                       },
                       {
                         label: 'Preferred Chain',
-                        value: chain?.name || 'Base'
+                        value: chain?.name || 'Base',
                       },
                       {
                         label: 'Visibility',
-                        value: 'Verified'
-                      }
+                        value: 'Verified',
+                      },
                     ]}
                   />
 
@@ -288,9 +347,21 @@ export default function PremiumProfilePage() {
 
                     <div className="space-y-4">
                       <StatusRow icon={<ShieldCheck size={16} />} label="Profile verified" value="Yes" />
-                      <StatusRow icon={<Wallet size={16} />} label="Wallet linked" value={isConnected ? 'Connected' : 'Pending'} />
-                      <StatusRow icon={<Globe2 size={16} />} label="Network" value={chain?.name || 'Not detected'} />
-                      <StatusRow icon={<Clock3 size={16} />} label="Last sync" value="Just now" />
+                      <StatusRow
+                        icon={<Wallet size={16} />}
+                        label="Wallet linked"
+                        value={hasLinkedWallet ? 'Linked' : 'Pending'}
+                      />
+                      <StatusRow
+                        icon={<Globe2 size={16} />}
+                        label="Network"
+                        value={chain?.name || 'Not detected'}
+                      />
+                      <StatusRow
+                        icon={<Clock3 size={16} />}
+                        label="Last sync"
+                        value={syncingWallet ? 'Syncing...' : 'Just now'}
+                      />
                     </div>
                   </div>
                 </div>
@@ -304,20 +375,20 @@ export default function PremiumProfilePage() {
                     tabs={[
                       { key: 'collections', label: 'Collections', icon: <LayoutGrid size={16} /> },
                       { key: 'activity', label: 'Activity', icon: <Activity size={16} /> },
-                      { key: 'listed', label: 'Listed', icon: <Tag size={16} /> }
+                      { key: 'listed', label: 'Listed', icon: <Tag size={16} /> },
                     ]}
                   />
                 </div>
 
                 <div className="p-5 sm:p-6">
-                  {!isConnected ? (
+                  {!hasUsableWallet ? (
                     <div className="rounded-[24px] border border-border-light bg-surface2/50 p-10 text-center">
                       <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-accent to-accent-violet flex items-center justify-center mx-auto mb-5">
                         <Wallet size={28} className="text-white" />
                       </div>
                       <h2 className="text-2xl font-bold mb-3">Your vault is waiting</h2>
                       <p className="text-muted max-w-md mx-auto mb-6">
-                        Connect your wallet to unlock your collection, profile insights, and collector dashboard.
+                        Connect your wallet once to link it to your profile and unlock your collection dashboard.
                       </p>
                       <Button onClick={handleConnect} size="lg">
                         <Wallet size={16} />
@@ -424,6 +495,15 @@ export default function PremiumProfilePage() {
                       label="Explore NFTs"
                       onClick={() => router.push('/explore')}
                     />
+
+                    {!isConnected && hasLinkedWallet && (
+                      <QuickAction
+                        icon={<Wallet size={16} />}
+                        label="Reconnect Wallet"
+                        onClick={handleConnect}
+                      />
+                    )}
+
                     <QuickAction
                       icon={<LogOut size={16} />}
                       label="Sign Out"
@@ -436,6 +516,11 @@ export default function PremiumProfilePage() {
             </div>
           </div>
         </div>
+
+        <WalletConnectModal
+          open={showWalletModal}
+          onClose={() => setShowWalletModal(false)}
+        />
       </div>
     </PageShell>
   )

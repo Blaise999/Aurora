@@ -1,27 +1,7 @@
 import "./globals.css";
 import { DM_Sans, Outfit, JetBrains_Mono } from "next/font/google";
-import dynamic from "next/dynamic";
-import Navbar from "@/components/Navbar";
-import Footer from "@/components/layout/Footer";
-
-// ── CRITICAL FIX: Load wallet provider ONLY on client (no more indexedDB crash) ──
-const ClientProviders = dynamic(
-  () => import("@/components/ClientProviders"),
-  { ssr: false }
-);
-
-// ── Other heavy client-only components ──
-const ToastProvider = dynamic(() => import("@/components/ToastProvider"), {
-  ssr: false,
-});
-const SupportChatWidget = dynamic(
-  () => import("@/components/support/SupportChatWidget"),
-  { ssr: false }
-);
-const VisitorTrackerProvider = dynamic(
-  () => import("@/components/support/VisitorTrackerProvider"),
-  { ssr: false }
-);
+import { Suspense } from "react";
+import AppShell from "@/components/layout/AppShell";
 
 // ── next/font: self-hosted, no render-blocking ──
 const dmSans = DM_Sans({
@@ -59,14 +39,15 @@ export default function RootLayout({ children }) {
       className={`dark ${dmSans.variable} ${outfit.variable} ${jetbrainsMono.variable}`}
     >
       <body className="grain bg-bg text-text antialiased font-body min-h-screen flex flex-col">
-        <ClientProviders>
-          <Navbar />
-          <main className="flex-1 pt-16 sm:pt-20">{children}</main>
-          <Footer />
-          <ToastProvider />
-          <SupportChatWidget />
-          <VisitorTrackerProvider />
-        </ClientProviders>
+        <Suspense
+          fallback={
+            <div className="min-h-screen flex items-center justify-center">
+              <div className="w-8 h-8 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+            </div>
+          }
+        >
+          <AppShell>{children}</AppShell>
+        </Suspense>
       </body>
     </html>
   );
