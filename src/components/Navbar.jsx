@@ -25,10 +25,14 @@ export default function Navbar() {
 
   useEffect(() => {
     document.body.style.overflow = mobileOpen ? "hidden" : "";
-    return () => { document.body.style.overflow = ""; };
+    return () => {
+      document.body.style.overflow = "";
+    };
   }, [mobileOpen]);
 
-  useEffect(() => { setMobileOpen(false); }, [pathname]);
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [pathname]);
 
   const navLinks = [
     { label: "Home", href: "/" },
@@ -53,34 +57,28 @@ export default function Navbar() {
         }`}
       >
         <div className="max-w-8xl mx-auto px-6 sm:px-8 lg:px-12">
-          <div className="flex items-center justify-between h-28 md:h-32">
-
-            {/* LOGO LEFT */}
+          <div className="flex items-center justify-between h-28 md:h-32 lg:h-36">
             <Link href="/" className="flex items-center shrink-0 group">
-              <div className="relative w-[160px] h-[80px] md:w-[200px] md:h-[100px] lg:w-[240px] lg:h-[120px]">
+              <div className="relative w-[220px] h-[100px] sm:w-[260px] sm:h-[115px] md:w-[320px] md:h-[140px] lg:w-[380px] lg:h-[165px] xl:w-[430px] xl:h-[185px]">
                 <Image
                   src="/pictures/logo.png"
-                  alt="Aurora NFT"
+                  alt="Aurora NFT Logo"
                   fill
                   priority
-                  sizes="(max-width: 768px) 160px, (max-width: 1024px) 200px, 240px"
-                  className="
-                    object-contain
-                    transition-all duration-500
-                    group-hover:scale-[1.05]
-                    drop-shadow-[0_0_24px_rgba(0,229,255,0.5)]
-                    group-hover:drop-shadow-[0_0_36px_rgba(124,58,237,0.6)]
-                  "
+                  quality={100}
+                  unoptimized
+                  sizes="(max-width: 640px) 220px, (max-width: 768px) 260px, (max-width: 1024px) 320px, (max-width: 1280px) 380px, 430px"
+                  className="object-contain transition-transform duration-500 group-hover:scale-[1.03]"
                 />
               </div>
             </Link>
 
-            {/* DESKTOP NAV */}
             <div className="hidden md:flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] backdrop-blur-xl p-2">
               {navLinks.map((link) => {
                 const active =
                   pathname === link.href ||
                   (link.href !== "/" && pathname.startsWith(link.href));
+
                 return (
                   <Link
                     key={link.href}
@@ -97,7 +95,6 @@ export default function Navbar() {
               })}
             </div>
 
-            {/* ACTIONS */}
             <div className="flex items-center gap-3">
               {isLoggedIn ? (
                 <div className="hidden sm:flex items-center gap-3">
@@ -106,8 +103,11 @@ export default function Navbar() {
                     className="flex items-center gap-2 px-4 py-2.5 rounded-full font-semibold text-[14px] border border-accent/25 bg-accent/10 text-accent hover:bg-accent/20 transition-all"
                   >
                     <User size={16} />
-                    <span className="max-w-[140px] truncate">{displayName || "Profile"}</span>
+                    <span className="max-w-[140px] truncate">
+                      {displayName || "Profile"}
+                    </span>
                   </Link>
+
                   <button
                     onClick={logout}
                     className="p-2.5 rounded-full text-muted hover:text-red-500 hover:bg-red-500/10 transition-all"
@@ -121,28 +121,26 @@ export default function Navbar() {
                   href="/login"
                   className="hidden sm:inline-flex items-center justify-center min-w-[150px] px-6 py-3 rounded-full text-[14px] font-semibold transition-all duration-300"
                   style={{
-                    background: "linear-gradient(135deg,#00E5FF 0%,#7C3AED 100%)",
-                    color: "#070A10"
+                    background:
+                      "linear-gradient(135deg,#00E5FF 0%,#7C3AED 100%)",
+                    color: "#070A10",
                   }}
                 >
                   Login / Sign Up
                 </Link>
               )}
 
-              {/* MOBILE MENU BUTTON */}
               <button
                 onClick={() => setMobileOpen(!mobileOpen)}
                 className="md:hidden w-10 h-10 rounded-xl flex items-center justify-center text-muted hover:text-text hover:bg-white/5 transition-colors"
               >
-                {mobileOpen ? <X size={24}/> : <Menu size={24}/>}
+                {mobileOpen ? <X size={24} /> : <Menu size={24} />}
               </button>
             </div>
-
           </div>
         </div>
       </nav>
 
-      {/* MOBILE MENU */}
       {mobileOpen && (
         <div className="fixed inset-0 z-[99] md:hidden">
           <div
@@ -160,6 +158,7 @@ export default function Navbar() {
                 {link.label}
               </Link>
             ))}
+
             <div className="border-t border-white/10 pt-3 mt-2">
               {isLoggedIn ? (
                 <>
@@ -171,8 +170,12 @@ export default function Navbar() {
                     <User size={14} className="inline mr-2" />
                     {displayName || "Profile"}
                   </Link>
+
                   <button
-                    onClick={() => { logout(); setMobileOpen(false); }}
+                    onClick={() => {
+                      logout();
+                      setMobileOpen(false);
+                    }}
                     className="block w-full text-left px-4 py-3 rounded-xl text-sm text-red-500"
                   >
                     <LogOut size={14} className="inline mr-2" />

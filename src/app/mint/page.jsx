@@ -60,15 +60,21 @@ function MintPageContent() {
   const chainName = targetChainId === 8453 ? "Base" : "Base Sepolia";
   const explorerUrl = getExplorerUrl();
 
-  const mintFee = String(selectedNft?.mintFee || settings?.minting_fee || "0.002");
-  const nftPrice = String(selectedNft?.mintPrice || settings?.minting_fee || "0.002");
+  const mintFee = String(
+    selectedNft?.mintFee || settings?.minting_fee || "0.002"
+  );
+  const nftPrice = String(
+    selectedNft?.mintPrice || settings?.minting_fee || "0.002"
+  );
   const totalPrice = (parseFloat(nftPrice) + parseFloat(mintFee)).toFixed(6);
 
   const [imgZoomed, setImgZoomed] = useState(false);
   const [favorited, setFavorited] = useState(false);
   const [showWalletModal, setShowWalletModal] = useState(false);
   const [profileId, setProfileId] = useState(null);
+
   const [alreadyOwned, setAlreadyOwned] = useState(false);
+  const [ownershipSource, setOwnershipSource] = useState(null); // "wallet_mints" | "user_collections" | "both" | null
   const [checkingOwned, setCheckingOwned] = useState(false);
 
   useEffect(() => {
@@ -82,11 +88,14 @@ function MintPageContent() {
         data: { user },
       } = await supabase.auth.getUser();
 
-      if (!user) return;
+      if (!user) {
+        setProfileId(null);
+        return;
+      }
 
       let { data: profile, error } = await supabase
         .from("profiles")
-        .select("id")
+        .select("id, email, wallet_address")
         .eq("email", user.email)
         .single();
 
@@ -101,8 +110,9 @@ function MintPageContent() {
             email: user.email || "unknown@wallet.com",
             first_name: user.user_metadata?.name?.split(" ")[0] || "User",
             username: `user_${user.id.slice(0, 8)}`,
+            wallet_address: address ? String(address).toLowerCase() : null,
           })
-          .select("id")
+          .select("id, email, wallet_address")
           .single();
 
         if (insertErr || !newProfile?.id) {
@@ -114,10 +124,29 @@ function MintPageContent() {
       }
 
       setProfileId(profile.id);
+
+      // Keep wallet address synced after auth + wallet connection
+      if (
+        address &&
+        (!profile.wallet_address ||
+          profile.wallet_address.toLowerCase() !== address.toLowerCase())
+      ) {
+        const { error: walletUpdateError } = await supabase
+          .from("profiles")
+          .update({
+            wallet_address: address.toLowerCase(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", profile.id);
+
+        if (walletUpdateError) {
+          console.error("Wallet address sync failed:", walletUpdateError);
+        }
+      }
     }
 
     loadOrCreateProfile();
-  }, [isAuthed]);
+  }, [isAuthed, address]);
 
   const currentContract =
     selectedNft?.contractAddress ||
@@ -126,49 +155,91 @@ function MintPageContent() {
     null;
 
   const currentTokenId =
-    selectedNft?.tokenId ||
-    selectedNft?.token_id ||
-    tokenIdParam ||
-    null;
+    selectedNft?.tokenId || selectedNft?.token_id || tokenIdParam || null;
 
   const currentChainId =
-    selectedNft?.chainId ||
-    selectedNft?.chain_id ||
-    targetChainId;
+    selectedNft?.chainId || selectedNft?.chain_id || targetChainId;
 
   useEffect(() => {
     async function checkOwnership() {
-      if (!profileId || !currentContract || !currentTokenId) {
+      if (!isAuthed || !profileId || !currentContract || !currentTokenId) {
         setAlreadyOwned(false);
+        setOwnershipSource(null);
         return;
       }
 
       setCheckingOwned(true);
 
-      const { data, error } = await supabase
-        .from("user_collections")
-        .select("id")
-        .eq("profile_id", profileId)
-        .eq("contract_address", String(currentContract).toLowerCase())
-        .eq("token_id", String(currentTokenId))
-        .limit(1);
+      const normalizedContract = String(currentContract).toLowerCase();
+      const normalizedTokenId = String(currentTokenId);
+      const normalizedWallet = address ? String(address).toLowerCase() : null;
 
-      if (error) {
-        console.error("Ownership check failed:", error);
+      try {
+        const collectionQuery = supabase
+          .from("user_collections")
+          .select("id", { count: "exact", head: false })
+          .eq("profile_id", profileId)
+          .eq("contract_address", normalizedContract)
+          .eq("token_id", normalizedTokenId)
+          .limit(1);
+
+        let mintQuery = null;
+
+        if (normalizedWallet) {
+          mintQuery = supabase
+            .from("wallet_mints")
+            .select("id", { count: "exact", head: false })
+            .eq("wallet_address", normalizedWallet)
+            .eq("contract_address", normalizedContract)
+            .eq("token_id", normalizedTokenId)
+            .eq("chain_id", Number(currentChainId))
+            .in("status", ["confirmed", "success"])
+            .limit(1);
+        }
+
+        const [collectionRes, mintRes] = await Promise.all([
+          collectionQuery,
+          mintQuery,
+        ]);
+
+        if (collectionRes.error) {
+          console.error("user_collections ownership check failed:", collectionRes.error);
+        }
+
+        if (mintRes?.error) {
+          console.error("wallet_mints ownership check failed:", mintRes.error);
+        }
+
+        const inCollection = !!collectionRes?.data?.length;
+        const inWalletMints = !!mintRes?.data?.length;
+
+        setAlreadyOwned(inCollection || inWalletMints);
+
+        if (inCollection && inWalletMints) {
+          setOwnershipSource("both");
+        } else if (inCollection) {
+          setOwnershipSource("user_collections");
+        } else if (inWalletMints) {
+          setOwnershipSource("wallet_mints");
+        } else {
+          setOwnershipSource(null);
+        }
+      } catch (err) {
+        console.error("Ownership check crashed:", err);
         setAlreadyOwned(false);
-      } else {
-        setAlreadyOwned(!!data?.length);
+        setOwnershipSource(null);
+      } finally {
+        setCheckingOwned(false);
       }
-
-      setCheckingOwned(false);
     }
 
     checkOwnership();
-  }, [profileId, currentContract, currentTokenId]);
+  }, [isAuthed, profileId, address, currentContract, currentTokenId, currentChainId]);
 
   useEffect(() => {
     if (confirmResult?.success) {
       setAlreadyOwned(true);
+      setOwnershipSource("wallet_mints");
     }
   }, [confirmResult]);
 
@@ -183,9 +254,12 @@ function MintPageContent() {
 
   const txExplorerLink = txHash ? `${explorerUrl}/tx/${txHash}` : null;
 
-  let state = isAuthed ? "disconnected" : "needs_auth";
+  let state = "needs_auth";
+
+  if (isAuthed) state = "disconnected";
   if (isAuthed && isConnected && isWrongChain) state = "wrong_network";
   if (isAuthed && isConnected && !isWrongChain) state = "ready";
+
   if (confirmResult?.success) state = "tx_success";
   if (confirmError) state = "tx_error";
   if (confirming) state = "confirming";
@@ -193,7 +267,7 @@ function MintPageContent() {
   if (isSending) state = "tx_signing";
 
   const handleMint = useCallback(() => {
-    if (!selectedNft || alreadyOwned) return;
+    if (!isAuthed || !isConnected || !selectedNft || alreadyOwned) return;
 
     const tokenId = String(
       selectedNft.tokenId || selectedNft.token_id || tokenIdParam || "0"
@@ -235,6 +309,8 @@ function MintPageContent() {
       totalPrice,
     });
   }, [
+    isAuthed,
+    isConnected,
     selectedNft,
     alreadyOwned,
     tokenIdParam,
@@ -251,6 +327,7 @@ function MintPageContent() {
   const handleFavorite = async (e) => {
     e?.preventDefault();
     e?.stopPropagation();
+
     if (!isConnected || !selectedNft) return;
 
     const favoriteContract =
@@ -275,7 +352,7 @@ function MintPageContent() {
           contractAddress: favoriteContract,
           tokenId: favoriteTokenId,
           chainId: favoriteChainId,
-          cachedNftId: selectedNft.dbId,
+          cachedNftId: selectedNft.dbId || selectedNft.id || null,
         }),
       });
       setFavorited(true);
@@ -287,6 +364,19 @@ function MintPageContent() {
   const nftDesc =
     dn?.description ||
     "A unique digital collectible from a curated collection.";
+
+  const ownershipMessage = (() => {
+    if (ownershipSource === "both") {
+      return "This NFT has already been bought and is already in your collection.";
+    }
+    if (ownershipSource === "wallet_mints") {
+      return "This wallet has already bought/minted this NFT.";
+    }
+    if (ownershipSource === "user_collections") {
+      return "This NFT is already in your collection.";
+    }
+    return "You already bought this NFT.";
+  })();
 
   return (
     <div className="min-h-screen">
@@ -390,15 +480,15 @@ function MintPageContent() {
                       Chain-Verifiable
                     </span>
 
-                    {checkingOwned && (
+                    {checkingOwned && isAuthed && (
                       <span className="px-3 py-1 rounded-pill bg-surface border border-border-light text-xs">
-                        Checking ownership...
+                        Checking purchase status...
                       </span>
                     )}
 
                     {!checkingOwned && alreadyOwned && (
                       <span className="px-3 py-1 rounded-pill bg-success/10 text-xs text-success font-medium border border-success/20">
-                        Already in your collection
+                        Already bought
                       </span>
                     )}
                   </div>
@@ -490,12 +580,12 @@ function MintPageContent() {
               <div className="lg:sticky lg:top-24">
                 <div className="glass-card rounded-card p-6 sm:p-8 space-y-6">
                   <div className="space-y-1">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <h2 className="font-display text-xl font-semibold text-text">
                         Mint
                       </h2>
 
-                      {state === "ready" && (
+                      {state === "ready" && !alreadyOwned && (
                         <Badge color="success" dot>
                           Ready
                         </Badge>
@@ -521,7 +611,7 @@ function MintPageContent() {
 
                       {!checkingOwned && alreadyOwned && (
                         <Badge color="success" dot>
-                          Owned
+                          Bought
                         </Badge>
                       )}
                     </div>
@@ -559,7 +649,7 @@ function MintPageContent() {
                       <div className="text-center py-4 space-y-2">
                         <Wallet size={32} className="mx-auto text-accent" />
                         <p className="text-sm text-muted">
-                          Sign in to verify your wallet
+                          Sign in first before continuing
                         </p>
                       </div>
 
@@ -585,7 +675,7 @@ function MintPageContent() {
                       <div className="text-center py-4 space-y-2">
                         <Wallet size={32} className="mx-auto text-muted-dim" />
                         <p className="text-sm text-muted">
-                          Connect your wallet to mint
+                          Connect your wallet to continue
                         </p>
                       </div>
 
@@ -636,13 +726,23 @@ function MintPageContent() {
 
                   {state === "ready" && (
                     <div className="space-y-4">
-                      {alreadyOwned ? (
+                      {checkingOwned ? (
+                        <div className="bg-surface2 border border-border-light rounded-xl p-4 text-center">
+                          <Loader2
+                            size={18}
+                            className="mx-auto mb-2 animate-spin text-accent"
+                          />
+                          <p className="text-sm text-muted">
+                            Checking whether you already bought this NFT...
+                          </p>
+                        </div>
+                      ) : alreadyOwned ? (
                         <div className="bg-success/10 border border-success/20 rounded-xl p-4">
                           <p className="text-sm font-medium text-success">
-                            You already have this NFT in your collection.
+                            You’ve already bought this NFT.
                           </p>
                           <p className="text-xs text-muted mt-1">
-                            Minting is disabled for this item.
+                            {ownershipMessage}
                           </p>
                         </div>
                       ) : (

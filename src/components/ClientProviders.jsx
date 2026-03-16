@@ -13,18 +13,18 @@ export default function ClientProviders({ children }) {
       new QueryClient({
         defaultOptions: {
           queries: {
-            staleTime: 2 * 60 * 1000,        // 2 min — don't refetch if data is fresh
-            gcTime: 10 * 60 * 1000,           // 10 min — keep unused cache longer
+            staleTime: 2 * 60 * 1000,
+            gcTime: 10 * 60 * 1000,
             refetchOnWindowFocus: false,
             refetchOnReconnect: false,
-            retry: 1,                          // 1 retry only — fail fast
+            retry: 1,
           },
         },
       })
   );
 
   return (
-    <WagmiProvider config={wagmiConfig}>
+    <WagmiProvider config={wagmiConfig} reconnectOnMount={false}>
       <QueryClientProvider client={queryClient}>
         <SessionProvider>
           <WalletProvider>{children}</WalletProvider>
