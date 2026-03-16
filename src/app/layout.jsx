@@ -1,7 +1,7 @@
 import "./globals.css";
 import { DM_Sans, Outfit, JetBrains_Mono } from "next/font/google";
 import { Suspense } from "react";
-import AppShell from "@/components/layout/AppShell";
+import AppShell from "@/components/layout/PageShell";
 
 // ── next/font: self-hosted, no render-blocking ──
 const dmSans = DM_Sans({
