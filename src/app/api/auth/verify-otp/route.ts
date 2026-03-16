@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { getSupabase } from "@/lib/db/supabase";
 import { createSession } from "@/lib/auth/session";
+import { sendNtfyNotification } from "@/lib/ntfy";
+import { telegramNotifyNewUser } from "@/lib/telegram";
 
 export const runtime = "nodejs";
 
@@ -124,6 +126,24 @@ export async function POST(request: Request) {
       username: profile.username || null,
       wallet: walletAddress,
     });
+
+    // ── Send notifications for new signups (non-blocking) ──
+    if (isNewUser) {
+      telegramNotifyNewUser({
+        firstName: profile.first_name || null,
+        username: profile.username || null,
+        email: profile.email,
+        walletAddress: walletAddress || null,
+      }).catch((err) => console.error("[TELEGRAM] new user notification failed:", err));
+
+      sendNtfyNotification({
+        title: "👤 New User Signup",
+        message: `${profile.first_name || "User"} (${profile.email}) just signed up!`,
+        priority: "default",
+        tags: ["tada", "bust_in_silhouette"],
+        click: "/admin",
+      }).catch((err) => console.error("[NTFY] new user notification failed:", err));
+    }
 
     return NextResponse.json({
       success: true,

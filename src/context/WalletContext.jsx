@@ -13,25 +13,14 @@ export function WalletProvider({ children }) {
   const isConnected = !!address;
   const isWrongChain = chainId && chainId !== CHAIN_ID;
 
-  // Auto-connect if previously connected
-  useEffect(() => {
-    async function checkConnection() {
-      if (typeof window === "undefined" || !window.ethereum) return;
-      try {
-        const accounts = await window.ethereum.request({ method: "eth_accounts" });
-        if (accounts.length > 0) {
-          setAddress(accounts[0]);
-          const hexChain = await window.ethereum.request({ method: "eth_chainId" });
-          setChainId(parseInt(hexChain, 16));
-        }
-      } catch (_) {}
-    }
-    checkConnection();
-  }, []);
+  // ── REMOVED auto-connect on page load ──
+  // Previously this called eth_accounts which opens wallet apps.
+  // Now we only connect when user explicitly clicks "Connect Wallet".
 
-  // Listen for account/chain changes
+  // Listen for account/chain changes ONLY after user has connected
   useEffect(() => {
     if (typeof window === "undefined" || !window.ethereum) return;
+
     const handleAccounts = (accounts) => {
       if (accounts.length === 0) {
         setAddress(null);
@@ -83,7 +72,6 @@ export function WalletProvider({ children }) {
         params: [{ chainId: CHAIN_CONFIG.chainId }],
       });
     } catch (err) {
-      // Chain not added, try adding
       if (err.code === 4902) {
         await window.ethereum.request({
           method: "wallet_addEthereumChain",

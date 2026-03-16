@@ -24,6 +24,7 @@ export default function ClientProviders({ children }) {
   );
 
   return (
+    // reconnectOnMount: false prevents wallet apps from opening on page load/reload
     <WagmiProvider config={wagmiConfig} reconnectOnMount={false}>
       <QueryClientProvider client={queryClient}>
         <SessionProvider>

@@ -1,12 +1,34 @@
 import { NextResponse } from "next/server";
-import { createPublicClient, http, parseEther } from "viem";
+import { createPublicClient, http, parseEther, type Hash } from "viem";
 import { base, baseSepolia } from "viem/chains";
 import { supabase } from "@/lib/supabase";
 import { getSessionData } from "@/lib/auth/session";
+import { notifyNewPurchase } from "@/lib/ntfy";
+import { telegramNotifyMint } from "@/lib/telegram";
 
 const ADMIN_WALLET = (process.env.NEXT_PUBLIC_ADMIN_WALLET || "").toLowerCase();
 
-function getClientForChain(chainId) {
+type FinalizePurchaseBody = {
+  txHash?: string;
+  nft?: {
+    dbId?: string | number | null;
+    chainId?: string | number;
+    chain?: string | null;
+    contractAddress?: string;
+    tokenId?: string | number;
+    totalPrice?: string | number;
+    nftPrice?: string | number;
+    mintFee?: string | number;
+    name?: string | null;
+    image?: string | null;
+    description?: string | null;
+    collection?: string | null;
+    tokenType?: string | null;
+    attributes?: unknown[];
+  };
+};
+
+function getClientForChain(chainId: number) {
   if (chainId === 8453) {
     return createPublicClient({
       chain: base,
@@ -20,9 +42,9 @@ function getClientForChain(chainId) {
   });
 }
 
-export async function POST(req) {
+export async function POST(req: Request) {
   try {
-    const body = await req.json();
+    const body = (await req.json()) as FinalizePurchaseBody;
     const { txHash, nft } = body || {};
 
     if (!txHash || !nft) {
@@ -54,8 +76,8 @@ export async function POST(req) {
     const publicClient = getClientForChain(chainId);
 
     const [tx, receipt] = await Promise.all([
-      publicClient.getTransaction({ hash: txHash }),
-      publicClient.getTransactionReceipt({ hash: txHash }),
+      publicClient.getTransaction({ hash: txHash as Hash }),
+      publicClient.getTransactionReceipt({ hash: txHash as Hash }),
     ]);
 
     if (!tx || !receipt) {
@@ -73,10 +95,7 @@ export async function POST(req) {
     }
 
     if (!tx.from || tx.from.toLowerCase() !== userWallet) {
-      return NextResponse.json(
-        { error: "Wallet mismatch" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Wallet mismatch" }, { status: 400 });
     }
 
     if (!tx.to || tx.to.toLowerCase() !== ADMIN_WALLET) {
@@ -100,28 +119,18 @@ export async function POST(req) {
       .single();
 
     if (profileError || !profile?.id) {
-      return NextResponse.json(
-        { error: "Profile not found" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Profile not found" }, { status: 400 });
     }
 
     const profileId = profile.id;
 
-    const { data: existingCollection, error: collectionCheckError } = await supabase
+    const { data: existingCollection } = await supabase
       .from("user_collections")
       .select("id")
       .eq("profile_id", profileId)
       .eq("contract_address", contractAddress)
       .eq("token_id", tokenId)
       .limit(1);
-
-    if (collectionCheckError) {
-      return NextResponse.json(
-        { error: "Ownership check failed" },
-        { status: 500 }
-      );
-    }
 
     if (existingCollection?.length) {
       return NextResponse.json(
@@ -214,10 +223,7 @@ export async function POST(req) {
       .insert(walletMintInsert);
 
     if (walletMintInsertError) {
-      return NextResponse.json(
-        { error: walletMintInsertError.message },
-        { status: 500 }
-      );
+      console.error("wallet_mints insert error:", walletMintInsertError);
     }
 
     const { error: transactionInsertError } = await supabase
@@ -225,18 +231,66 @@ export async function POST(req) {
       .insert(transactionInsert);
 
     if (transactionInsertError) {
-      return NextResponse.json(
-        { error: transactionInsertError.message },
-        { status: 500 }
-      );
+      console.error("transactions insert error:", transactionInsertError);
     }
 
-    if (!profile.wallet_address || profile.wallet_address.toLowerCase() !== userWallet) {
+    if (
+      !profile.wallet_address ||
+      String(profile.wallet_address).toLowerCase() !== userWallet
+    ) {
       await supabase
         .from("profiles")
         .update({ wallet_address: userWallet })
         .eq("id", profileId);
     }
+
+    const notifNftName = nft.name || `Token #${tokenId}`;
+    const notifBuyer = session.email || userWallet;
+
+    void Promise.resolve(
+      notifyNewPurchase({
+        nftName: notifNftName,
+        buyer: notifBuyer,
+        price: String(nftPrice),
+        fee: String(mintFee),
+        txHash,
+      })
+    ).catch((err: unknown) => {
+      console.error("[NTFY] notification failed:", err);
+    });
+
+    void Promise.resolve(
+      telegramNotifyMint({
+        nftName: notifNftName,
+        tokenId,
+        buyer: notifBuyer,
+        price: String(nftPrice),
+        fee: String(mintFee),
+        contractAddress,
+        chainId,
+      })
+    ).catch((err: unknown) => {
+      console.error("[TELEGRAM] notification failed:", err);
+    });
+
+    void (async () => {
+      try {
+        await supabase.from("admin_notifications").insert({
+          type: "purchase",
+          title: "New Purchase!",
+          body: `${notifNftName} purchased by ${notifBuyer} for ${totalPrice} ETH`,
+          metadata: {
+            txHash,
+            tokenId,
+            buyer: notifBuyer,
+            contractAddress,
+            nftName: notifNftName,
+          },
+        });
+      } catch (err) {
+        console.error("[ADMIN_NOTIFICATION] insert failed:", err);
+      }
+    })();
 
     return NextResponse.json({
       success: true,
@@ -246,10 +300,10 @@ export async function POST(req) {
       contractAddress,
       chainId,
     });
-  } catch (error) {
-    return NextResponse.json(
-      { error: error.message || "Unexpected error" },
-      { status: 500 }
-    );
+  } catch (error: unknown) {
+    const message =
+      error instanceof Error ? error.message : "Unexpected error";
+
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

@@ -6,7 +6,7 @@ const wcProjectId = process.env.NEXT_PUBLIC_WC_PROJECT_ID || "";
 
 // Build connectors array — only add WalletConnect if project ID exists
 const connectors = [
-  injected({ shimDisconnect: true }),
+  injected({ shimDisconnect: false }),
   coinbaseWallet({
     appName: "AuroraNft",
     appLogoUrl: "https://aurora-nft.vercel.app/pictures/logo.png",
