@@ -13,8 +13,11 @@ export default function ClientProviders({ children }) {
       new QueryClient({
         defaultOptions: {
           queries: {
-            staleTime: 30_000,
+            staleTime: 2 * 60 * 1000,        // 2 min — don't refetch if data is fresh
+            gcTime: 10 * 60 * 1000,           // 10 min — keep unused cache longer
             refetchOnWindowFocus: false,
+            refetchOnReconnect: false,
+            retry: 1,                          // 1 retry only — fail fast
           },
         },
       })

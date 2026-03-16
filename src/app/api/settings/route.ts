@@ -16,7 +16,11 @@ export async function GET() {
       if (row?.key) settings[row.key] = row.value;
     }
 
-    return NextResponse.json(settings);
+    return NextResponse.json(settings, {
+      headers: {
+        "Cache-Control": "public, s-maxage=120, stale-while-revalidate=600",
+      },
+    });
   } catch (error) {
     console.error("[/api/settings] GET error:", error);
 

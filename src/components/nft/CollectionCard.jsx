@@ -1,5 +1,6 @@
 'use client';
 import { useState } from 'react';
+import Image from 'next/image';
 import Badge from '@/components/ui/Badge';
 
 export default function CollectionCard({ collection, index = 0 }) {
@@ -13,10 +14,13 @@ export default function CollectionCard({ collection, index = 0 }) {
       onMouseLeave={() => setIsHovered(false)}
     >
       <div className="h-32 relative overflow-hidden">
-        <img
+        <Image
           src={collection.image}
           alt={collection.name}
-          className={`w-full h-full object-cover transition-transform duration-700 ease-out ${isHovered ? 'scale-[1.06]' : 'scale-100'}`}
+          fill
+          className={`object-cover transition-transform duration-700 ease-out ${isHovered ? 'scale-[1.06]' : 'scale-100'}`}
+          sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+          unoptimized={collection.image?.endsWith('.svg')}
         />
         <div className="absolute inset-0 bg-gradient-to-t from-bg via-bg/40 to-transparent" />
       </div>

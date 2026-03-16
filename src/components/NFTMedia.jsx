@@ -1,5 +1,6 @@
 'use client';
 import { useState, useCallback, memo } from 'react';
+import Image from 'next/image';
 import { Play } from 'lucide-react';
 
 const FALLBACK_GRADIENT =
@@ -9,34 +10,44 @@ const NFTMedia = memo(function NFTMedia({
   src, alt = 'NFT', className = '', aspect = 'square',
   hasVideo = false, priority = false,
 }) {
-  const [loaded, setLoaded] = useState(false);
   const [errored, setErrored] = useState(false);
   const isGradient = src?.startsWith('linear-gradient') || src?.startsWith('radial-gradient');
   const showFallback = !src || errored;
+
+  const isLocal = src?.startsWith('/pictures/') || src?.startsWith('/logo');
+  const isRemote = src?.startsWith('http://') || src?.startsWith('https://');
+  const useNextImage = !showFallback && !isGradient && (isLocal || isRemote);
 
   const aspectClasses = {
     square: 'aspect-square', portrait: 'aspect-[3/4]', wide: 'aspect-[4/3]',
   };
 
-  const handleError = useCallback(() => { setErrored(true); setLoaded(true); }, []);
+  const handleError = useCallback(() => { setErrored(true); }, []);
 
   return (
     <div className={`relative overflow-hidden bg-surface2 ${aspectClasses[aspect]} ${className}`}>
       {showFallback || isGradient ? (
         <div className="absolute inset-0" style={{ background: isGradient && !showFallback ? src : FALLBACK_GRADIENT }} />
+      ) : useNextImage ? (
+        <Image
+          src={src}
+          alt={alt}
+          fill
+          className="object-cover"
+          sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 20vw"
+          priority={priority}
+          onError={handleError}
+          unoptimized={src?.endsWith('.svg')}
+        />
       ) : (
-        <>
-          {!loaded && <div className="absolute inset-0 skeleton-pulse" />}
-          <img
-            src={src} alt={alt}
-            className={`w-full h-full object-cover transition-opacity duration-500 ${loaded ? 'opacity-100' : 'opacity-0'}`}
-            onLoad={() => setLoaded(true)}
-            onError={handleError}
-            loading={priority ? 'eager' : 'lazy'}
-            decoding="async"
-            {...(priority ? { fetchpriority: 'high' } : {})}
-          />
-        </>
+        <img
+          src={src}
+          alt={alt}
+          className="w-full h-full object-cover"
+          onError={handleError}
+          loading={priority ? 'eager' : 'lazy'}
+          decoding="async"
+        />
       )}
       {hasVideo && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/20">

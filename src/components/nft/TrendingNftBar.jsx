@@ -1,30 +1,32 @@
 'use client';
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import Link from 'next/link';
-import { Flame, TrendingUp, ArrowUpRight, Heart, Eye } from 'lucide-react';
+import { Flame, TrendingUp, ArrowUpRight } from 'lucide-react';
 import NFTMedia from '@/components/NFTMedia';
 import Badge from '@/components/ui/Badge';
 import { trendingNFTs, featuredNFTs } from '@/lib/mock/nfts';
 import { normalizeUiNfts } from '@/components/nft/normalizeUiNft';
+import { useCachedNfts } from '@/hooks/useNfts';
 
 function mintHref(nft) { const p = new URLSearchParams(); if (nft.contractAddress) p.set("contract", nft.contractAddress); if (nft.tokenId) p.set("tokenId", nft.tokenId); return `/mint?${p}`; }
 
 export default function TrendingNftBar() {
   const fallback = useMemo(() => normalizeUiNfts(trendingNFTs.length ? trendingNFTs : featuredNFTs).slice(0, 4), []);
-  const [items, setItems] = useState(fallback);
+  const { nfts: rawNfts } = useCachedNfts(20);
   const [hovIdx, setHovIdx] = useState(-1);
   const [vis, setVis] = useState(false);
   const ref = useRef(null);
 
-  useEffect(() => {
-    let a = true;
-    fetch('/api/nft/cached?limit=20&shuffle=true').then(r => r.json()).then(d => {
-      const list = (d.nfts || []).slice(0, 4).map(n => ({ id: n.id, contractAddress: n.contractAddress, tokenId: n.tokenId, name: n.name, collectionName: n.collection, chain: n.chain, normalized_metadata: { image: n.image }, price: '—', lastSale: '—' }));
-      const norm = normalizeUiNfts(list);
-      if (a && norm.length >= 4) setItems(norm);
-    }).catch(() => {});
-    return () => { a = false; };
-  }, []);
+  const items = useMemo(() => {
+    if (!rawNfts?.length || rawNfts.length < 4) return fallback;
+    const list = rawNfts.slice(0, 4).map(n => ({
+      id: n.id, contractAddress: n.contractAddress, tokenId: n.tokenId,
+      name: n.name, collectionName: n.collection, chain: n.chain,
+      normalized_metadata: { image: n.image }, price: '—', lastSale: '—'
+    }));
+    const norm = normalizeUiNfts(list);
+    return norm.length >= 4 ? norm : fallback;
+  }, [rawNfts, fallback]);
 
   useEffect(() => {
     const o = new IntersectionObserver(([e]) => { if (e.isIntersecting) setVis(true); }, { threshold: 0.15 });

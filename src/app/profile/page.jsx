@@ -112,11 +112,7 @@ export default function PremiumProfilePage() {
   useEffect(() => {
     if (!isLoggedIn) return
 
-    if (!isConnected || !profile?.id) {
-      setLoading(false)
-      return
-    }
-
+    // Start fetch immediately — the API resolves profileId from session
     async function loadNFTs() {
       setLoading(true)
       try {
@@ -131,7 +127,7 @@ export default function PremiumProfilePage() {
     }
 
     loadNFTs()
-  }, [isLoggedIn, isConnected, profile?.id])
+  }, [isLoggedIn])
 
   if (!isLoggedIn) {
     router.push('/login')

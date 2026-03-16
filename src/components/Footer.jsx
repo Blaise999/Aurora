@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import Image from 'next/image';
 
 const footerLinks = {
   Platform: [
@@ -6,13 +7,11 @@ const footerLinks = {
     { label: 'Drops', href: '/mint' },
     { label: 'Rankings', href: '/explore?sort=trending' },
   ],
-  Resources: [
-    { label: 'Documentation', href: '#' },
-    { label: 'API', href: '#' },
-    { label: 'Smart Contracts', href: '#' },
+  Company: [
+    { label: 'Terms of Service', href: '/terms' },
+    { label: 'Privacy Policy', href: '/privacy' },
   ],
   Community: [
-    { label: 'Discord', href: '#' },
     { label: 'Twitter', href: '#' },
     { label: 'GitHub', href: '#' },
   ],
@@ -25,11 +24,12 @@ export default function Footer() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-10 mb-16">
           <div className="col-span-2 md:col-span-1">
             <div className="flex items-center gap-2.5 mb-4">
-              <img
+              <Image
                 src="/pictures/logo.png"
                 alt="AuroraNft Logo"
-                className="h-12 w-auto object-contain"
-                style={{ maxHeight: '48px' }}
+                width={48}
+                height={48}
+                className="object-contain"
               />
               
             </div>

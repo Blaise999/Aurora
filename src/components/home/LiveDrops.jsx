@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { Clock, Zap, ArrowRight, Users } from 'lucide-react';
 import Badge from '@/components/ui/Badge';
 import Button from '@/components/ui/Button';
@@ -99,10 +100,13 @@ export default function LiveDrops() {
               >
                 {/* Top: image banner */}
                 <div className="h-40 relative overflow-hidden">
-                  <img
+                  <Image
                     src={drop.image}
                     alt={drop.name}
-                    className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-[1.04]"
+                    fill
+                    className={`object-cover transition-transform duration-700 group-hover:scale-[1.04]`}
+                    sizes="(max-width: 768px) 100vw, 50vw"
+                    unoptimized={drop.image?.endsWith('.svg')}
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-bg via-bg/40 to-transparent" />
                   <div className="absolute top-4 left-4">

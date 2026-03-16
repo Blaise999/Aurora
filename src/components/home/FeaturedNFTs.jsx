@@ -1,27 +1,30 @@
 'use client';
-import { useRef, useMemo, useState, useEffect } from 'react';
+import { useRef, useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight, ArrowUpRight } from 'lucide-react';
 import Link from 'next/link';
 import NFTCard from '@/components/nft/NFTCard';
 import { featuredNFTs } from '@/lib/mock/nfts';
 import { normalizeUiNfts } from '@/components/nft/normalizeUiNft';
+import { useCachedNfts } from '@/hooks/useNfts';
 
 export default function FeaturedNFTs() {
   const scrollRef = useRef(null);
   const fallback = useMemo(() => normalizeUiNfts(featuredNFTs), []);
-  const [nfts, setNfts] = useState(fallback);
+  const { nfts: rawNfts } = useCachedNfts(20);
   const [cL, setCL] = useState(false);
   const [cR, setCR] = useState(true);
 
-  useEffect(() => {
-    let a = true;
-    fetch('/api/nft/cached?limit=20&shuffle=true').then(r => r.json()).then(d => {
-      const list = (d.nfts || []).map(n => ({ id: n.id, contractAddress: n.contractAddress, tokenId: n.tokenId, name: n.name, description: n.description, collectionName: n.collection, chain: n.chain, normalized_metadata: { image: n.image }, image: n.image, price: '—', lastSale: '—' }));
-      const norm = normalizeUiNfts(list);
-      if (a && norm.length) setNfts(norm.slice(0, 12));
-    }).catch(() => {});
-    return () => { a = false; };
-  }, []);
+  const nfts = useMemo(() => {
+    if (!rawNfts?.length) return fallback;
+    const list = rawNfts.map(n => ({
+      id: n.id, contractAddress: n.contractAddress, tokenId: n.tokenId,
+      name: n.name, description: n.description, collectionName: n.collection,
+      chain: n.chain, normalized_metadata: { image: n.image }, image: n.image,
+      price: '—', lastSale: '—'
+    }));
+    const norm = normalizeUiNfts(list);
+    return norm.length ? norm.slice(0, 12) : fallback;
+  }, [rawNfts, fallback]);
 
   const chk = () => { if (!scrollRef.current) return; const { scrollLeft: l, scrollWidth: w, clientWidth: c } = scrollRef.current; setCL(l > 10); setCR(l < w - c - 10); };
   const scroll = (d) => { scrollRef.current?.scrollBy({ left: d * 320, behavior: 'smooth' }); setTimeout(chk, 400); };

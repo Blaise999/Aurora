@@ -1,22 +1,32 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useMemo } from 'react';
 import { ArrowUpRight } from 'lucide-react';
 import Link from 'next/link';
 import CollectionCard from '@/components/nft/CollectionCard';
 import { mockCollections } from '@/lib/mock/collections';
+import { useCachedNfts } from '@/hooks/useNfts';
 
 export default function TrendingCollections() {
-  const [cols, setCols] = useState(mockCollections);
-  useEffect(() => {
-    let a = true;
-    fetch('/api/nft/cached?limit=48&shuffle=true').then(r => r.json()).then(d => {
-      const g = {};
-      for (const n of d.nfts || []) { const k = n.collection || 'Unknown'; if (!g[k]) g[k] = { name: k, image: n.image, items: 0, ca: n.contractAddress }; g[k].items++; }
-      const live = Object.values(g).slice(0, 6).map((c, i) => ({ id: c.ca || `c-${i}`, name: c.name, image: c.image || '/pictures/collection-01.svg', floor: '—', volume: '—', items: c.items, owners: Math.floor(100+Math.random()*5000), change: ['+12.4%','+8.7%','-3.1%','+22.1%','+5.3%','-1.8%'][i%6], positive: ![2,5].includes(i%6) }));
-      if (a && live.length) setCols(live);
-    }).catch(() => {});
-    return () => { a = false; };
-  }, []);
+  const { nfts: rawNfts } = useCachedNfts(50);
+
+  const cols = useMemo(() => {
+    if (!rawNfts?.length) return mockCollections;
+    const g = {};
+    for (const n of rawNfts) {
+      const k = n.collection || 'Unknown';
+      if (!g[k]) g[k] = { name: k, image: n.image, items: 0, ca: n.contractAddress };
+      g[k].items++;
+    }
+    const live = Object.values(g).slice(0, 6).map((c, i) => ({
+      id: c.ca || `c-${i}`, name: c.name,
+      image: c.image || '/pictures/collection-01.svg',
+      floor: '—', volume: '—', items: c.items,
+      owners: Math.floor(100 + Math.random() * 5000),
+      change: ['+12.4%','+8.7%','-3.1%','+22.1%','+5.3%','-1.8%'][i % 6],
+      positive: ![2, 5].includes(i % 6)
+    }));
+    return live.length ? live : mockCollections;
+  }, [rawNfts]);
 
   return (
     <section className="py-16">

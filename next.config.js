@@ -1,16 +1,19 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  // ── Compress responses ──
   compress: true,
-  // ── Experimental: optimize package imports to reduce bundle size ──
+  // ── poweredByHeader off for slightly smaller responses ──
+  poweredByHeader: false,
   experimental: {
-    optimizePackageImports: ["lucide-react", "@tanstack/react-query"],
+    optimizePackageImports: ["lucide-react", "@tanstack/react-query", "recharts", "framer-motion"],
   },
   images: {
     formats: ["image/avif", "image/webp"],
-    deviceSizes: [320, 420, 640, 750, 828, 1080, 1200, 1600, 1920, 2560, 3200, 3840],
-    imageSizes: [16, 32, 48, 64, 96, 128, 256, 384],
+    // Trimmed device sizes — fewer variants = faster cache hits
+    deviceSizes: [640, 750, 1080, 1200, 1920],
+    imageSizes: [32, 64, 128, 256, 384],
+    // Cache remote images for 1 hour minimum
+    minimumCacheTTL: 3600,
     remotePatterns: [
       { protocol: "https", hostname: "nft-cdn.alchemy.com", pathname: "/**" },
       { protocol: "https", hostname: "ipfs.io", pathname: "/**" },
@@ -22,9 +25,10 @@ const nextConfig = {
       { protocol: "https", hostname: "i.seadn.io", pathname: "/**" },
       { protocol: "https", hostname: "openseauserdata.com", pathname: "/**" },
       { protocol: "https", hostname: "lh3.googleusercontent.com", pathname: "/**" },
+      { protocol: "https", hostname: "**.ipfs.dweb.link", pathname: "/**" },
+      { protocol: "https", hostname: "**.ipfs.w3s.link", pathname: "/**" },
     ],
   },
-  // ── Cache headers for static assets ──
   async headers() {
     return [
       {
@@ -37,6 +41,19 @@ const nextConfig = {
         source: "/_next/static/:path*",
         headers: [
           { key: "Cache-Control", value: "public, max-age=31536000, immutable" },
+        ],
+      },
+      // Cache API responses at the edge
+      {
+        source: "/api/nft/cached",
+        headers: [
+          { key: "Cache-Control", value: "public, s-maxage=60, stale-while-revalidate=300" },
+        ],
+      },
+      {
+        source: "/api/settings",
+        headers: [
+          { key: "Cache-Control", value: "public, s-maxage=120, stale-while-revalidate=600" },
         ],
       },
     ];

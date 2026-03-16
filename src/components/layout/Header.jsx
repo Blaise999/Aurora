@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import {
   Menu, X, Wallet, LogOut, User, Loader2,
@@ -86,10 +87,13 @@ export default function Header() {
           {/* Left: Logo + Nav */}
           <div className="flex items-center gap-4 sm:gap-8">
             <Link href="/" className="flex items-center gap-2.5 group shrink-0">
-              <img
+              <Image
                 src="/pictures/logo.png"
                 alt="AuroraNft Logo"
+                width={56}
+                height={56}
                 className="h-10 sm:h-12 md:h-14 w-auto object-contain group-hover:brightness-110 transition-all duration-300 drop-shadow-[0_0_12px_rgba(0,229,255,0.35)]"
+                priority
               />
               <span className="hidden sm:block font-display font-bold text-[15px] md:text-[17px] tracking-tight text-text group-hover:text-accent transition-colors duration-200">
                 AuroraNft
