@@ -21,6 +21,7 @@ import {
   Loader2,
   Heart,
   ExternalLink,
+  User,
 } from "lucide-react";
 import WalletConnectModal from "@/components/WalletConnectModal";
 import { supabase } from "@/lib/supabase";
@@ -42,6 +43,8 @@ function MintPageContent() {
 
   const { address, isConnected, chain } = useAccount();
   const { switchChain } = useSwitchChain();
+
+  // normal auth only
   const { isAuthed, login, loading: authLoading } = useAuth();
 
   const {
@@ -71,10 +74,10 @@ function MintPageContent() {
   const [imgZoomed, setImgZoomed] = useState(false);
   const [favorited, setFavorited] = useState(false);
   const [showWalletModal, setShowWalletModal] = useState(false);
-  const [profileId, setProfileId] = useState(null);
 
+  const [profileId, setProfileId] = useState(null);
   const [alreadyOwned, setAlreadyOwned] = useState(false);
-  const [ownershipSource, setOwnershipSource] = useState(null); // "wallet_mints" | "user_collections" | "both" | null
+  const [ownershipSource, setOwnershipSource] = useState(null); // wallet_mints | user_collections | both | null
   const [checkingOwned, setCheckingOwned] = useState(false);
 
   useEffect(() => {
@@ -93,23 +96,31 @@ function MintPageContent() {
         return;
       }
 
-      let { data: profile, error } = await supabase
+      let profile = null;
+
+      // First try by auth email
+      let { data: byEmail, error: emailError } = await supabase
         .from("profiles")
         .select("id, email, wallet_address")
         .eq("email", user.email)
-        .single();
+        .maybeSingle();
 
-      if (error && error.code !== "PGRST116") {
-        console.error("Profile fetch error:", error);
+      if (emailError) {
+        console.error("Profile fetch by email failed:", emailError);
       }
 
+      profile = byEmail || null;
+
+      // Create profile if missing
       if (!profile?.id) {
         const { data: newProfile, error: insertErr } = await supabase
           .from("profiles")
           .insert({
-            email: user.email || "unknown@wallet.com",
+            email: user.email || `user_${user.id}@local.app`,
             first_name: user.user_metadata?.name?.split(" ")[0] || "User",
-            username: `user_${user.id.slice(0, 8)}`,
+            username:
+              user.user_metadata?.username ||
+              `user_${String(user.id).slice(0, 8)}`,
             wallet_address: address ? String(address).toLowerCase() : null,
           })
           .select("id, email, wallet_address")
@@ -125,13 +136,13 @@ function MintPageContent() {
 
       setProfileId(profile.id);
 
-      // Keep wallet address synced after auth + wallet connection
+      // keep wallet synced after wallet connect
       if (
         address &&
         (!profile.wallet_address ||
           profile.wallet_address.toLowerCase() !== address.toLowerCase())
       ) {
-        const { error: walletUpdateError } = await supabase
+        const { error: walletSyncError } = await supabase
           .from("profiles")
           .update({
             wallet_address: address.toLowerCase(),
@@ -139,8 +150,8 @@ function MintPageContent() {
           })
           .eq("id", profile.id);
 
-        if (walletUpdateError) {
-          console.error("Wallet address sync failed:", walletUpdateError);
+        if (walletSyncError) {
+          console.error("Wallet sync failed:", walletSyncError);
         }
       }
     }
@@ -162,6 +173,7 @@ function MintPageContent() {
 
   useEffect(() => {
     async function checkOwnership() {
+      // must be app-authenticated first
       if (!isAuthed || !profileId || !currentContract || !currentTokenId) {
         setAlreadyOwned(false);
         setOwnershipSource(null);
@@ -177,7 +189,7 @@ function MintPageContent() {
       try {
         const collectionQuery = supabase
           .from("user_collections")
-          .select("id", { count: "exact", head: false })
+          .select("id")
           .eq("profile_id", profileId)
           .eq("contract_address", normalizedContract)
           .eq("token_id", normalizedTokenId)
@@ -188,7 +200,7 @@ function MintPageContent() {
         if (normalizedWallet) {
           mintQuery = supabase
             .from("wallet_mints")
-            .select("id", { count: "exact", head: false })
+            .select("id")
             .eq("wallet_address", normalizedWallet)
             .eq("contract_address", normalizedContract)
             .eq("token_id", normalizedTokenId)
@@ -202,8 +214,11 @@ function MintPageContent() {
           mintQuery,
         ]);
 
-        if (collectionRes.error) {
-          console.error("user_collections ownership check failed:", collectionRes.error);
+        if (collectionRes?.error) {
+          console.error(
+            "user_collections ownership check failed:",
+            collectionRes.error
+          );
         }
 
         if (mintRes?.error) {
@@ -254,9 +269,9 @@ function MintPageContent() {
 
   const txExplorerLink = txHash ? `${explorerUrl}/tx/${txHash}` : null;
 
-  let state = "needs_auth";
+  let state = "needs_login";
 
-  if (isAuthed) state = "disconnected";
+  if (isAuthed) state = "needs_wallet";
   if (isAuthed && isConnected && isWrongChain) state = "wrong_network";
   if (isAuthed && isConnected && !isWrongChain) state = "ready";
 
@@ -370,7 +385,7 @@ function MintPageContent() {
       return "This NFT has already been bought and is already in your collection.";
     }
     if (ownershipSource === "wallet_mints") {
-      return "This wallet has already bought/minted this NFT.";
+      return "This wallet has already bought or minted this NFT.";
     }
     if (ownershipSource === "user_collections") {
       return "This NFT is already in your collection.";
@@ -644,12 +659,12 @@ function MintPageContent() {
                     </div>
                   </div>
 
-                  {state === "needs_auth" && (
+                  {state === "needs_login" && (
                     <div className="space-y-4">
                       <div className="text-center py-4 space-y-2">
-                        <Wallet size={32} className="mx-auto text-accent" />
+                        <User size={32} className="mx-auto text-accent" />
                         <p className="text-sm text-muted">
-                          Sign in first before continuing
+                          Sign up or log in first before continuing
                         </p>
                       </div>
 
@@ -663,14 +678,14 @@ function MintPageContent() {
                         {authLoading ? (
                           <Loader2 size={16} className="animate-spin" />
                         ) : (
-                          <Wallet size={16} />
+                          <User size={16} />
                         )}
-                        Sign In (SIWE)
+                        Continue to Login / Signup
                       </Button>
                     </div>
                   )}
 
-                  {state === "disconnected" && (
+                  {state === "needs_wallet" && (
                     <div className="space-y-4">
                       <div className="text-center py-4 space-y-2">
                         <Wallet size={32} className="mx-auto text-muted-dim" />

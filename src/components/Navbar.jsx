@@ -1,24 +1,18 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
+import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
-import { useSession } from "@/hooks/useSession";
-import { useAccount } from "wagmi";
-import { shortenAddress } from "@/lib/utils";
-import { User, LogOut, Menu, X } from "lucide-react";
+import { Menu, X } from "lucide-react";
 
 export default function Navbar() {
   const pathname = usePathname();
-  const { session, profile, isLoggedIn, logout } = useSession();
-  const { address } = useAccount();
-
   const [mobileOpen, setMobileOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
 
   useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 24);
+    const onScroll = () => setScrolled(window.scrollY > 20);
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
@@ -35,45 +29,40 @@ export default function Navbar() {
   }, [pathname]);
 
   const navLinks = [
-    { label: "Home", href: "/" },
     { label: "Explore", href: "/explore" },
-    { label: "Mint", href: "/mint" },
-    { label: "Profile", href: "/profile" },
+    { label: "Drops", href: "/drops" },
+    { label: "Rankings", href: "/rankings" },
   ];
-
-  const displayName =
-    profile?.first_name ||
-    profile?.username ||
-    session?.firstName ||
-    (address ? shortenAddress(address) : null);
 
   return (
     <>
       <nav
-        className={`fixed top-0 left-0 right-0 z-50 transition-all duration-500 ${
+        className={`fixed top-0 left-0 right-0 z-50 border-b transition-all duration-300 ${
           scrolled
-            ? "bg-bg/70 backdrop-blur-2xl border-b border-white/10 shadow-[0_6px_40px_rgba(0,0,0,0.35)]"
-            : "bg-transparent"
+            ? "bg-black/85 backdrop-blur-md border-white/10"
+            : "bg-black/70 backdrop-blur-sm border-white/5"
         }`}
       >
-        <div className="max-w-8xl mx-auto px-6 sm:px-8 lg:px-12">
-          <div className="flex items-center justify-between h-28 md:h-32 lg:h-36">
-            <Link href="/" className="flex items-center shrink-0 group">
-              <div className="relative w-[220px] h-[100px] sm:w-[260px] sm:h-[115px] md:w-[320px] md:h-[140px] lg:w-[380px] lg:h-[165px] xl:w-[430px] xl:h-[185px]">
+        <div className="mx-auto max-w-[1400px] px-4 sm:px-6 lg:px-8">
+          <div className="flex h-[84px] items-center justify-between">
+            {/* LEFT: ONLY IMAGE LOGO */}
+            <Link href="/" className="flex items-center shrink-0">
+              <div className="relative h-[42px] w-[180px] sm:h-[46px] sm:w-[200px] md:h-[50px] md:w-[220px]">
                 <Image
                   src="/pictures/logo.png"
-                  alt="Aurora NFT Logo"
+                  alt="AuroraNFT"
                   fill
                   priority
                   quality={100}
                   unoptimized
-                  sizes="(max-width: 640px) 220px, (max-width: 768px) 260px, (max-width: 1024px) 320px, (max-width: 1280px) 380px, 430px"
-                  className="object-contain transition-transform duration-500 group-hover:scale-[1.03]"
+                  sizes="(max-width: 640px) 180px, (max-width: 768px) 200px, 220px"
+                  className="object-contain"
                 />
               </div>
             </Link>
 
-            <div className="hidden md:flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] backdrop-blur-xl p-2">
+            {/* CENTER LINKS */}
+            <div className="hidden md:flex items-center gap-10">
               {navLinks.map((link) => {
                 const active =
                   pathname === link.href ||
@@ -83,10 +72,10 @@ export default function Navbar() {
                   <Link
                     key={link.href}
                     href={link.href}
-                    className={`px-5 py-2.5 rounded-full text-[14px] font-medium transition-all duration-300 ${
+                    className={`text-[17px] font-semibold transition-colors duration-200 ${
                       active
-                        ? "text-text bg-white/10 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
-                        : "text-muted hover:text-text hover:bg-white/5"
+                        ? "text-cyan-400"
+                        : "text-white/70 hover:text-white"
                     }`}
                   >
                     {link.label}
@@ -95,102 +84,76 @@ export default function Navbar() {
               })}
             </div>
 
-            <div className="flex items-center gap-3">
-              {isLoggedIn ? (
-                <div className="hidden sm:flex items-center gap-3">
-                  <Link
-                    href="/profile"
-                    className="flex items-center gap-2 px-4 py-2.5 rounded-full font-semibold text-[14px] border border-accent/25 bg-accent/10 text-accent hover:bg-accent/20 transition-all"
-                  >
-                    <User size={16} />
-                    <span className="max-w-[140px] truncate">
-                      {displayName || "Profile"}
-                    </span>
-                  </Link>
-
-                  <button
-                    onClick={logout}
-                    className="p-2.5 rounded-full text-muted hover:text-red-500 hover:bg-red-500/10 transition-all"
-                    title="Sign out"
-                  >
-                    <LogOut size={16} />
-                  </button>
-                </div>
-              ) : (
-                <Link
-                  href="/login"
-                  className="hidden sm:inline-flex items-center justify-center min-w-[150px] px-6 py-3 rounded-full text-[14px] font-semibold transition-all duration-300"
-                  style={{
-                    background:
-                      "linear-gradient(135deg,#00E5FF 0%,#7C3AED 100%)",
-                    color: "#070A10",
-                  }}
-                >
-                  Login / Sign Up
-                </Link>
-              )}
-
-              <button
-                onClick={() => setMobileOpen(!mobileOpen)}
-                className="md:hidden w-10 h-10 rounded-xl flex items-center justify-center text-muted hover:text-text hover:bg-white/5 transition-colors"
+            {/* RIGHT: LOGIN ONLY, NO CONNECT */}
+            <div className="hidden md:flex items-center">
+              <Link
+                href="/login"
+                className="inline-flex items-center justify-center rounded-2xl px-6 py-3 text-[15px] font-semibold text-[#071019] transition-transform duration-200 hover:scale-[1.02]"
+                style={{
+                  background:
+                    "linear-gradient(135deg, #22d3ee 0%, #8b5cf6 100%)",
+                }}
               >
-                {mobileOpen ? <X size={24} /> : <Menu size={24} />}
-              </button>
+                Login / Sign Up
+              </Link>
             </div>
+
+            {/* MOBILE BUTTON */}
+            <button
+              onClick={() => setMobileOpen((prev) => !prev)}
+              className="md:hidden inline-flex h-11 w-11 items-center justify-center rounded-xl text-white/80 hover:bg-white/5 hover:text-white"
+              aria-label="Toggle menu"
+            >
+              {mobileOpen ? <X size={24} /> : <Menu size={24} />}
+            </button>
           </div>
         </div>
       </nav>
 
+      {/* MOBILE MENU */}
       {mobileOpen && (
-        <div className="fixed inset-0 z-[99] md:hidden">
+        <div className="fixed inset-0 z-[60] md:hidden">
           <div
-            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            className="absolute inset-0 bg-black/70 backdrop-blur-sm"
             onClick={() => setMobileOpen(false)}
           />
-          <div className="absolute top-28 right-4 left-4 bg-surface/95 backdrop-blur-2xl border border-white/10 rounded-2xl p-5 space-y-2 shadow-card">
-            {navLinks.map((link) => (
-              <Link
-                key={link.href}
-                href={link.href}
-                className="block px-4 py-3 rounded-xl text-sm font-medium text-text hover:bg-white/5 transition-colors"
-                onClick={() => setMobileOpen(false)}
-              >
-                {link.label}
-              </Link>
-            ))}
 
-            <div className="border-t border-white/10 pt-3 mt-2">
-              {isLoggedIn ? (
-                <>
+          <div className="absolute left-4 right-4 top-[96px] rounded-2xl border border-white/10 bg-[#0b0f19]/95 p-4 shadow-2xl">
+            <div className="flex flex-col gap-2">
+              {navLinks.map((link) => {
+                const active =
+                  pathname === link.href ||
+                  (link.href !== "/" && pathname.startsWith(link.href));
+
+                return (
                   <Link
-                    href="/profile"
-                    className="block px-4 py-3 rounded-xl text-sm font-medium text-accent"
+                    key={link.href}
+                    href={link.href}
                     onClick={() => setMobileOpen(false)}
+                    className={`rounded-xl px-4 py-3 text-sm font-medium transition-colors ${
+                      active
+                        ? "bg-white/10 text-cyan-400"
+                        : "text-white/80 hover:bg-white/5 hover:text-white"
+                    }`}
                   >
-                    <User size={14} className="inline mr-2" />
-                    {displayName || "Profile"}
+                    {link.label}
                   </Link>
+                );
+              })}
 
-                  <button
-                    onClick={() => {
-                      logout();
-                      setMobileOpen(false);
-                    }}
-                    className="block w-full text-left px-4 py-3 rounded-xl text-sm text-red-500"
-                  >
-                    <LogOut size={14} className="inline mr-2" />
-                    Sign Out
-                  </button>
-                </>
-              ) : (
+              <div className="mt-2 border-t border-white/10 pt-3">
                 <Link
                   href="/login"
-                  className="block px-4 py-3 rounded-xl text-sm font-semibold text-accent"
                   onClick={() => setMobileOpen(false)}
+                  className="block rounded-xl px-4 py-3 text-center text-sm font-semibold text-[#071019]"
+                  style={{
+                    background:
+                      "linear-gradient(135deg, #22d3ee 0%, #8b5cf6 100%)",
+                  }}
                 >
                   Login / Sign Up
                 </Link>
-              )}
+              </div>
             </div>
           </div>
         </div>
