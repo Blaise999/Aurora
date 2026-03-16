@@ -15,36 +15,34 @@ export async function GET() {
       );
     }
 
+    const normalizedWallet = wallet.toLowerCase();
     const sb = getSupabase();
 
     // First try wallet_mints (new system)
     const { data: mints, error: mintsError } = await sb
       .from("wallet_mints")
       .select("*")
-      .eq("wallet_address", wallet.toLowerCase())
+      .eq("wallet_address", normalizedWallet)
       .eq("status", "confirmed")
       .order("minted_at", { ascending: false });
 
-    if (mintsError) {
-      throw mintsError;
-    }
+    if (mintsError) throw mintsError;
 
-    // Also get legacy user_nfts
+    // Also get legacy user_nfts if table exists in your project
     const { data: legacy, error: legacyError } = await sb
       .from("user_nfts")
       .select("*")
-      .eq("owner_address", wallet.toLowerCase())
+      .eq("owner_address", normalizedWallet)
       .eq("status", "confirmed")
       .order("minted_at", { ascending: false });
 
     if (legacyError) {
-      throw legacyError;
+      console.warn("Legacy user_nfts read failed:", legacyError.message);
     }
 
     const enriched: any[] = [];
     const seen = new Set<string>();
 
-    // Wallet mints (snapshot data)
     for (const m of mints || []) {
       const key = `${m.contract_address}_${m.token_id}`;
       if (seen.has(key)) continue;
@@ -67,7 +65,6 @@ export async function GET() {
       });
     }
 
-    // Legacy user_nfts
     for (const nft of legacy || []) {
       const key = `${nft.contract_address}_${nft.token_id}`;
       if (seen.has(key)) continue;
@@ -82,7 +79,7 @@ export async function GET() {
         .maybeSingle();
 
       if (metaError) {
-        throw metaError;
+        console.warn("nft_metadata_cache lookup failed:", metaError.message);
       }
 
       enriched.push({

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { createPublicClient, http, decodeEventLog } from "viem";
+import { createPublicClient, http, parseEventLogs } from "viem";
 import { base, baseSepolia } from "viem/chains";
-import { getSession } from "@/lib/auth/session";
+import { getSessionWallet } from "@/lib/auth/session";
 import { getSupabase } from "@/lib/db/supabase";
 import { AURORA_NFT_ABI } from "@/lib/web3/contract";
 import { notifyNewMint } from "@/lib/ntfy";
@@ -13,25 +13,24 @@ function getChain() {
   return id === 8453 ? base : baseSepolia;
 }
 
-/**
- * POST /api/mint/confirm
- * Body: { txHash }
- *
- * 1. Require session → wallet address
- * 2. Fetch tx receipt from RPC (server-side, don't trust client)
- * 3. Validate receipt: status, contract, Transfer logs
- * 4. Extract tokenId(s)
- * 5. Upsert nft_metadata_cache + user_nfts
- * 6. Push ntfy notification to admin
- */
+type ParsedTransferLog = {
+  args?: {
+    from?: `0x${string}`;
+    to?: `0x${string}`;
+    tokenId?: bigint;
+  };
+};
+
 export async function POST(req: Request) {
   try {
-    const wallet = await getSession();
+    const wallet = await getSessionWallet();
+
     if (!wallet) {
       return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     }
 
     const { txHash } = await req.json();
+
     if (!txHash || typeof txHash !== "string") {
       return NextResponse.json({ error: "Missing txHash" }, { status: 400 });
     }
@@ -39,6 +38,7 @@ export async function POST(req: Request) {
     const contractAddress = (
       process.env.NEXT_PUBLIC_AURORA_CONTRACT || ""
     ).toLowerCase();
+
     if (!contractAddress) {
       return NextResponse.json(
         { error: "Contract not configured" },
@@ -49,7 +49,10 @@ export async function POST(req: Request) {
     const chain = getChain();
     const rpcUrl = process.env.BASE_RPC_URL || chain.rpcUrls.default.http[0];
 
-    const client = createPublicClient({ chain, transport: http(rpcUrl) });
+    const client = createPublicClient({
+      chain,
+      transport: http(rpcUrl),
+    });
 
     const receipt = await client.getTransactionReceipt({
       hash: txHash as `0x${string}`,
@@ -69,26 +72,29 @@ export async function POST(req: Request) {
       );
     }
 
-    // Parse Transfer events
+    const normalizedWallet = wallet.toLowerCase();
+
+    const parsedTransfers = parseEventLogs({
+      abi: AURORA_NFT_ABI,
+      eventName: "Transfer",
+      logs: receipt.logs.filter(
+        (log) => log.address.toLowerCase() === contractAddress
+      ),
+      strict: false,
+    }) as ParsedTransferLog[];
+
     const transferLogs: Array<{ tokenId: string; to: string }> = [];
-    for (const log of receipt.logs) {
-      if (log.address.toLowerCase() !== contractAddress) continue;
-      try {
-        const decoded = decodeEventLog({
-          abi: AURORA_NFT_ABI,
-          data: log.data,
-          topics: (log as any).topics,
-        });
-        if (decoded.eventName === "Transfer") {
-          const args = decoded.args as any;
-          transferLogs.push({
-            tokenId: args.tokenId.toString(),
-            to: (args.to as string).toLowerCase(),
-          });
-        }
-      } catch {
-        // not a Transfer log
-      }
+
+    for (const log of parsedTransfers) {
+      const to = log.args?.to;
+      const tokenId = log.args?.tokenId;
+
+      if (!to || tokenId === undefined) continue;
+
+      transferLogs.push({
+        tokenId: tokenId.toString(),
+        to: to.toLowerCase(),
+      });
     }
 
     if (transferLogs.length === 0) {
@@ -99,8 +105,9 @@ export async function POST(req: Request) {
     }
 
     const userTransfers = transferLogs.filter(
-      (t) => t.to === wallet.toLowerCase()
+      (transfer) => transfer.to === normalizedWallet
     );
+
     if (userTransfers.length === 0) {
       return NextResponse.json(
         { error: "Transfer not to your wallet" },
@@ -108,19 +115,21 @@ export async function POST(req: Request) {
       );
     }
 
-    // Write to DB
     const supabase = getSupabase();
     const chainId = chain.id;
 
-    // Fetch price for ntfy notification
     let mintPrice = "?";
+
     try {
       const { data: settingRow } = await supabase
         .from("site_settings")
         .select("value")
         .eq("key", "minting_fee")
         .single();
-      if (settingRow?.value) mintPrice = settingRow.value;
+
+      if (settingRow?.value != null) {
+        mintPrice = String(settingRow.value);
+      }
     } catch {}
 
     for (const transfer of userTransfers) {
@@ -142,8 +151,8 @@ export async function POST(req: Request) {
           chain_id: chainId,
           contract_address: contractAddress,
           token_id: transfer.tokenId,
-          owner_address: wallet.toLowerCase(),
-          minter_address: wallet.toLowerCase(),
+          owner_address: normalizedWallet,
+          minter_address: normalizedWallet,
           tx_hash: txHash.toLowerCase(),
           minted_at: new Date().toISOString(),
           status: "confirmed",
@@ -151,15 +160,17 @@ export async function POST(req: Request) {
         { onConflict: "chain_id,contract_address,token_id" }
       );
 
-      // Log admin notification
       await supabase.from("admin_notifications").insert({
         type: "mint",
         title: "New Mint!",
         body: `Token #${transfer.tokenId} minted by ${wallet.slice(0, 10)}…`,
-        metadata: { txHash, tokenId: transfer.tokenId, wallet },
+        metadata: {
+          txHash,
+          tokenId: transfer.tokenId,
+          wallet,
+        },
       });
 
-      // Push ntfy to admin phone
       await notifyNewMint({
         tokenId: transfer.tokenId,
         minter: wallet,
@@ -170,11 +181,12 @@ export async function POST(req: Request) {
     return NextResponse.json({
       ok: true,
       contractAddress,
-      tokenIds: userTransfers.map((t) => t.tokenId),
+      tokenIds: userTransfers.map((transfer) => transfer.tokenId),
       count: userTransfers.length,
     });
   } catch (e: any) {
     console.error("Mint confirm error:", e);
+
     return NextResponse.json(
       { error: e?.message || "Failed" },
       { status: 500 }
