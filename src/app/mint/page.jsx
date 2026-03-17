@@ -40,7 +40,6 @@ function MintPageContent() {
   const { settings } = useSettings();
   const { nfts: relatedNfts, loading: relatedLoading } = useCachedNfts(12);
 
-  /* wagmi — needed for SIGNING transactions only */
   const {
     address: liveWalletAddress,
     isConnected: isWagmiConnected,
@@ -48,7 +47,6 @@ function MintPageContent() {
   } = useAccount();
   const { switchChain } = useSwitchChain();
 
-  /* server session — source of truth for auth + wallet identity */
   const {
     isLoggedIn,
     profile,
@@ -70,21 +68,24 @@ function MintPageContent() {
   } = useBuy();
 
   const targetChainId = getChainId();
-  const isWrongChain = isWagmiConnected && chain?.id !== targetChainId;
   const chainName = targetChainId === 8453 ? "Base" : "Base Sepolia";
   const explorerUrl = getExplorerUrl();
 
-  /* ── Wallet resolution ──
-     For DISPLAY and ownership checks: use session wallet (savedWallet) as primary.
-     For SIGNING transactions: wagmi wallet (liveWallet) is required.
-     effectiveWallet = best available wallet for any purpose. */
   const liveWallet = liveWalletAddress
     ? String(liveWalletAddress).toLowerCase()
     : null;
+
   const savedWallet = linkedWallet
     ? String(linkedWallet).toLowerCase()
+    : profile?.wallet_address
+    ? String(profile.wallet_address).toLowerCase()
     : null;
+
   const effectiveWallet = liveWallet || savedWallet || null;
+  const hasUsableWallet = Boolean(effectiveWallet);
+
+  const isWrongChain =
+    isWagmiConnected && chain?.id !== targetChainId;
 
   const mintFee = String(
     selectedNft?.mintFee || settings?.minting_fee || "0.002"
@@ -108,15 +109,16 @@ function MintPageContent() {
     selectedNft?.contract_address ||
     contractParam ||
     null;
+
   const currentTokenId =
     selectedNft?.tokenId ||
     selectedNft?.token_id ||
     tokenIdParam ||
     null;
+
   const currentChainId =
     selectedNft?.chainId || selectedNft?.chain_id || targetChainId;
 
-  /* ── Check ownership via API (uses session wallet, no direct Supabase) ── */
   useEffect(() => {
     async function checkOwnership() {
       if (!isLoggedIn || !profileId || !currentContract || !currentTokenId) {
@@ -134,8 +136,9 @@ function MintPageContent() {
           chainId: String(currentChainId),
         });
 
-        /* use session wallet for ownership check — works without wagmi */
-        if (effectiveWallet) params.set("wallet", effectiveWallet);
+        if (effectiveWallet) {
+          params.set("wallet", effectiveWallet);
+        }
 
         const res = await fetch(`/api/nft/owner?${params}`, {
           cache: "no-store",
@@ -180,24 +183,27 @@ function MintPageContent() {
     currentContract && currentTokenId
       ? `${explorerUrl}/token/${currentContract}?a=${currentTokenId}`
       : null;
+
   const contractExplorerLink = currentContract
     ? `${explorerUrl}/address/${currentContract}`
     : null;
+
   const txExplorerLink = txHash ? `${explorerUrl}/tx/${txHash}` : null;
 
-  /* ── State machine ──
-     needs_login     → not logged in at all
-     needs_wallet    → logged in but wagmi not connected (cannot sign)
-     wrong_network   → wagmi connected but wrong chain
-     ready           → can mint
-     tx_signing / tx_pending / confirming / tx_success / tx_error */
   let state = "needs_login";
 
-  if (isLoggedIn) state = "needs_wallet";
-  if (isLoggedIn && isWagmiConnected && isWrongChain) state = "wrong_network";
-  if (isLoggedIn && isWagmiConnected && !isWrongChain) state = "ready";
+  if (isLoggedIn && !hasUsableWallet) {
+    state = "needs_wallet";
+  }
 
-  /* override for tx states */
+  if (isLoggedIn && hasUsableWallet) {
+    state = "ready";
+  }
+
+  if (isLoggedIn && isWagmiConnected && isWrongChain) {
+    state = "wrong_network";
+  }
+
   if (confirmResult?.success) state = "tx_success";
   if (confirmError) state = "tx_error";
   if (confirming) state = "confirming";
@@ -205,21 +211,38 @@ function MintPageContent() {
   if (isSending) state = "tx_signing";
 
   const handleMint = useCallback(() => {
-    if (!isLoggedIn || !isWagmiConnected || !selectedNft || alreadyOwned)
+    if (!isLoggedIn || !selectedNft || alreadyOwned) return;
+
+    if (!hasUsableWallet) {
+      setShowWalletModal(true);
       return;
+    }
+
+    if (!isWagmiConnected) {
+      setShowWalletModal(true);
+      return;
+    }
+
+    if (chain?.id !== targetChainId) {
+      switchChain({ chainId: targetChainId });
+      return;
+    }
 
     const tokenId = String(
       selectedNft.tokenId || selectedNft.token_id || tokenIdParam || "0"
     );
+
     const contractAddress = String(
       selectedNft.contractAddress ||
         selectedNft.contract_address ||
         contractParam ||
         ""
     ).toLowerCase();
+
     const chainId = Number(
       selectedNft.chainId || selectedNft.chain_id || targetChainId
     );
+
     const image =
       selectedNft.image ||
       selectedNft.image_url ||
@@ -227,6 +250,7 @@ function MintPageContent() {
       "";
 
     resetBuy();
+
     buy({
       dbId: selectedNft.dbId || selectedNft.id || null,
       tokenId,
@@ -247,12 +271,15 @@ function MintPageContent() {
     });
   }, [
     isLoggedIn,
-    isWagmiConnected,
     selectedNft,
     alreadyOwned,
+    hasUsableWallet,
+    isWagmiConnected,
+    chain?.id,
+    targetChainId,
+    switchChain,
     tokenIdParam,
     contractParam,
-    targetChainId,
     chainName,
     nftPrice,
     mintFee,
@@ -314,10 +341,20 @@ function MintPageContent() {
     if (typeof window !== "undefined") window.location.href = "/login";
   };
 
-  /* short wallet display for "needs_wallet" state */
   const savedWalletShort = savedWallet
     ? `${savedWallet.slice(0, 6)}...${savedWallet.slice(-4)}`
     : null;
+
+  const effectiveWalletShort = effectiveWallet
+    ? `${effectiveWallet.slice(0, 6)}...${effectiveWallet.slice(-4)}`
+    : null;
+
+  const mintButtonLabel = (() => {
+    if (!hasUsableWallet) return "Connect Wallet";
+    if (!isWagmiConnected) return `Mint Now — ${totalPrice} ETH`;
+    if (isWrongChain) return `Switch to ${chainName}`;
+    return `Mint Now — ${totalPrice} ETH`;
+  })();
 
   return (
     <div className="min-h-screen">
@@ -346,7 +383,6 @@ function MintPageContent() {
 
         {isSelectedMode && dn ? (
           <div className="grid lg:grid-cols-5 gap-6 lg:gap-10">
-            {/* ── Left: Image + Details ── */}
             <div className="lg:col-span-3 space-y-6">
               <div
                 className={`relative rounded-card overflow-hidden border border-border-light shadow-card ${
@@ -412,7 +448,6 @@ function MintPageContent() {
               )}
 
               <div className="space-y-4">
-                {/* Name + description */}
                 <div className="rounded-card bg-surface2 border border-border-light p-5 sm:p-6">
                   <h1 className="font-display font-extrabold text-2xl sm:text-3xl mb-3">
                     {dn.name}
@@ -446,7 +481,6 @@ function MintPageContent() {
                   </div>
                 </div>
 
-                {/* Details grid */}
                 <div className="rounded-card bg-surface2 border border-border-light p-5 sm:p-6">
                   <h3 className="font-display font-semibold text-sm uppercase tracking-wider text-muted mb-4">
                     Details
@@ -463,8 +497,7 @@ function MintPageContent() {
                       },
                       {
                         l: "Collection",
-                        v:
-                          dn.collection || dn.collection_name || "—",
+                        v: dn.collection || dn.collection_name || "—",
                       },
                       { l: "Chain", v: dn.chain || "Base" },
                     ].map((item) => (
@@ -505,7 +538,6 @@ function MintPageContent() {
                   </div>
                 </div>
 
-                {/* Attributes */}
                 {dn.attributes?.length > 0 && (
                   <div className="rounded-card bg-surface2 border border-border-light p-5 sm:p-6">
                     <h3 className="font-display font-semibold text-sm uppercase tracking-wider text-muted mb-4">
@@ -531,7 +563,6 @@ function MintPageContent() {
               </div>
             </div>
 
-            {/* ── Right: Mint panel ── */}
             <div className="lg:col-span-2 space-y-6">
               <div className="lg:sticky lg:top-24">
                 <div className="glass-card rounded-card p-6 sm:p-8 space-y-6">
@@ -572,7 +603,6 @@ function MintPageContent() {
                     <p className="text-sm text-muted">{dn.name}</p>
                   </div>
 
-                  {/* Price breakdown */}
                   <div className="bg-surface2/40 rounded-xl p-4 space-y-3">
                     <div className="flex justify-between text-sm">
                       <span className="text-muted">NFT Price</span>
@@ -600,7 +630,6 @@ function MintPageContent() {
                     </div>
                   </div>
 
-                  {/* ── State: needs_login ── */}
                   {state === "needs_login" && (
                     <div className="space-y-4">
                       <div className="text-center py-4 space-y-2">
@@ -618,10 +647,7 @@ function MintPageContent() {
                         disabled={sessionLoading}
                       >
                         {sessionLoading ? (
-                          <Loader2
-                            size={16}
-                            className="animate-spin"
-                          />
+                          <Loader2 size={16} className="animate-spin" />
                         ) : (
                           <User size={16} />
                         )}
@@ -630,7 +656,6 @@ function MintPageContent() {
                     </div>
                   )}
 
-                  {/* ── State: needs_wallet (logged in, wagmi not connected) ── */}
                   {state === "needs_wallet" && (
                     <div className="space-y-4">
                       <div className="text-center py-4 space-y-2">
@@ -639,13 +664,8 @@ function MintPageContent() {
                           className="mx-auto text-muted-dim"
                         />
                         <p className="text-sm text-muted">
-                          Connect your wallet to sign the transaction
+                          Connect your wallet to continue
                         </p>
-                        {savedWalletShort && (
-                          <p className="text-xs text-accent font-mono">
-                            Your linked wallet: {savedWalletShort}
-                          </p>
-                        )}
                       </div>
 
                       <Button
@@ -657,15 +677,9 @@ function MintPageContent() {
                         <Wallet size={16} />
                         Connect Wallet
                       </Button>
-
-                      <WalletConnectModal
-                        open={showWalletModal}
-                        onClose={() => setShowWalletModal(false)}
-                      />
                     </div>
                   )}
 
-                  {/* ── State: wrong_network ── */}
                   {state === "wrong_network" && (
                     <div className="space-y-4">
                       <div className="bg-warning/10 border border-warning/20 rounded-xl p-4 flex items-start gap-3">
@@ -687,18 +701,31 @@ function MintPageContent() {
                         variant="primary"
                         size="lg"
                         className="w-full"
-                        onClick={() =>
-                          switchChain({ chainId: targetChainId })
-                        }
+                        onClick={() => switchChain({ chainId: targetChainId })}
                       >
                         Switch to {chainName}
                       </Button>
                     </div>
                   )}
 
-                  {/* ── State: ready ── */}
                   {state === "ready" && (
                     <div className="space-y-4">
+                      {hasUsableWallet && (
+                        <div className="bg-success/10 border border-success/20 rounded-xl p-4">
+                          <p className="text-sm font-medium text-success">
+                            Wallet detected
+                          </p>
+                          <p className="text-xs text-muted mt-1 font-mono">
+                            {effectiveWalletShort}
+                          </p>
+                          {!isWagmiConnected && (
+                            <p className="text-xs text-muted mt-2">
+                              You can continue with this wallet. You’ll only be asked to connect when it’s time to sign.
+                            </p>
+                          )}
+                        </div>
+                      )}
+
                       {checkingOwned ? (
                         <div className="bg-surface2 border border-border-light rounded-xl p-4 text-center">
                           <Loader2
@@ -706,8 +733,7 @@ function MintPageContent() {
                             className="mx-auto mb-2 animate-spin text-accent"
                           />
                           <p className="text-sm text-muted">
-                            Checking whether you already bought this
-                            NFT...
+                            Checking whether you already bought this NFT...
                           </p>
                         </div>
                       ) : alreadyOwned ? (
@@ -725,19 +751,14 @@ function MintPageContent() {
                           size="lg"
                           className="w-full"
                           onClick={handleMint}
-                          disabled={
-                            !profileId ||
-                            checkingOwned ||
-                            alreadyOwned
-                          }
+                          disabled={!profileId || checkingOwned || alreadyOwned}
                         >
-                          Mint Now — {totalPrice} ETH
+                          {mintButtonLabel}
                         </Button>
                       )}
                     </div>
                   )}
 
-                  {/* ── States: tx in progress ── */}
                   {["tx_signing", "tx_pending", "confirming"].includes(
                     state
                   ) && (
@@ -747,12 +768,9 @@ function MintPageContent() {
                         className="mx-auto text-accent animate-spin"
                       />
                       <p className="text-sm text-muted">
-                        {state === "tx_signing" &&
-                          "Confirm in your wallet…"}
-                        {state === "tx_pending" &&
-                          "Transaction pending…"}
-                        {state === "confirming" &&
-                          "Verifying on server…"}
+                        {state === "tx_signing" && "Confirm in your wallet…"}
+                        {state === "tx_pending" && "Transaction pending…"}
+                        {state === "confirming" && "Verifying on server…"}
                       </p>
 
                       {txExplorerLink && (
@@ -768,7 +786,6 @@ function MintPageContent() {
                     </div>
                   )}
 
-                  {/* ── State: success ── */}
                   {state === "tx_success" && (
                     <div className="text-center py-6 space-y-4">
                       <div className="w-14 h-14 rounded-full bg-success/10 flex items-center justify-center mx-auto">
@@ -806,7 +823,6 @@ function MintPageContent() {
                     </div>
                   )}
 
-                  {/* ── State: error ── */}
                   {state === "tx_error" && (
                     <div className="space-y-4">
                       <div className="bg-danger/10 border border-danger/20 rounded-xl p-4 flex items-start gap-3">
@@ -837,7 +853,6 @@ function MintPageContent() {
                   )}
                 </div>
 
-                {/* Related NFTs */}
                 {relatedNfts.length > 0 && (
                   <div className="mt-6">
                     <h3 className="font-display font-semibold text-sm uppercase tracking-wider text-muted mb-4">
@@ -854,7 +869,6 @@ function MintPageContent() {
             </div>
           </div>
         ) : isSelectedMode && nftLoading ? (
-          /* Loading skeleton */
           <div className="grid lg:grid-cols-5 gap-6 lg:gap-10">
             <div className="lg:col-span-3 space-y-6">
               <div className="aspect-square rounded-card shimmer" />
@@ -871,7 +885,6 @@ function MintPageContent() {
             </div>
           </div>
         ) : (
-          /* Browse mode — no NFT selected */
           <div className="space-y-12">
             <div className="text-center max-w-2xl mx-auto">
               <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-pill bg-accent/10 border border-accent/20 mb-6">
@@ -882,12 +895,10 @@ function MintPageContent() {
               </div>
 
               <h1 className="font-display font-extrabold text-3xl sm:text-4xl lg:text-5xl mb-4">
-                Choose an NFT to{" "}
-                <span className="text-gradient">Mint</span>
+                Choose an NFT to <span className="text-gradient">Mint</span>
               </h1>
               <p className="text-muted text-base sm:text-lg leading-relaxed">
-                Click any NFT to see its details and mint it to your
-                wallet.
+                Click any NFT to see its details and mint it to your wallet.
               </p>
             </div>
 
@@ -910,6 +921,11 @@ function MintPageContent() {
           </div>
         )}
       </div>
+
+      <WalletConnectModal
+        open={showWalletModal}
+        onClose={() => setShowWalletModal(false)}
+      />
     </div>
   );
 }

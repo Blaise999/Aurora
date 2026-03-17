@@ -61,8 +61,16 @@ export default function PremiumProfilePage() {
   const [redirecting, setRedirecting] = useState(false)
 
   const liveWallet = address ? String(address).toLowerCase() : null
-  const savedWallet = linkedWallet ? String(linkedWallet).toLowerCase() : null
+  const savedWallet = linkedWallet
+    ? String(linkedWallet).toLowerCase()
+    : profile?.wallet_address
+    ? String(profile.wallet_address).toLowerCase()
+    : null
+
   const effectiveWallet = liveWallet || savedWallet || null
+  const hasUsableWallet = Boolean(effectiveWallet)
+  const walletUiConnected = Boolean(effectiveWallet)
+  const needsFirstWalletLink = !hasUsableWallet && !hasLinkedWallet
 
   const greeting = useMemo(() => {
     const hr = new Date().getHours()
@@ -134,9 +142,17 @@ export default function PremiumProfilePage() {
       try {
         const res = await fetch('/api/user/collections', { cache: 'no-store' })
         const json = await res.json()
-        setNfts(json?.nfts || [])
+
+        if (!res.ok) {
+          console.error('Failed to load collections:', json?.error)
+          setNfts([])
+          return
+        }
+
+        setNfts(Array.isArray(json?.nfts) ? json.nfts : [])
       } catch (err) {
         console.error('Failed to load collections:', err)
+        setNfts([])
       } finally {
         setLoading(false)
       }
@@ -181,9 +197,6 @@ export default function PremiumProfilePage() {
     setShowWalletModal(true)
   }
 
-  const hasUsableWallet = Boolean(effectiveWallet)
-  const needsFirstWalletLink = !hasLinkedWallet
-
   if (!isLoggedIn || redirecting) {
     return null
   }
@@ -202,7 +215,7 @@ export default function PremiumProfilePage() {
           greeting={greeting}
           profile={profile}
           walletDisplay={walletDisplay}
-          isConnected={isConnected}
+          isConnected={walletUiConnected}
           onSettings={undefined}
           onLogout={logout}
         />
@@ -214,7 +227,7 @@ export default function PremiumProfilePage() {
             <span className="font-mono text-text">/profile/nft/[id]</span>
           </div>
 
-          {hasLinkedWallet && (
+          {hasUsableWallet && (
             <div className="inline-flex items-center gap-2 rounded-full border border-success/20 bg-success/10 px-3 py-1.5 text-xs text-success">
               <Wallet size={13} />
               Linked wallet:
@@ -235,7 +248,7 @@ export default function PremiumProfilePage() {
               profile={profile}
               walletDisplay={walletDisplay}
               address={effectiveWallet}
-              isConnected={isConnected}
+              isConnected={walletUiConnected}
               chainName={chain?.name || 'Base'}
             />
 
@@ -359,7 +372,7 @@ export default function PremiumProfilePage() {
                     <StatusRow
                       icon={<Wallet size={16} />}
                       label="Wallet linked"
-                      value={hasLinkedWallet ? 'Linked' : 'Pending'}
+                      value={hasUsableWallet ? 'Linked' : 'Pending'}
                     />
                     <StatusRow
                       icon={<Globe2 size={16} />}
@@ -505,7 +518,7 @@ export default function PremiumProfilePage() {
                     onClick={() => router.push('/explore')}
                   />
 
-                  {!isConnected && hasLinkedWallet && (
+                  {!isConnected && hasUsableWallet && (
                     <QuickAction
                       icon={<Wallet size={16} />}
                       label="Reconnect Wallet"

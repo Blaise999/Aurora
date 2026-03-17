@@ -17,9 +17,9 @@ export async function GET(req: Request) {
     const adminProfileId = url.searchParams.get("profileId");
 
     let profileId: number | null = null;
+    let resolvedWallet: string | null = null;
 
     if (adminProfileId) {
-      // Admin usage — verify admin session
       const { cookies } = await import("next/headers");
       const { jwtVerify } = await import("jose");
       const cookieStore = await cookies();
@@ -28,30 +28,86 @@ export async function GET(req: Request) {
       if (adminToken) {
         try {
           const secret = new TextEncoder().encode(
-            process.env.SESSION_SECRET || process.env.ADMIN_SECRET || "aurora-admin-fallback-secret-change-me"
+            process.env.SESSION_SECRET ||
+              process.env.ADMIN_SECRET ||
+              "aurora-admin-fallback-secret-change-me"
           );
           const { payload } = await jwtVerify(adminToken, secret);
+
           if (payload.role === "admin") {
             profileId = Number(adminProfileId);
           }
-        } catch {}
+        } catch (err) {
+          console.error("admin session verify failed:", err);
+        }
+      }
+    }
+
+    if (!profileId) {
+      const session = await getSessionData();
+
+      if (!session) {
+        return NextResponse.json(
+          { error: "Unauthorized", nfts: [] },
+          { status: 401 }
+        );
       }
 
-      // If not admin, fall back to user session
-      if (!profileId) {
-        const session = await getSessionData();
-        profileId = session?.profileId ? Number(session.profileId) : null;
+      resolvedWallet = session.wallet
+        ? String(session.wallet).toLowerCase()
+        : null;
+
+      if (session.profileId) {
+        profileId = Number(session.profileId);
       }
-    } else {
-      // Normal user — use session
-      const session = await getSessionData();
-      profileId = session?.profileId ? Number(session.profileId) : null;
+
+      if (!profileId && session.email) {
+        const { data: profileByEmail, error: emailLookupError } = await sb
+          .from("profiles")
+          .select("id, wallet_address")
+          .eq("email", session.email)
+          .maybeSingle();
+
+        if (emailLookupError) {
+          console.error("profiles email lookup error:", emailLookupError);
+        }
+
+        if (profileByEmail?.id) {
+          profileId = Number(profileByEmail.id);
+          resolvedWallet =
+            resolvedWallet ||
+            (profileByEmail.wallet_address
+              ? String(profileByEmail.wallet_address).toLowerCase()
+              : null);
+        }
+      }
+
+      if (!profileId && resolvedWallet) {
+        const { data: profileByWallet, error: walletLookupError } = await sb
+          .from("profiles")
+          .select("id, wallet_address")
+          .ilike("wallet_address", resolvedWallet)
+          .maybeSingle();
+
+        if (walletLookupError) {
+          console.error("profiles wallet lookup error:", walletLookupError);
+        }
+
+        if (profileByWallet?.id) {
+          profileId = Number(profileByWallet.id);
+          resolvedWallet =
+            resolvedWallet ||
+            (profileByWallet.wallet_address
+              ? String(profileByWallet.wallet_address).toLowerCase()
+              : null);
+        }
+      }
     }
 
     if (!profileId) {
       return NextResponse.json(
-        { error: "Unauthorized", nfts: [] },
-        { status: 401 }
+        { error: "Profile not found", nfts: [] },
+        { status: 404 }
       );
     }
 
@@ -110,7 +166,14 @@ export async function GET(req: Request) {
       image_url: item.image_url || "",
       nft_name: item.nft_name || item.name || `#${item.token_id}`,
       token_type: item.token_type || "ERC-721",
-      chain: item.chain || (item.chain_id === 8453 ? "Base" : item.chain_id === 84532 ? "Base Sepolia" : `Chain ${item.chain_id}`),
+      chain:
+        item.chain ||
+        (item.chain_id === 8453
+          ? "Base"
+          : item.chain_id === 84532
+          ? "Base Sepolia"
+          : `Chain ${item.chain_id}`),
+
       // aliases for frontend compatibility
       contractAddress: item.contract_address,
       tokenId: item.token_id,
@@ -119,9 +182,12 @@ export async function GET(req: Request) {
       collection_name: item.collection || "",
     }));
 
-
-    
-    return NextResponse.json({ nfts, count: nfts.length });
+    return NextResponse.json({
+      nfts,
+      count: nfts.length,
+      profileId,
+      wallet: resolvedWallet,
+    });
   } catch (e: any) {
     console.error("user/collections error:", e);
     return NextResponse.json(
