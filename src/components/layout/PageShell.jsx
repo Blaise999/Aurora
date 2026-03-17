@@ -28,7 +28,7 @@ export default function AppShell({ children }) {
   return (
     <ClientProviders>
       <Navbar />
-      <main className="flex-1 pt-16 sm:pt-20">{children}</main>
+      <main className="flex-1 pt-[72px] sm:pt-[80px]">{children}</main>
       <Footer />
       <ToastProvider />
       <SupportChatWidget />

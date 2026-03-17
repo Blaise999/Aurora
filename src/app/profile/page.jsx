@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
-import { useAccount } from 'wagmi'
 import {
   Wallet,
   LayoutGrid,
@@ -22,6 +21,7 @@ import {
 } from 'lucide-react'
 
 import { useSession } from '@/hooks/useSession'
+import { useWallet } from '@/context/WalletContext'
 import Button from '@/components/ui/Button'
 import Badge from '@/components/ui/Badge'
 import NftCardSkeleton from '@/components/NftCardSkeleton'
@@ -43,7 +43,16 @@ import { calcPortfolioValue } from '@/lib/portfolio/calcPortfolioValue'
 
 export default function PremiumProfilePage() {
   const router = useRouter()
-  const { address, isConnected, chain } = useAccount()
+
+  /* ──────────────────────────────────────────────────────────────
+   * FIX: removed `useAccount()` from wagmi.
+   * The collections section was stuck on "Connect Wallet" because
+   * wagmi's useAccount requires an active browser-wallet session
+   * (MetaMask popup etc.) — but the rest of the app uses the
+   * server-session `linkedWallet` from useSession().
+   * Now we do the same: useSession for the saved wallet,
+   * and useWallet (WalletContext) for any live browser wallet.
+   * ────────────────────────────────────────────────────────────── */
   const {
     profile,
     isLoggedIn,
@@ -53,6 +62,12 @@ export default function PremiumProfilePage() {
     hasLinkedWallet,
   } = useSession()
 
+  const {
+    address: liveWalletAddress,
+    isConnected: isLiveConnected,
+    chainId,
+  } = useWallet()
+
   const [tab, setTab] = useState('collections')
   const [nfts, setNfts] = useState([])
   const [loading, setLoading] = useState(true)
@@ -60,7 +75,9 @@ export default function PremiumProfilePage() {
   const [syncingWallet, setSyncingWallet] = useState(false)
   const [redirecting, setRedirecting] = useState(false)
 
-  const liveWallet = address ? String(address).toLowerCase() : null
+  const liveWallet = liveWalletAddress
+    ? String(liveWalletAddress).toLowerCase()
+    : null
   const savedWallet = linkedWallet
     ? String(linkedWallet).toLowerCase()
     : profile?.wallet_address
@@ -71,6 +88,12 @@ export default function PremiumProfilePage() {
   const hasUsableWallet = Boolean(effectiveWallet)
   const walletUiConnected = Boolean(effectiveWallet)
   const needsFirstWalletLink = !hasUsableWallet && !hasLinkedWallet
+
+  const chainName = useMemo(() => {
+    if (!chainId) return 'Base'
+    const chains = { 8453: 'Base', 84532: 'Base Sepolia', 1: 'Ethereum', 137: 'Polygon' }
+    return chains[chainId] || `Chain ${chainId}`
+  }, [chainId])
 
   const greeting = useMemo(() => {
     const hr = new Date().getHours()
@@ -87,7 +110,6 @@ export default function PremiumProfilePage() {
   }, [effectiveWallet])
 
   const portfolioValue = useMemo(() => calcPortfolioValue(nfts), [nfts])
-
   const collectionCount = nfts.length
 
   const uniqueCollections = useMemo(() => {
@@ -127,6 +149,7 @@ export default function PremiumProfilePage() {
     }))
   }, [nfts])
 
+  // ── Redirects ──
   useEffect(() => {
     if (isLoggedIn === false) {
       setRedirecting(true)
@@ -134,6 +157,7 @@ export default function PremiumProfilePage() {
     }
   }, [isLoggedIn, router])
 
+  // ── Load NFTs from API (session-based, no wallet needed) ──
   useEffect(() => {
     if (!isLoggedIn) return
 
@@ -161,6 +185,7 @@ export default function PremiumProfilePage() {
     loadNFTs()
   }, [isLoggedIn])
 
+  // ── Sync live wallet to profile if new ──
   useEffect(() => {
     if (!isLoggedIn || !liveWallet) return
     if (savedWallet && savedWallet === liveWallet) return
@@ -168,20 +193,16 @@ export default function PremiumProfilePage() {
     async function syncWalletToProfile() {
       try {
         setSyncingWallet(true)
-
         const res = await fetch('/api/profile/link-wallet', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ walletAddress: liveWallet }),
         })
-
         const json = await res.json()
-
         if (!res.ok) {
           console.error('Failed to sync wallet:', json?.error)
           return
         }
-
         await refreshSession()
       } catch (err) {
         console.error('Wallet sync crashed:', err)
@@ -193,16 +214,13 @@ export default function PremiumProfilePage() {
     syncWalletToProfile()
   }, [isLoggedIn, liveWallet, savedWallet, refreshSession])
 
-  const handleConnect = () => {
-    setShowWalletModal(true)
-  }
+  const handleConnect = () => setShowWalletModal(true)
 
-  if (!isLoggedIn || redirecting) {
-    return null
-  }
+  if (!isLoggedIn || redirecting) return null
 
   return (
     <div className="relative min-h-screen overflow-hidden">
+      {/* Ambient glow */}
       <div className="pointer-events-none absolute inset-0">
         <div className="absolute top-[-120px] left-[10%] h-[320px] w-[320px] rounded-full bg-accent/10 blur-[120px]" />
         <div className="absolute top-[120px] right-[8%] h-[360px] w-[360px] rounded-full bg-accent-violet/10 blur-[140px]" />
@@ -211,6 +229,7 @@ export default function PremiumProfilePage() {
       </div>
 
       <div className="relative z-10 mx-auto max-w-[1600px] px-4 py-8 sm:px-6 sm:py-10 lg:px-8 lg:py-12">
+        {/* ── Hero banner ── */}
         <ProfileHero
           greeting={greeting}
           profile={profile}
@@ -220,6 +239,7 @@ export default function PremiumProfilePage() {
           onLogout={logout}
         />
 
+        {/* ── Status pills ── */}
         <div className="mt-4 flex flex-wrap items-center gap-3">
           <div className="inline-flex items-center gap-2 rounded-full border border-border-light bg-card/60 px-3 py-1.5 text-xs text-muted">
             <ExternalLink size={13} className="text-accent" />
@@ -242,14 +262,16 @@ export default function PremiumProfilePage() {
           )}
         </div>
 
+        {/* ── Main grid ── */}
         <div className="mt-8 grid grid-cols-1 gap-6 xl:grid-cols-12">
+          {/* ── Left sidebar ── */}
           <div className="space-y-6 xl:col-span-3">
             <ProfileIdentityCard
               profile={profile}
               walletDisplay={walletDisplay}
               address={effectiveWallet}
               isConnected={walletUiConnected}
-              chainName={chain?.name || 'Base'}
+              chainName={chainName}
             />
 
             {needsFirstWalletLink ? (
@@ -259,7 +281,7 @@ export default function PremiumProfilePage() {
                 </div>
                 <h3 className="mb-2 text-xl font-semibold">Connect your wallet</h3>
                 <p className="mb-5 text-sm leading-relaxed text-muted">
-                  Link your wallet once and we’ll save it to your profile for future logins.
+                  Link your wallet once and we'll save it to your profile for future logins.
                 </p>
                 <Button onClick={handleConnect} size="lg" className="w-full">
                   <Wallet size={16} />
@@ -276,9 +298,42 @@ export default function PremiumProfilePage() {
             )}
 
             <ActivityTimeline items={recentActivity} />
+
+            {/* Quick Actions — in sidebar instead of floating alone */}
+            <div className="rounded-[28px] border border-border-light bg-card/70 p-6 backdrop-blur-xl">
+              <div className="mb-5">
+                <p className="mb-2 text-xs uppercase tracking-[0.22em] text-muted-dim">
+                  Quick Actions
+                </p>
+                <h3 className="text-lg font-semibold">Manage Profile</h3>
+              </div>
+
+              <div className="space-y-3">
+                <QuickAction
+                  icon={<LayoutGrid size={16} />}
+                  label="Explore NFTs"
+                  onClick={() => router.push('/explore')}
+                />
+                {!isLiveConnected && hasUsableWallet && (
+                  <QuickAction
+                    icon={<Wallet size={16} />}
+                    label="Reconnect Wallet"
+                    onClick={handleConnect}
+                  />
+                )}
+                <QuickAction
+                  icon={<LogOut size={16} />}
+                  label="Sign Out"
+                  onClick={logout}
+                  danger
+                />
+              </div>
+            </div>
           </div>
 
+          {/* ── Right / main content ── */}
           <div className="space-y-6 xl:col-span-9">
+            {/* Stats row */}
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
               <PortfolioMiniStat
                 icon={<TrendingUp size={18} />}
@@ -306,6 +361,7 @@ export default function PremiumProfilePage() {
               />
             </div>
 
+            {/* Chart + info cards */}
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
               <div className="lg:col-span-2">
                 <PortfolioOverviewCard
@@ -343,28 +399,18 @@ export default function PremiumProfilePage() {
                           ? 'Rising'
                           : 'New',
                     },
-                    {
-                      label: 'Preferred Chain',
-                      value: chain?.name || 'Base',
-                    },
-                    {
-                      label: 'Visibility',
-                      value: 'Verified',
-                    },
+                    { label: 'Preferred Chain', value: chainName },
+                    { label: 'Visibility', value: 'Verified' },
                   ]}
                 />
 
                 <div className="rounded-[28px] border border-border-light bg-card/70 p-6 backdrop-blur-xl">
                   <div className="mb-4 flex items-center justify-between">
                     <div>
-                      <p className="mb-2 text-xs uppercase tracking-[0.22em] text-muted-dim">
-                        Status
-                      </p>
+                      <p className="mb-2 text-xs uppercase tracking-[0.22em] text-muted-dim">Status</p>
                       <h3 className="text-lg font-semibold">Account Standing</h3>
                     </div>
-                    <Badge color="success" dot>
-                      Active
-                    </Badge>
+                    <Badge color="success" dot>Active</Badge>
                   </div>
 
                   <div className="space-y-4">
@@ -374,11 +420,7 @@ export default function PremiumProfilePage() {
                       label="Wallet linked"
                       value={hasUsableWallet ? 'Linked' : 'Pending'}
                     />
-                    <StatusRow
-                      icon={<Globe2 size={16} />}
-                      label="Network"
-                      value={chain?.name || 'Not detected'}
-                    />
+                    <StatusRow icon={<Globe2 size={16} />} label="Network" value={chainName} />
                     <StatusRow
                       icon={<Clock3 size={16} />}
                       label="Last sync"
@@ -389,6 +431,7 @@ export default function PremiumProfilePage() {
               </div>
             </div>
 
+            {/* ── Tabs: Collections / Activity / Listed ── */}
             <div className="overflow-hidden rounded-[30px] border border-border-light bg-card/70 backdrop-blur-xl">
               <div className="border-b border-border-light px-5 pt-5 sm:px-6">
                 <ProfileTabs
@@ -463,7 +506,6 @@ export default function PremiumProfilePage() {
                                   </p>
                                 </div>
                               </div>
-
                               <div className="text-right">
                                 <p className="text-sm font-medium">Acquired</p>
                                 <p className="text-xs text-muted-dim">
@@ -495,44 +537,6 @@ export default function PremiumProfilePage() {
                     )}
                   </>
                 )}
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-              <div className="lg:col-span-2" />
-
-              <div className="rounded-[28px] border border-border-light bg-card/70 p-6 backdrop-blur-xl">
-                <div className="mb-5 flex items-center justify-between">
-                  <div>
-                    <p className="mb-2 text-xs uppercase tracking-[0.22em] text-muted-dim">
-                      Quick Actions
-                    </p>
-                    <h3 className="text-lg font-semibold">Manage Profile</h3>
-                  </div>
-                </div>
-
-                <div className="space-y-3">
-                  <QuickAction
-                    icon={<LayoutGrid size={16} />}
-                    label="Explore NFTs"
-                    onClick={() => router.push('/explore')}
-                  />
-
-                  {!isConnected && hasUsableWallet && (
-                    <QuickAction
-                      icon={<Wallet size={16} />}
-                      label="Reconnect Wallet"
-                      onClick={handleConnect}
-                    />
-                  )}
-
-                  <QuickAction
-                    icon={<LogOut size={16} />}
-                    label="Sign Out"
-                    onClick={logout}
-                    danger
-                  />
-                </div>
               </div>
             </div>
           </div>
@@ -570,9 +574,7 @@ function QuickAction({ icon, label, onClick, danger = false }) {
       }`}
     >
       <div className="flex items-center gap-3">
-        <div className={danger ? 'text-red-400' : 'text-accent'}>
-          {icon}
-        </div>
+        <div className={danger ? 'text-red-400' : 'text-accent'}>{icon}</div>
         <span className="text-sm font-medium">{label}</span>
       </div>
       <ChevronRight size={16} className="opacity-70" />

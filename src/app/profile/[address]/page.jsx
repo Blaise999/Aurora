@@ -3,22 +3,21 @@ import { useParams, useRouter } from 'next/navigation';
 import { useState, useEffect } from 'react';
 import { ArrowLeft, Copy, Check, ExternalLink, Wallet } from 'lucide-react';
 import Link from 'next/link';
-import { useAccount } from 'wagmi';
-import PageShell from '@/components/layout/PageShell';
 import NFTGridAlchemy from '@/components/nft/NFTGridAlchemy';
 import NftCard from '@/components/NftCard';
 import NftCardSkeleton from '@/components/NftCardSkeleton';
 import Badge from '@/components/ui/Badge';
 import Button from '@/components/ui/Button';
 import { useSession } from '@/hooks/useSession';
+import { useWallet } from '@/context/WalletContext';
 import { getExplorerUrl } from '@/lib/web3/contract';
 
 export default function ProfileByAddress() {
   const params = useParams();
   const router = useRouter();
   const wa = params?.address;
-  const { address } = useAccount();
-  const { profile, isLoggedIn } = useSession();
+  const { address } = useWallet();
+  const { profile, isLoggedIn, linkedWallet } = useSession();
   const [copied, setCopied] = useState(false);
   const [tab, setTab] = useState('all');
   const [collections, setCollections] = useState([]);
@@ -26,6 +25,7 @@ export default function ProfileByAddress() {
 
   const isOwn = isLoggedIn && (
     profile?.wallet_address?.toLowerCase() === wa?.toLowerCase() ||
+    linkedWallet?.toLowerCase() === wa?.toLowerCase() ||
     address?.toLowerCase() === wa?.toLowerCase()
   );
   const shortAddr = wa ? `${wa.slice(0, 8)}…${wa.slice(-6)}` : '';
@@ -40,7 +40,7 @@ export default function ProfileByAddress() {
   }, [isOwn, isLoggedIn, router]);
 
   return (
-    <PageShell>
+    <div>
       <div className="max-w-[1400px] mx-auto px-6 md:px-8 py-8">
         <Link href="/" className="flex items-center gap-2 text-sm text-muted hover:text-text mb-6 transition-colors"><ArrowLeft size={16} /> Home</Link>
         <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 mb-8">
@@ -62,6 +62,6 @@ export default function ProfileByAddress() {
 
         <NFTGridAlchemy owner={wa} />
       </div>
-    </PageShell>
+    </div>
   );
 }

@@ -111,6 +111,7 @@ export async function GET(req: Request) {
       );
     }
 
+    // ── 1. Fetch user_collections ──
     const { data, error } = await sb
       .from("user_collections")
       .select(`
@@ -146,41 +147,88 @@ export async function GET(req: Request) {
       );
     }
 
-    const nfts = (data || []).map((item: any) => ({
-      id: item.id,
-      profile_id: item.profile_id,
-      cached_nft_id: item.cached_nft_id,
-      chain_id: item.chain_id,
-      contract_address: item.contract_address,
-      token_id: item.token_id,
-      assigned_at: item.assigned_at,
-      assigned_by: item.assigned_by,
-      nft_price_eth: item.nft_price_eth,
-      mint_fee_eth: item.mint_fee_eth,
-      total_value_eth: item.total_value_eth,
-      pricing_source: item.pricing_source,
-      attributes: item.attributes || [],
-      collection: item.collection || "Collection",
-      description: item.description || "",
-      name: item.name || item.nft_name || `#${item.token_id}`,
-      image_url: item.image_url || "",
-      nft_name: item.nft_name || item.name || `#${item.token_id}`,
-      token_type: item.token_type || "ERC-721",
-      chain:
-        item.chain ||
-        (item.chain_id === 8453
-          ? "Base"
-          : item.chain_id === 84532
-          ? "Base Sepolia"
-          : `Chain ${item.chain_id}`),
+    // ── 2. Fetch pricing from nft_pricing for all cached_nft_ids ──
+    // The user_collections table often has NULL prices (admin-assigned NFTs),
+    // but the nft_pricing table holds the actual mint_price_eth & mint_fee_eth.
+    const cachedIds = (data || [])
+      .map((r: any) => r.cached_nft_id)
+      .filter(Boolean);
 
-      // aliases for frontend compatibility
-      contractAddress: item.contract_address,
-      tokenId: item.token_id,
-      chainId: item.chain_id,
-      image: item.image_url || "",
-      collection_name: item.collection || "",
-    }));
+    let pricingMap: Record<number, { mint_price_eth: number; mint_fee_eth: number }> = {};
+
+    if (cachedIds.length > 0) {
+      const { data: pricingRows, error: pricingErr } = await sb
+        .from("nft_pricing")
+        .select("cached_nft_id, mint_price_eth, mint_fee_eth")
+        .in("cached_nft_id", cachedIds);
+
+      if (pricingErr) {
+        console.error("nft_pricing lookup error:", pricingErr);
+      } else if (pricingRows) {
+        for (const row of pricingRows) {
+          pricingMap[row.cached_nft_id] = {
+            mint_price_eth: parseFloat(row.mint_price_eth || 0),
+            mint_fee_eth: parseFloat(row.mint_fee_eth || 0),
+          };
+        }
+      }
+    }
+
+    // ── 3. Merge prices: user_collections prices → nft_pricing fallback ──
+    const nfts = (data || []).map((item: any) => {
+      const pricing = item.cached_nft_id ? pricingMap[item.cached_nft_id] : null;
+
+      // Resolve price: prefer user_collections, fallback to nft_pricing
+      const nftPrice = parseFloat(item.nft_price_eth || 0) > 0
+        ? parseFloat(item.nft_price_eth)
+        : pricing?.mint_price_eth || 0;
+
+      const mintFee = parseFloat(item.mint_fee_eth || 0) > 0
+        ? parseFloat(item.mint_fee_eth)
+        : pricing?.mint_fee_eth || 0;
+
+      const totalValue = parseFloat(item.total_value_eth || 0) > 0
+        ? parseFloat(item.total_value_eth)
+        : (nftPrice + mintFee) > 0
+        ? nftPrice + mintFee
+        : 0;
+
+      return {
+        id: item.id,
+        profile_id: item.profile_id,
+        cached_nft_id: item.cached_nft_id,
+        chain_id: item.chain_id,
+        contract_address: item.contract_address,
+        token_id: item.token_id,
+        assigned_at: item.assigned_at,
+        assigned_by: item.assigned_by,
+        nft_price_eth: nftPrice,
+        mint_fee_eth: mintFee,
+        total_value_eth: totalValue,
+        pricing_source: item.pricing_source || (pricing ? "nft_pricing" : null),
+        attributes: item.attributes || [],
+        collection: item.collection || "Collection",
+        description: item.description || "",
+        name: item.name || item.nft_name || `#${item.token_id}`,
+        image_url: item.image_url || "",
+        nft_name: item.nft_name || item.name || `#${item.token_id}`,
+        token_type: item.token_type || "ERC-721",
+        chain:
+          item.chain ||
+          (item.chain_id === 8453
+            ? "Base"
+            : item.chain_id === 84532
+            ? "Base Sepolia"
+            : `Chain ${item.chain_id}`),
+
+        // aliases for frontend compatibility
+        contractAddress: item.contract_address,
+        tokenId: item.token_id,
+        chainId: item.chain_id,
+        image: item.image_url || "",
+        collection_name: item.collection || "",
+      };
+    });
 
     return NextResponse.json({
       nfts,
