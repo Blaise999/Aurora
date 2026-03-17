@@ -119,6 +119,8 @@ export async function GET(req: Request) {
       collection_name: item.collection || "",
     }));
 
+
+    
     return NextResponse.json({ nfts, count: nfts.length });
   } catch (e: any) {
     console.error("user/collections error:", e);
