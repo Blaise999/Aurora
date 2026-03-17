@@ -14,6 +14,10 @@ export default function ProfileIdentityCard({
     profile?.username?.[0]?.toUpperCase() ||
     'U'
 
+  /* isConnected can be true from session wallet OR wagmi —
+     show wallet info whenever we have a wallet reference */
+  const hasWallet = isConnected || !!address
+
   return (
     <div className="rounded-[28px] border border-border-light bg-card/70 backdrop-blur-xl p-6">
       <div className="flex items-center gap-4 mb-5">
@@ -38,8 +42,17 @@ export default function ProfileIdentityCard({
 
       <div className="space-y-3">
         <InfoRow icon={<User2 size={15} />} label="Display Name" value={profile?.first_name || 'Collector'} />
-        <InfoRow icon={<Wallet size={15} />} label="Wallet" value={isConnected ? walletDisplay || 'Connected' : 'Not connected'} mono />
-        <InfoRow icon={<Globe2 size={15} />} label="Network" value={isConnected ? chainName : 'Unavailable'} />
+        <InfoRow
+          icon={<Wallet size={15} />}
+          label="Wallet"
+          value={hasWallet ? walletDisplay || 'Linked' : 'Not linked'}
+          mono
+        />
+        <InfoRow
+          icon={<Globe2 size={15} />}
+          label="Network"
+          value={hasWallet ? chainName : 'Unavailable'}
+        />
         <InfoRow icon={<ShieldCheck size={15} />} label="Verification" value="Verified" />
       </div>
 

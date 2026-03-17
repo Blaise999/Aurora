@@ -55,13 +55,16 @@ export default function ProfileHero({
               </div>
             </div>
 
-            {isConnected && walletDisplay && (
+            {/* Show wallet chip when wallet is available (session OR wagmi) */}
+            {walletDisplay && (
               <div className="inline-flex items-center gap-2 rounded-2xl border border-border-light bg-surface2/50 px-4 py-3">
                 <div className="w-10 h-10 rounded-xl bg-accent/10 flex items-center justify-center text-accent">
                   <ShieldCheck size={16} />
                 </div>
                 <div>
-                  <p className="text-xs text-muted-dim">Connected Wallet</p>
+                  <p className="text-xs text-muted-dim">
+                    {isConnected ? 'Connected Wallet' : 'Linked Wallet'}
+                  </p>
                   <p className="text-sm font-mono font-medium">{walletDisplay}</p>
                 </div>
               </div>
@@ -70,10 +73,12 @@ export default function ProfileHero({
         </div>
 
         <div className="flex flex-wrap gap-3">
-          <Button variant="outline" onClick={onSettings}>
-            <Settings size={16} />
-            Preferences
-          </Button>
+          {onSettings && (
+            <Button variant="outline" onClick={onSettings}>
+              <Settings size={16} />
+              Preferences
+            </Button>
+          )}
           <Button variant="ghost" onClick={onLogout} className="text-red-400">
             <LogOut size={16} />
             Sign out
