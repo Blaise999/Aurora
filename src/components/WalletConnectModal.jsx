@@ -1,7 +1,9 @@
 'use client';
 import { useState, useCallback, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { X, Wallet, Loader2, ExternalLink, Smartphone, Globe, Shield } from 'lucide-react';
 import { useConnect, useAccount, useDisconnect } from 'wagmi';
+import { useSession } from '@/hooks/useSession';
 
 // Connector display metadata
 const WALLET_META = {
@@ -23,8 +25,10 @@ function getWalletMeta(connector) {
 }
 
 export default function WalletConnectModal({ open, onClose, onConnected }) {
+  const router = useRouter();
   const { connectors, connect, isPending, error: connectError } = useConnect();
   const { isConnected } = useAccount();
+  const { isLoggedIn, hasLinkedWallet } = useSession();
   const [connectingId, setConnectingId] = useState(null);
   const [error, setError] = useState('');
 
@@ -47,6 +51,16 @@ export default function WalletConnectModal({ open, onClose, onConnected }) {
       {
         onSuccess: () => {
           setConnectingId(null);
+
+          // If user is logged in and connecting wallet for the first time,
+          // redirect to onboarding (/welcome) so they complete the flow
+          if (isLoggedIn && !hasLinkedWallet) {
+            const walletName = getWalletMeta(connector).name || connector.id;
+            onClose?.();
+            router.push(`/welcome?wallet=${encodeURIComponent(walletName)}`);
+            return;
+          }
+
           onConnected?.();
           onClose?.();
         },
@@ -60,7 +74,7 @@ export default function WalletConnectModal({ open, onClose, onConnected }) {
         },
       }
     );
-  }, [connect, onClose, onConnected]);
+  }, [connect, onClose, onConnected, isLoggedIn, hasLinkedWallet, router]);
 
   // Close on successful connection
   useEffect(() => {

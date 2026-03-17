@@ -56,11 +56,26 @@ export async function POST(req: Request) {
 
     const session = await getSessionData();
 
-    if (!session?.email || !session?.wallet) {
+    if (!session?.email) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const userWallet = String(session.wallet).toLowerCase();
+    // Resolve wallet: prefer session, fallback to profile lookup
+    let userWallet = session.wallet ? String(session.wallet).toLowerCase() : null;
+
+    if (!userWallet) {
+      const { data: prof } = await supabase
+        .from("profiles")
+        .select("wallet_address")
+        .eq("email", session.email)
+        .maybeSingle();
+      userWallet = prof?.wallet_address ? String(prof.wallet_address).toLowerCase() : null;
+    }
+
+    if (!userWallet) {
+      return NextResponse.json({ error: "No wallet found for session" }, { status: 401 });
+    }
+
     const chainId = Number(nft.chainId || 8453);
     const contractAddress = String(nft.contractAddress || "").toLowerCase();
     const tokenId = String(nft.tokenId || "");

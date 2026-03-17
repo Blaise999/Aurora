@@ -82,13 +82,39 @@ export function SessionProvider({ children }) {
       console.error('logout error:', err);
     }
 
-    // auth logout only — do NOT disconnect wallet here
+    // Obliterate ALL state
     setSession(null);
     setProfile(null);
 
     _sessionCache = null;
     _profileCache = null;
     _fetched = false;
+
+    // Disconnect wagmi if active
+    try {
+      const { disconnect } = await import('wagmi/actions');
+      const { wagmiConfig } = await import('@/lib/web3/wagmi-config');
+      disconnect(wagmiConfig);
+    } catch (_) {}
+
+    // Clear any lingering storage
+    try {
+      if (typeof window !== 'undefined') {
+        const keys = Object.keys(localStorage);
+        keys.forEach((k) => {
+          if (
+            k.startsWith('wagmi') ||
+            k.startsWith('wc@') ||
+            k.startsWith('walletconnect') ||
+            k.startsWith('-walletlink') ||
+            k.includes('coinbase')
+          ) {
+            localStorage.removeItem(k);
+          }
+        });
+        sessionStorage.clear();
+      }
+    } catch (_) {}
   }, []);
 
   const refreshSession = useCallback(async () => {
