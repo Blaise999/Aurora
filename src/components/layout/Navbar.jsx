@@ -55,7 +55,7 @@ export default function Navbar() {
   const navLinks = [
     { label: "Explore", href: "/explore", icon: <Compass size={15} /> },
     { label: "Mint", href: "/mint", icon: <Sparkles size={15} /> },
-    { label: "Collections", href: "/collection", icon: <LayoutGrid size={15} /> },
+    { label: "Collection", href: "/profile", icon: <LayoutGrid size={15} /> },
     { label: "News", href: "/news", icon: <Newspaper size={15} /> },
   ];
 
