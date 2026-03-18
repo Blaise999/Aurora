@@ -5,18 +5,8 @@ import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import {
-  Menu,
-  X,
-  User,
-  LogOut,
-  ChevronDown,
-  Loader2,
-  Wallet,
-  Compass,
-  Palette,
-  Newspaper,
-  LayoutGrid,
-  Sparkles,
+  Menu, X, User, LogOut, ChevronDown, Loader2, Wallet,
+  Compass, Sparkles, PlusCircle, LayoutGrid, Newspaper,
 } from "lucide-react";
 import { useSession } from "@/hooks/useSession";
 
@@ -51,11 +41,11 @@ export default function Navbar() {
     return () => document.removeEventListener("mousedown", handleOutsideClick);
   }, []);
 
-  /* ── More nav links to fill out the navbar ── */
   const navLinks = [
     { label: "Explore", href: "/explore", icon: <Compass size={15} /> },
-    { label: "Mint", href: "/mint", icon: <Sparkles size={15} /> },
-    { label: "Collections", href: "/collection", icon: <LayoutGrid size={15} /> },
+    { label: "Buy", href: "/mint", icon: <Sparkles size={15} /> },
+    { label: "Create", href: "/create", icon: <PlusCircle size={15} /> },
+    { label: "Collections", href: "/profile", icon: <LayoutGrid size={15} /> },
     { label: "News", href: "/news", icon: <Newspaper size={15} /> },
   ];
 
@@ -77,7 +67,7 @@ export default function Navbar() {
 
   return (
     <>
-      {/* ── Chameleon navbar: blends with the app's glass aesthetic ── */}
+      {/* ── Compact navbar — 48px mobile, 56px tablet, 68px desktop ── */}
       <nav
         className={`
           fixed top-0 left-0 right-0 z-50
@@ -88,12 +78,12 @@ export default function Navbar() {
           }
         `}
       >
-        <div className="mx-auto max-w-[1440px] px-4 sm:px-6 lg:px-8">
-          <div className="flex h-[72px] sm:h-[80px] items-center justify-between gap-4">
+        <div className="mx-auto max-w-[1440px] px-3 sm:px-5 lg:px-8">
+          <div className="flex h-[48px] sm:h-[56px] lg:h-[68px] items-center justify-between gap-3">
 
-            {/* ── Logo — bigger ── */}
+            {/* ── Logo — stays big, nav shrinks around it ── */}
             <Link href="/" className="flex items-center shrink-0 group">
-              <div className="relative h-[48px] w-[200px] sm:h-[54px] sm:w-[230px] md:h-[58px] md:w-[260px] transition-transform duration-300 group-hover:scale-[1.03]">
+              <div className="relative h-[42px] w-[180px] sm:h-[48px] sm:w-[220px] lg:h-[60px] lg:w-[280px] transition-transform duration-300 group-hover:scale-[1.03]">
                 <Image
                   src="/pictures/logo.png"
                   alt="AuroraNFT"
@@ -101,8 +91,8 @@ export default function Navbar() {
                   priority
                   quality={100}
                   unoptimized
-                  sizes="(max-width: 640px) 200px, (max-width: 768px) 230px, 260px"
-                  className="object-contain"
+                  sizes="(max-width: 640px) 180px, (max-width: 1024px) 220px, 280px"
+                  className="object-contain object-left"
                 />
               </div>
             </Link>
@@ -116,8 +106,8 @@ export default function Navbar() {
                     key={link.href}
                     href={link.href}
                     className={`
-                      inline-flex items-center gap-2 rounded-xl px-4 py-2.5
-                      text-[14px] font-semibold transition-all duration-200
+                      inline-flex items-center gap-2 rounded-xl px-3.5 py-2
+                      text-[13px] font-semibold transition-all duration-200
                       ${active
                         ? "bg-white/[0.08] text-accent border border-accent/20"
                         : "text-white/65 hover:text-white hover:bg-white/[0.04] border border-transparent"
@@ -141,13 +131,13 @@ export default function Navbar() {
                 <div className="flex items-center gap-2.5">
                   <button
                     onClick={handleLogin}
-                    className="rounded-xl px-5 py-2.5 text-[13px] font-semibold text-white/80 border border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.08] hover:border-white/[0.15] transition-all duration-200"
+                    className="rounded-xl px-5 py-2 text-[13px] font-semibold text-white/80 border border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.08] hover:border-white/[0.15] transition-all duration-200"
                   >
                     Login
                   </button>
                   <button
                     onClick={handleSignup}
-                    className="inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-[13px] font-bold text-[#071019] transition-all duration-200 hover:scale-[1.03] hover:shadow-[0_0_24px_rgba(34,211,238,0.3)]"
+                    className="inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2 text-[13px] font-bold text-[#071019] transition-all duration-200 hover:scale-[1.03] hover:shadow-[0_0_24px_rgba(34,211,238,0.3)]"
                     style={{ background: "linear-gradient(135deg, #22d3ee 0%, #8b5cf6 100%)" }}
                   >
                     <Sparkles size={14} />
@@ -159,7 +149,7 @@ export default function Navbar() {
                   <button
                     onClick={() => setUserMenuOpen((p) => !p)}
                     className={`
-                      inline-flex items-center gap-3 rounded-2xl border px-3 py-2 text-white transition-all duration-200
+                      inline-flex items-center gap-2.5 rounded-2xl border px-2.5 py-1.5 text-white transition-all duration-200
                       ${userMenuOpen
                         ? "border-accent/30 bg-accent/[0.06]"
                         : "border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.06] hover:border-white/[0.15]"
@@ -167,11 +157,11 @@ export default function Navbar() {
                     `}
                   >
                     {profile?.avatar_url ? (
-                      <div className="relative h-9 w-9 overflow-hidden rounded-full border border-white/10">
+                      <div className="relative h-8 w-8 overflow-hidden rounded-full border border-white/10">
                         <Image src={profile.avatar_url} alt={displayName} fill className="object-cover" />
                       </div>
                     ) : (
-                      <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-cyan-400 to-violet-500 text-xs font-bold text-[#071019]">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-cyan-400 to-violet-500 text-xs font-bold text-[#071019]">
                         {avatarLetter}
                       </div>
                     )}
@@ -185,28 +175,18 @@ export default function Navbar() {
                   {userMenuOpen && (
                     <div className="absolute right-0 top-[calc(100%+8px)] w-56 overflow-hidden rounded-2xl border border-white/[0.08] bg-surface/95 shadow-[0_16px_48px_rgba(0,0,0,0.6)] backdrop-blur-2xl animate-slide-up">
                       <div className="p-2">
-                        <Link
-                          href="/profile"
-                          onClick={() => setUserMenuOpen(false)}
-                          className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-white/85 transition-colors hover:bg-white/[0.06] hover:text-white"
-                        >
-                          <User size={15} />
-                          Profile
+                        <Link href="/profile" onClick={() => setUserMenuOpen(false)} className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-white/85 transition-colors hover:bg-white/[0.06] hover:text-white">
+                          <User size={15} /> Profile
                         </Link>
                         {linkedWallet && (
                           <div className="flex items-center gap-3 rounded-xl px-3 py-2 text-[11px] text-white/30">
-                            <Wallet size={13} />
-                            <span className="font-mono truncate">{walletShort}</span>
+                            <Wallet size={13} /><span className="font-mono truncate">{walletShort}</span>
                           </div>
                         )}
                       </div>
                       <div className="border-t border-white/[0.06] p-2">
-                        <button
-                          onClick={handleLogout}
-                          className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-red-300 transition-colors hover:bg-red-500/10"
-                        >
-                          <LogOut size={15} />
-                          Logout
+                        <button onClick={handleLogout} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-red-300 transition-colors hover:bg-red-500/10">
+                          <LogOut size={15} /> Logout
                         </button>
                       </div>
                     </div>
@@ -218,10 +198,10 @@ export default function Navbar() {
             {/* ── Mobile hamburger ── */}
             <button
               onClick={() => setMobileOpen((p) => !p)}
-              className="lg:hidden inline-flex h-11 w-11 items-center justify-center rounded-xl text-white/80 hover:bg-white/[0.06] hover:text-white transition-colors"
+              className="lg:hidden inline-flex h-9 w-9 items-center justify-center rounded-xl text-white/80 hover:bg-white/[0.06] hover:text-white transition-colors"
               aria-label="Toggle menu"
             >
-              {mobileOpen ? <X size={22} /> : <Menu size={22} />}
+              {mobileOpen ? <X size={20} /> : <Menu size={20} />}
             </button>
           </div>
         </div>
@@ -231,22 +211,13 @@ export default function Navbar() {
       {mobileOpen && (
         <div className="fixed inset-0 z-[60] lg:hidden">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setMobileOpen(false)} />
-          <div className="absolute left-3 right-3 top-[84px] rounded-2xl border border-white/[0.08] bg-surface/95 backdrop-blur-2xl p-4 shadow-[0_16px_48px_rgba(0,0,0,0.6)] animate-slide-up">
-            <div className="flex flex-col gap-1.5">
+          <div className="absolute left-3 right-3 top-[52px] sm:top-[60px] rounded-2xl border border-white/[0.08] bg-surface/95 backdrop-blur-2xl p-3 shadow-[0_16px_48px_rgba(0,0,0,0.6)] animate-slide-up">
+            <div className="flex flex-col gap-1">
               {navLinks.map((link) => {
                 const active = pathname === link.href || (link.href !== "/" && pathname.startsWith(link.href));
                 return (
-                  <Link
-                    key={link.href}
-                    href={link.href}
-                    onClick={() => setMobileOpen(false)}
-                    className={`
-                      flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-colors
-                      ${active
-                        ? "bg-accent/[0.08] text-accent border border-accent/20"
-                        : "text-white/80 hover:bg-white/[0.04] hover:text-white border border-transparent"
-                      }
-                    `}
+                  <Link key={link.href} href={link.href} onClick={() => setMobileOpen(false)}
+                    className={`flex items-center gap-3 rounded-xl px-4 py-2.5 text-sm font-medium transition-colors ${active ? "bg-accent/[0.08] text-accent border border-accent/20" : "text-white/80 hover:bg-white/[0.04] hover:text-white border border-transparent"}`}
                   >
                     <span className={active ? "text-accent" : "text-white/40"}>{link.icon}</span>
                     {link.label}
@@ -254,60 +225,36 @@ export default function Navbar() {
                 );
               })}
 
-              <div className="mt-2 border-t border-white/[0.06] pt-3">
+              <div className="mt-2 border-t border-white/[0.06] pt-2">
                 {loading ? (
-                  <div className="flex items-center justify-center py-3">
-                    <Loader2 size={16} className="animate-spin text-white/50" />
-                  </div>
+                  <div className="flex items-center justify-center py-3"><Loader2 size={16} className="animate-spin text-white/50" /></div>
                 ) : !isLoggedIn ? (
                   <div className="space-y-2">
-                    <button
-                      onClick={() => { setMobileOpen(false); handleLogin(); }}
-                      className="flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold text-white border border-white/[0.08] bg-white/[0.03]"
-                    >
-                      <User size={16} />
-                      Login
+                    <button onClick={() => { setMobileOpen(false); handleLogin(); }} className="flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white border border-white/[0.08] bg-white/[0.03]">
+                      <User size={16} /> Login
                     </button>
-                    <button
-                      onClick={() => { setMobileOpen(false); handleSignup(); }}
-                      className="flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-bold text-[#071019]"
-                      style={{ background: "linear-gradient(135deg, #22d3ee 0%, #8b5cf6 100%)" }}
-                    >
-                      <Sparkles size={16} />
-                      Sign Up
+                    <button onClick={() => { setMobileOpen(false); handleSignup(); }} className="flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold text-[#071019]" style={{ background: "linear-gradient(135deg, #22d3ee 0%, #8b5cf6 100%)" }}>
+                      <Sparkles size={16} /> Sign Up
                     </button>
                   </div>
                 ) : (
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-3 rounded-xl border border-white/[0.08] bg-white/[0.03] px-4 py-3">
+                  <div className="space-y-1.5">
+                    <div className="flex items-center gap-3 rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 py-2.5">
                       {profile?.avatar_url ? (
-                        <div className="relative h-10 w-10 overflow-hidden rounded-full border border-white/10">
-                          <Image src={profile.avatar_url} alt={displayName} fill className="object-cover" />
-                        </div>
+                        <div className="relative h-9 w-9 overflow-hidden rounded-full border border-white/10"><Image src={profile.avatar_url} alt={displayName} fill className="object-cover" /></div>
                       ) : (
-                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-cyan-400 to-violet-500 text-sm font-bold text-[#071019]">
-                          {avatarLetter}
-                        </div>
+                        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-cyan-400 to-violet-500 text-sm font-bold text-[#071019]">{avatarLetter}</div>
                       )}
                       <div>
                         <p className="text-sm font-semibold text-white">{displayName}</p>
                         <p className="text-[11px] text-white/40">{walletShort || profile?.email || "Authenticated"}</p>
                       </div>
                     </div>
-                    <Link
-                      href="/profile"
-                      onClick={() => setMobileOpen(false)}
-                      className="flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium text-white/80 transition-colors hover:bg-white/[0.04] hover:text-white"
-                    >
-                      <User size={15} />
-                      Profile
+                    <Link href="/profile" onClick={() => setMobileOpen(false)} className="flex items-center gap-3 rounded-xl px-4 py-2.5 text-sm font-medium text-white/80 transition-colors hover:bg-white/[0.04] hover:text-white">
+                      <User size={15} /> Profile
                     </Link>
-                    <button
-                      onClick={() => { setMobileOpen(false); handleLogout(); }}
-                      className="flex w-full items-center justify-center gap-2 rounded-xl border border-red-500/20 bg-red-500/[0.06] px-4 py-3 text-sm font-semibold text-red-300"
-                    >
-                      <LogOut size={15} />
-                      Logout
+                    <button onClick={() => { setMobileOpen(false); handleLogout(); }} className="flex w-full items-center justify-center gap-2 rounded-xl border border-red-500/20 bg-red-500/[0.06] px-4 py-2.5 text-sm font-semibold text-red-300">
+                      <LogOut size={15} /> Logout
                     </button>
                   </div>
                 )}

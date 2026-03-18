@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
-import { createPublicClient, http, decodeEventLog, type Hash } from "viem";
+import {
+  createPublicClient,
+  http,
+  parseEventLogs,
+  type Hash,
+} from "viem";
 import { base, baseSepolia } from "viem/chains";
 import { supabase } from "@/lib/supabase";
 import { getSessionData } from "@/lib/auth/session";
@@ -25,22 +30,15 @@ const CREATED_EVENT_ABI = [
   },
 ] as const;
 
-type NFTAttribute = {
+type AttributeInput = {
   trait_type?: string;
   value?: string;
 };
 
 type ReceiptLogLike = {
-  address?: string;
-  data?: `0x${string}`;
-  topics?: readonly `0x${string}`[];
-};
-
-type CreatedEventArgs = {
-  creator: `0x${string}`;
-  tokenId: bigint;
-  metadataURI: string;
-  feePaid: bigint;
+  address: `0x${string}`;
+  data: `0x${string}`;
+  topics: readonly `0x${string}`[];
 };
 
 function getClientForChain(chainId: number) {
@@ -55,13 +53,6 @@ function getClientForChain(chainId: number) {
     chain: baseSepolia,
     transport: http(process.env.BASE_SEPOLIA_RPC_URL),
   });
-}
-
-function asEventTopics(
-  topics: readonly `0x${string}`[]
-): [`0x${string}`, ...`0x${string}`[]] | null {
-  if (!topics.length) return null;
-  return topics as [`0x${string}`, ...`0x${string}`[]];
 }
 
 /**
@@ -121,7 +112,17 @@ export async function POST(req: Request) {
       imageBase64,
       fee,
       creatorContract: clientContract,
-    } = body;
+    } = body as {
+      txHash?: string;
+      name?: string;
+      description?: string;
+      collection?: string;
+      externalUrl?: string;
+      attributes?: AttributeInput[];
+      imageBase64?: string;
+      fee?: string | number;
+      creatorContract?: string;
+    };
 
     if (!txHash || !name) {
       return NextResponse.json(
@@ -134,10 +135,14 @@ export async function POST(req: Request) {
       clientContract || CREATOR_CONTRACT || ""
     ).toLowerCase();
 
-    const chainId = parseInt(
-      process.env.NEXT_PUBLIC_CHAIN_ID || "84532",
-      10
-    );
+    if (!contractAddr) {
+      return NextResponse.json(
+        { error: "Missing creator contract address" },
+        { status: 400 }
+      );
+    }
+
+    const chainId = parseInt(process.env.NEXT_PUBLIC_CHAIN_ID || "8453", 10);
 
     // ── 3. Check duplicate ──
     const { data: existingTx } = await supabase
@@ -177,32 +182,33 @@ export async function POST(req: Request) {
     let onChainTokenId: string | null = null;
     let onChainCreator: string | null = null;
 
-    for (const rawLog of receipt.logs as ReceiptLogLike[]) {
-      if (!rawLog.address || rawLog.address.toLowerCase() !== contractAddr) {
-        continue;
+    const contractLogs = receipt.logs.filter(
+      (log) => log.address.toLowerCase() === contractAddr
+    );
+
+    try {
+      const createdLogs = parseEventLogs({
+        abi: CREATED_EVENT_ABI,
+        eventName: "Created",
+        logs: contractLogs,
+        strict: false,
+      });
+
+      const createdLog = createdLogs[0];
+
+      if (createdLog?.args) {
+        onChainTokenId =
+          createdLog.args.tokenId !== undefined
+            ? String(createdLog.args.tokenId)
+            : null;
+
+        onChainCreator =
+          createdLog.args.creator !== undefined
+            ? String(createdLog.args.creator).toLowerCase()
+            : null;
       }
-
-      const topics = rawLog.topics ? asEventTopics(rawLog.topics) : null;
-      if (!rawLog.data || !topics) continue;
-
-      try {
-        const decoded = decodeEventLog({
-          abi: CREATED_EVENT_ABI,
-          data: rawLog.data,
-          topics,
-        }) as {
-          eventName: "Created";
-          args: CreatedEventArgs;
-        };
-
-        if (decoded.eventName === "Created") {
-          onChainTokenId = String(decoded.args.tokenId);
-          onChainCreator = decoded.args.creator.toLowerCase();
-          break;
-        }
-      } catch {
-        // not the Created event
-      }
+    } catch {
+      // ignore parse errors, fallback below
     }
 
     // Fallback: ERC721 mint Transfer(from=0x0, to=user, tokenId)
@@ -210,23 +216,17 @@ export async function POST(req: Request) {
       const TRANSFER_TOPIC =
         "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
 
-      for (const rawLog of receipt.logs as ReceiptLogLike[]) {
-        if (!rawLog.address || rawLog.address.toLowerCase() !== contractAddr) {
-          continue;
-        }
+      for (const log of receipt.logs) {
+        const rawLog = log as unknown as ReceiptLogLike;
 
-        if (!rawLog.topics || rawLog.topics.length < 4) {
-          continue;
-        }
+        if (rawLog.address.toLowerCase() !== contractAddr) continue;
+        if (!rawLog.topics?.length) continue;
+        if (rawLog.topics[0]?.toLowerCase() !== TRANSFER_TOPIC) continue;
+        if (rawLog.topics.length < 4) continue;
 
-        if (rawLog.topics[0]?.toLowerCase() === TRANSFER_TOPIC) {
-          const tokenTopic = rawLog.topics[3];
-          if (!tokenTopic) continue;
-
-          onChainTokenId = String(BigInt(tokenTopic));
-          onChainCreator = userWallet;
-          break;
-        }
+        onChainTokenId = String(BigInt(rawLog.topics[3]));
+        onChainCreator = userWallet;
+        break;
       }
     }
 
@@ -247,12 +247,14 @@ export async function POST(req: Request) {
       );
     }
 
-    const mintFee = parseFloat(String(fee || "0.005"));
+    const mintFee =
+      typeof fee === "number" ? fee : parseFloat(String(fee || "0.005"));
+
     const imageUrl = imageBase64 || "";
 
     const validAttrs = Array.isArray(attributes)
-      ? (attributes as NFTAttribute[]).filter(
-          (a) =>
+      ? attributes.filter(
+          (a: AttributeInput) =>
             String(a?.trait_type || "").trim() &&
             String(a?.value || "").trim()
         )
@@ -291,7 +293,7 @@ export async function POST(req: Request) {
     if (listedError) {
       console.error("user_listed insert error:", listedError);
       return NextResponse.json(
-        { error: "Failed to save NFT: " + listedError.message },
+        { error: `Failed to save NFT: ${listedError.message}` },
         { status: 500 }
       );
     }
@@ -307,7 +309,7 @@ export async function POST(req: Request) {
       mint_fee_eth: mintFee,
       total_paid_eth: mintFee,
       snapshot_name: name,
-      snapshot_image: (imageUrl || "").slice(0, 500),
+      snapshot_image: imageUrl.slice(0, 500),
       snapshot_desc: (description || "").slice(0, 500),
       status: "confirmed",
       minted_at: new Date().toISOString(),
@@ -342,7 +344,7 @@ export async function POST(req: Request) {
       price: "0",
       fee: String(mintFee),
       txHash,
-    });
+    }).catch(() => {});
 
     void telegramNotifyMint({
       nftName: name,
@@ -352,24 +354,26 @@ export async function POST(req: Request) {
       fee: String(mintFee),
       contractAddress: contractAddr,
       chainId,
-    });
+    }).catch(() => {});
 
-    try {
-      await supabase.from("admin_notifications").insert({
-        type: "create_mint",
-        title: "New NFT Created!",
-        body: `${name} (Token #${onChainTokenId}) created by ${notifBuyer} — ${mintFee} ETH fee`,
-        metadata: {
-          txHash,
-          tokenId: onChainTokenId,
-          creator: notifBuyer,
-          nftName: name,
-          contractAddress: contractAddr,
-        },
-      });
-    } catch {
-      // ignore admin notification failure
-    }
+    void (async () => {
+      try {
+        await supabase.from("admin_notifications").insert({
+          type: "create_mint",
+          title: "New NFT Created!",
+          body: `${name} (Token #${onChainTokenId}) created by ${notifBuyer} — ${mintFee} ETH fee`,
+          metadata: {
+            txHash,
+            tokenId: onChainTokenId,
+            creator: notifBuyer,
+            nftName: name,
+            contractAddress: contractAddr,
+          },
+        });
+      } catch {
+        // ignore notification failure
+      }
+    })();
 
     return NextResponse.json({
       success: true,
@@ -386,6 +390,7 @@ export async function POST(req: Request) {
       error instanceof Error ? error.message : "Unexpected error";
 
     console.error("[/api/nft/create] error:", error);
+
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

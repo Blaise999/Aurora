@@ -96,27 +96,27 @@ export default function HeroCarousel() {
       });
 
       if (prevCopy) {
-        tl.to(prevCopy, { opacity: 0, y: -18, duration: 0.45, ease: "power2.in" }, 0);
+        tl.to(prevCopy, { opacity: 0, y: -24, duration: 0.35, ease: "power2.in" }, 0);
       }
       if (prevCards) {
-        tl.to(prevCards, { opacity: 0, y: -12, duration: 0.45, ease: "power2.in" }, 0.05);
+        tl.to(prevCards, { opacity: 0, y: -12, duration: 0.35, ease: "power2.in" }, 0.02);
       }
       if (prevSlide) {
-        tl.to(prevSlide, { opacity: 0, scale: 1.02, duration: 0.65, ease: "power2.in" }, 0.08);
+        tl.to(prevSlide, { opacity: 0, scale: 1.02, duration: 0.55, ease: "power2.in" }, 0.05);
       }
 
       if (nextSlide) gsap.set(nextSlide, { opacity: 0, scale: 1.02 });
-      if (nextCopy) gsap.set(nextCopy, { opacity: 0, y: 22 });
+      if (nextCopy) gsap.set(nextCopy, { opacity: 0, y: 28 });
       if (nextCards) gsap.set(nextCards, { opacity: 0, y: 18 });
 
       if (nextSlide) {
-        tl.to(nextSlide, { opacity: 1, scale: 1.0, duration: 0.95, ease: "sine.inOut" }, 0.22);
+        tl.to(nextSlide, { opacity: 1, scale: 1.0, duration: 0.85, ease: "sine.inOut" }, 0.25);
       }
       if (nextCopy) {
-        tl.to(nextCopy, { opacity: 1, y: 0, duration: 0.75, ease: "power2.out" }, 0.45);
+        tl.to(nextCopy, { opacity: 1, y: 0, duration: 0.65, ease: "power2.out" }, 0.5);
       }
       if (nextCards) {
-        tl.to(nextCards, { opacity: 1, y: 0, duration: 0.75, ease: "power2.out" }, 0.55);
+        tl.to(nextCards, { opacity: 1, y: 0, duration: 0.65, ease: "power2.out" }, 0.6);
       }
     },
     [activeIndex, transitioning, motionReady]
@@ -216,7 +216,7 @@ export default function HeroCarousel() {
   return (
     <section
       ref={heroRef}
-      className="relative w-full h-screen min-h-[580px] sm:min-h-[700px] max-h-[1000px] overflow-hidden -mt-16 sm:-mt-20"
+      className="relative w-full h-screen min-h-[580px] sm:min-h-[700px] max-h-[1000px] overflow-hidden -mt-12 sm:-mt-14 lg:-mt-[68px]"
     >
       {slides.map((slide, i) => {
         const shouldMountImage = keepBg.has(i);
@@ -275,8 +275,8 @@ export default function HeroCarousel() {
       <CursorSpotlight />
 
       <div className="relative z-[3] h-full max-w-[1400px] mx-auto px-6 md:px-8 flex items-center">
-        <div className="grid lg:grid-cols-2 gap-10 lg:gap-16 items-center w-full pt-16">
-          <div className="relative min-h-[340px]">
+        <div className="grid lg:grid-cols-2 gap-8 lg:gap-16 items-center w-full pt-10 sm:pt-14 lg:pt-16">
+          <div className="relative min-h-[300px] sm:min-h-[340px] overflow-hidden">
             {slides.map((slide, i) => {
               const badge = SLIDE_BADGES[i % SLIDE_BADGES.length];
               const BadgeIcon = badge.icon;
@@ -309,7 +309,7 @@ export default function HeroCarousel() {
                     </Badge>
                   </div>
 
-                  <h1 className="font-display text-3xl sm:text-4xl md:text-5xl lg:text-[58px] font-bold leading-[1.08] tracking-tight text-balance">
+                  <h1 className="font-display text-2xl sm:text-3xl md:text-4xl lg:text-[54px] font-bold leading-[1.1] tracking-tight text-balance">
                     {slide.heading.split(" ").map((word, wi) => {
                       const gradientWords = ["collection", "rarity", "clarity"];
                       const isGradient = gradientWords.some((gw) =>
@@ -465,7 +465,7 @@ export default function HeroCarousel() {
         </div>
       </div>
 
-      <div className="absolute bottom-24 sm:bottom-10 left-1/2 -translate-x-1/2 z-[4] flex items-center gap-2.5">
+      <div className="absolute bottom-20 sm:bottom-10 left-1/2 -translate-x-1/2 z-[4] flex items-center gap-2.5">
         {slides.map((_, i) => {
           const visibleIndex = motionReady ? frontIndex : activeIndex;
 
