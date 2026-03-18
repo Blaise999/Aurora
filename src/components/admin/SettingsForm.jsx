@@ -10,6 +10,52 @@ import Badge from '@/components/ui/Badge';
 import WalletConnectModal from '@/components/WalletConnectModal';
 import { Save, AlertTriangle, Loader2, Check, Wallet, DollarSign, Shield, Bell, Sparkles, ExternalLink, Zap, RefreshCw } from 'lucide-react';
 
+/* ── USD → ETH quick converter ── */
+function UsdEthConverter({ ethPrice, onSetValue }) {
+  const [usdInput, setUsdInput] = useState('');
+  const [targetField, setTargetField] = useState('buy_fee');
+  const ethResult = usdInput && ethPrice ? (parseFloat(usdInput) / ethPrice).toFixed(6) : '';
+
+  return (
+    <div className="bg-accent/5 border border-accent/10 rounded-xl p-3 space-y-2">
+      <p className="text-[11px] text-accent font-medium flex items-center gap-1.5">
+        <DollarSign size={12} /> Quick USD → ETH Converter
+        <span className="text-muted-dim ml-auto font-mono">1 ETH = ${ethPrice?.toLocaleString()}</span>
+      </p>
+      <div className="flex items-end gap-2 flex-wrap">
+        <div className="space-y-1 flex-1 min-w-[100px]">
+          <label className="text-[10px] text-muted">Amount (USD)</label>
+          <input type="number" step="0.01" min="0" value={usdInput} onChange={e => setUsdInput(e.target.value)} placeholder="e.g. 5.00"
+            className="w-full px-3 py-2 bg-surface2/60 border border-border-light rounded-lg text-sm font-mono text-text focus:outline-none focus:border-accent/40" />
+        </div>
+        <div className="text-lg text-muted-dim pb-1">=</div>
+        <div className="space-y-1 flex-1 min-w-[120px]">
+          <label className="text-[10px] text-muted">Result (ETH)</label>
+          <div className="px-3 py-2 bg-surface2/40 border border-border-light rounded-lg text-sm font-mono text-accent">
+            {ethResult || '—'}
+          </div>
+        </div>
+        <div className="space-y-1 min-w-[130px]">
+          <label className="text-[10px] text-muted">Apply to</label>
+          <select value={targetField} onChange={e => setTargetField(e.target.value)}
+            className="w-full bg-surface2/50 border border-border-light rounded-lg px-2 py-2 text-xs text-text focus:outline-none">
+            <option value="buy_fee">Buy Fee</option>
+            <option value="minting_fee">Minting Fee</option>
+            <option value="create_mint_fee">Create Mint Fee</option>
+          </select>
+        </div>
+        <button
+          onClick={() => { if (ethResult && onSetValue) onSetValue(ethResult, targetField); }}
+          disabled={!ethResult}
+          className="px-3 py-2 rounded-lg bg-accent/10 text-accent text-xs font-medium hover:bg-accent/20 transition-colors disabled:opacity-40"
+        >
+          Set
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function SettingsForm() {
   const [settings, setSettings] = useState({
     minting_fee: '0.002',
@@ -28,6 +74,34 @@ export default function SettingsForm() {
   const [showConfirm, setShowConfirm] = useState(false);
   const [ntfyTestResult, setNtfyTestResult] = useState(null);
   const [showWalletModal, setShowWalletModal] = useState(false);
+
+  // ── Live ETH price for USD→ETH conversion ──
+  const [ethPrice, setEthPrice] = useState(null);
+  const [ethPriceLoading, setEthPriceLoading] = useState(true);
+
+  useEffect(() => {
+    let c = false;
+    (async () => {
+      try {
+        const res = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd');
+        const data = await res.json();
+        if (!c && data?.ethereum?.usd) setEthPrice(data.ethereum.usd);
+      } catch {
+        // Fallback — try a second source
+        try {
+          const res2 = await fetch('https://min-api.cryptocompare.com/data/price?fsym=ETH&tsyms=USD');
+          const data2 = await res2.json();
+          if (!c && data2?.USD) setEthPrice(data2.USD);
+        } catch {
+          if (!c) setEthPrice(2500); // hardcoded fallback
+        }
+      } finally { if (!c) setEthPriceLoading(false); }
+    })();
+    return () => { c = true; };
+  }, []);
+
+  const usdToEth = (usd) => ethPrice ? (parseFloat(usd) / ethPrice).toFixed(6) : null;
+  const ethToUsd = (eth) => ethPrice ? (parseFloat(eth) * ethPrice).toFixed(2) : null;
 
   // ── Wagmi hooks for on-chain mint fee ──
   const { address, isConnected, chain } = useAccount();
@@ -200,23 +274,38 @@ export default function SettingsForm() {
         />
 
         <div className="grid sm:grid-cols-2 gap-4">
-          <Input
-            label="Global Buy Fee (ETH)"
-            value={settings.buy_fee}
-            onChange={e => updateField('buy_fee', e.target.value)}
-            placeholder="0.002"
-            type="number"
-            step="0.001"
-          />
-          <Input
-            label="Global Minting Fee (ETH)"
-            value={settings.minting_fee}
-            onChange={e => updateField('minting_fee', e.target.value)}
-            placeholder="0.002"
-            type="number"
-            step="0.001"
-          />
+          <div className="space-y-1.5">
+            <Input
+              label="Global Buy Fee (ETH)"
+              value={settings.buy_fee}
+              onChange={e => updateField('buy_fee', e.target.value)}
+              placeholder="0.002"
+              type="number"
+              step="0.001"
+            />
+            {ethPrice && settings.buy_fee && (
+              <p className="text-[10px] text-muted-dim font-mono">≈ ${ethToUsd(settings.buy_fee)} USD at ${ethPrice.toLocaleString()}/ETH</p>
+            )}
+          </div>
+          <div className="space-y-1.5">
+            <Input
+              label="Global Minting Fee (ETH)"
+              value={settings.minting_fee}
+              onChange={e => updateField('minting_fee', e.target.value)}
+              placeholder="0.002"
+              type="number"
+              step="0.001"
+            />
+            {ethPrice && settings.minting_fee && (
+              <p className="text-[10px] text-muted-dim font-mono">≈ ${ethToUsd(settings.minting_fee)} USD at ${ethPrice.toLocaleString()}/ETH</p>
+            )}
+          </div>
         </div>
+
+        {/* Quick USD → ETH converter */}
+        {ethPrice && (
+          <UsdEthConverter ethPrice={ethPrice} onSetValue={(eth, field) => updateField(field, eth)} />
+        )}
 
         {/* ── Create Mint Fee: DB fallback ── */}
         <div className="pt-4 border-t border-border-light space-y-3">
@@ -238,6 +327,9 @@ export default function SettingsForm() {
             step="0.001"
             min="0"
           />
+          {ethPrice && settings.create_mint_fee && (
+            <p className="text-[10px] text-muted-dim font-mono">≈ ${ethToUsd(settings.create_mint_fee)} USD at ${ethPrice.toLocaleString()}/ETH</p>
+          )}
         </div>
       </Card>
 
@@ -265,6 +357,9 @@ export default function SettingsForm() {
               <span className="text-muted">Current On-Chain Fee</span>
               <div className="flex items-center gap-2">
                 <span className="font-mono font-semibold text-accent">{onChainFee !== null ? `${onChainFee} ETH` : '—'}</span>
+                {onChainFee !== null && ethPrice && (
+                  <span className="text-[10px] text-muted-dim font-mono ml-1">(≈${ethToUsd(onChainFee)})</span>
+                )}
                 <button onClick={() => refetchFee()} className="text-muted-dim hover:text-accent transition-colors" title="Refresh"><RefreshCw size={12} /></button>
               </div>
             </div>

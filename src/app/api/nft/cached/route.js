@@ -73,7 +73,10 @@ export async function GET(request) {
       },
       {
         headers: {
-          "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300",
+          // Don't cache shuffled responses so each refresh gives different order
+          "Cache-Control": shuffle && offset === 0
+            ? "private, no-store"
+            : "public, s-maxage=60, stale-while-revalidate=300",
         },
       }
     );

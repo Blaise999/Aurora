@@ -1,10 +1,5 @@
 import { NextResponse } from "next/server";
-import {
-  createPublicClient,
-  http,
-  parseEventLogs,
-  type Hash,
-} from "viem";
+import { createPublicClient, http, decodeEventLog, type Hash } from "viem";
 import { base, baseSepolia } from "viem/chains";
 import { supabase } from "@/lib/supabase";
 import { getSessionData } from "@/lib/auth/session";
@@ -30,16 +25,27 @@ const CREATED_EVENT_ABI = [
   },
 ] as const;
 
-type AttributeInput = {
-  trait_type?: string;
-  value?: string;
-};
-
-type ReceiptLogLike = {
+type LogWithTopics = {
   address: `0x${string}`;
   data: `0x${string}`;
   topics: readonly `0x${string}`[];
 };
+
+function hasTopics(log: unknown): log is LogWithTopics {
+  if (!log || typeof log !== "object") return false;
+
+  const maybeLog = log as {
+    address?: unknown;
+    data?: unknown;
+    topics?: unknown;
+  };
+
+  return (
+    typeof maybeLog.address === "string" &&
+    typeof maybeLog.data === "string" &&
+    Array.isArray(maybeLog.topics)
+  );
+}
 
 function getClientForChain(chainId: number) {
   if (chainId === 8453) {
@@ -63,7 +69,7 @@ function getClientForChain(chainId: number) {
  */
 export async function POST(req: Request) {
   try {
-    // ── 1. Auth ──
+    // 1. Auth
     const session = await getSessionData();
 
     if (!session?.email || !session?.profileId) {
@@ -99,9 +105,8 @@ export async function POST(req: Request) {
       );
     }
 
-    // ── 2. Parse body ──
+    // 2. Parse body
     const body = await req.json();
-
     const {
       txHash,
       name,
@@ -112,17 +117,7 @@ export async function POST(req: Request) {
       imageBase64,
       fee,
       creatorContract: clientContract,
-    } = body as {
-      txHash?: string;
-      name?: string;
-      description?: string;
-      collection?: string;
-      externalUrl?: string;
-      attributes?: AttributeInput[];
-      imageBase64?: string;
-      fee?: string | number;
-      creatorContract?: string;
-    };
+    } = body;
 
     if (!txHash || !name) {
       return NextResponse.json(
@@ -135,16 +130,12 @@ export async function POST(req: Request) {
       clientContract || CREATOR_CONTRACT || ""
     ).toLowerCase();
 
-    if (!contractAddr) {
-      return NextResponse.json(
-        { error: "Missing creator contract address" },
-        { status: 400 }
-      );
-    }
+    const chainId = parseInt(
+      process.env.NEXT_PUBLIC_CHAIN_ID || "8453",
+      10
+    );
 
-    const chainId = parseInt(process.env.NEXT_PUBLIC_CHAIN_ID || "8453", 10);
-
-    // ── 3. Check duplicate ──
+    // 3. Check duplicate
     const { data: existingTx } = await supabase
       .from("transactions")
       .select("id")
@@ -158,7 +149,7 @@ export async function POST(req: Request) {
       );
     }
 
-    // ── 4. Verify on-chain tx and extract Created event ──
+    // 4. Verify on-chain tx and extract Created event
     const publicClient = getClientForChain(chainId);
 
     const receipt = await publicClient.getTransactionReceipt({
@@ -182,49 +173,60 @@ export async function POST(req: Request) {
     let onChainTokenId: string | null = null;
     let onChainCreator: string | null = null;
 
-    const contractLogs = receipt.logs.filter(
-      (log) => log.address.toLowerCase() === contractAddr
-    );
+    // Parse Created event from logs
+    for (const rawLog of receipt.logs) {
+      if (!hasTopics(rawLog)) continue;
 
-    try {
-      const createdLogs = parseEventLogs({
-        abi: CREATED_EVENT_ABI,
-        eventName: "Created",
-        logs: contractLogs,
-        strict: false,
-      });
+      const log = rawLog;
 
-      const createdLog = createdLogs[0];
+      if (log.address.toLowerCase() !== contractAddr) continue;
+      if (!log.topics.length) continue;
 
-      if (createdLog?.args) {
-        onChainTokenId =
-          createdLog.args.tokenId !== undefined
-            ? String(createdLog.args.tokenId)
-            : null;
+      try {
+        const decoded = decodeEventLog({
+          abi: CREATED_EVENT_ABI,
+          data: log.data,
+          topics: [...log.topics] as [`0x${string}`, ...`0x${string}`[]],
+        }) as {
+          eventName?: string;
+          args?: Record<string, unknown>;
+        };
 
-        onChainCreator =
-          createdLog.args.creator !== undefined
-            ? String(createdLog.args.creator).toLowerCase()
-            : null;
+        if (decoded.eventName === "Created" && decoded.args) {
+          const tokenId = decoded.args.tokenId;
+          const creator = decoded.args.creator;
+
+          if (tokenId != null) {
+            onChainTokenId = String(tokenId);
+          }
+
+          if (creator != null) {
+            onChainCreator = String(creator).toLowerCase();
+          }
+
+          if (onChainTokenId) break;
+        }
+      } catch {
+        // not our event
       }
-    } catch {
-      // ignore parse errors, fallback below
     }
 
-    // Fallback: ERC721 mint Transfer(from=0x0, to=user, tokenId)
+    // Fallback: ERC721 Transfer mint event (from zero address)
     if (!onChainTokenId) {
       const TRANSFER_TOPIC =
         "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
 
-      for (const log of receipt.logs) {
-        const rawLog = log as unknown as ReceiptLogLike;
+      for (const rawLog of receipt.logs) {
+        if (!hasTopics(rawLog)) continue;
 
-        if (rawLog.address.toLowerCase() !== contractAddr) continue;
-        if (!rawLog.topics?.length) continue;
-        if (rawLog.topics[0]?.toLowerCase() !== TRANSFER_TOPIC) continue;
-        if (rawLog.topics.length < 4) continue;
+        const log = rawLog;
 
-        onChainTokenId = String(BigInt(rawLog.topics[3]));
+        if (log.address.toLowerCase() !== contractAddr) continue;
+        if (!log.topics.length) continue;
+        if (log.topics[0].toLowerCase() !== TRANSFER_TOPIC) continue;
+        if (log.topics.length < 4) continue;
+
+        onChainTokenId = String(BigInt(log.topics[3]));
         onChainCreator = userWallet;
         break;
       }
@@ -240,6 +242,7 @@ export async function POST(req: Request) {
       );
     }
 
+    // Verify creator matches session wallet
     if (onChainCreator && onChainCreator !== userWallet) {
       return NextResponse.json(
         { error: "Wallet mismatch — tx creator does not match your session" },
@@ -247,20 +250,17 @@ export async function POST(req: Request) {
       );
     }
 
-    const mintFee =
-      typeof fee === "number" ? fee : parseFloat(String(fee || "0.005"));
-
+    const mintFee = Number.parseFloat(String(fee || "0.005"));
     const imageUrl = imageBase64 || "";
-
     const validAttrs = Array.isArray(attributes)
       ? attributes.filter(
-          (a: AttributeInput) =>
+          (a: any) =>
             String(a?.trait_type || "").trim() &&
             String(a?.value || "").trim()
         )
       : [];
 
-    // ── 5. Save to user_listed ──
+    // 5. Save to user_listed
     const listedInsert = {
       profile_id: profileId,
       wallet_address: userWallet,
@@ -293,49 +293,61 @@ export async function POST(req: Request) {
     if (listedError) {
       console.error("user_listed insert error:", listedError);
       return NextResponse.json(
-        { error: `Failed to save NFT: ${listedError.message}` },
+        { error: "Failed to save NFT: " + listedError.message },
         { status: 500 }
       );
     }
 
-    // ── 6. wallet_mints ──
-    await supabase.from("wallet_mints").insert({
-      wallet_address: userWallet,
-      chain_id: chainId,
-      contract_address: contractAddr,
-      token_id: onChainTokenId,
-      tx_hash: txHash,
-      mint_price_eth: 0,
-      mint_fee_eth: mintFee,
-      total_paid_eth: mintFee,
-      snapshot_name: name,
-      snapshot_image: imageUrl.slice(0, 500),
-      snapshot_desc: (description || "").slice(0, 500),
-      status: "confirmed",
-      minted_at: new Date().toISOString(),
-    });
+    // 6. wallet_mints
+    const { error: walletMintsError } = await supabase
+      .from("wallet_mints")
+      .insert({
+        wallet_address: userWallet,
+        chain_id: chainId,
+        contract_address: contractAddr,
+        token_id: onChainTokenId,
+        tx_hash: txHash,
+        mint_price_eth: 0,
+        mint_fee_eth: mintFee,
+        total_paid_eth: mintFee,
+        snapshot_name: name,
+        snapshot_image: (imageUrl || "").slice(0, 500),
+        snapshot_desc: (description || "").slice(0, 500),
+        status: "confirmed",
+        minted_at: new Date().toISOString(),
+      });
 
-    // ── 7. transactions ──
-    await supabase.from("transactions").insert({
-      wallet_address: userWallet,
-      profile_id: profileId,
-      tx_hash: txHash,
-      tx_type: "create_mint",
-      chain_id: chainId,
-      contract_address: contractAddr,
-      token_id: onChainTokenId,
-      amount_eth: mintFee,
-      admin_wallet: "",
-      status: "confirmed",
-      metadata: {
-        type: "create_mint",
-        nft_name: name,
-        collection: collection || "User Created",
-        on_chain_token_id: onChainTokenId,
-      },
-    });
+    if (walletMintsError) {
+      console.error("wallet_mints insert error:", walletMintsError);
+    }
 
-    // ── 8. Notifications ──
+    // 7. transactions
+    const { error: txInsertError } = await supabase
+      .from("transactions")
+      .insert({
+        wallet_address: userWallet,
+        profile_id: profileId,
+        tx_hash: txHash,
+        tx_type: "create_mint",
+        chain_id: chainId,
+        contract_address: contractAddr,
+        token_id: onChainTokenId,
+        amount_eth: mintFee,
+        admin_wallet: "",
+        status: "confirmed",
+        metadata: {
+          type: "create_mint",
+          nft_name: name,
+          collection: collection || "User Created",
+          on_chain_token_id: onChainTokenId,
+        },
+      });
+
+    if (txInsertError) {
+      console.error("transactions insert error:", txInsertError);
+    }
+
+    // 8. Notifications
     const notifBuyer = email || userWallet;
 
     void notifyNewPurchase({
@@ -356,24 +368,22 @@ export async function POST(req: Request) {
       chainId,
     }).catch(() => {});
 
-    void (async () => {
-      try {
-        await supabase.from("admin_notifications").insert({
-          type: "create_mint",
-          title: "New NFT Created!",
-          body: `${name} (Token #${onChainTokenId}) created by ${notifBuyer} — ${mintFee} ETH fee`,
-          metadata: {
-            txHash,
-            tokenId: onChainTokenId,
-            creator: notifBuyer,
-            nftName: name,
-            contractAddress: contractAddr,
-          },
-        });
-      } catch {
-        // ignore notification failure
-      }
-    })();
+    try {
+      await supabase.from("admin_notifications").insert({
+        type: "create_mint",
+        title: "New NFT Created!",
+        body: `${name} (Token #${onChainTokenId}) created by ${notifBuyer} — ${mintFee} ETH fee`,
+        metadata: {
+          txHash,
+          tokenId: onChainTokenId,
+          creator: notifBuyer,
+          nftName: name,
+          contractAddress: contractAddr,
+        },
+      });
+    } catch {
+      // ignore notification failure
+    }
 
     return NextResponse.json({
       success: true,

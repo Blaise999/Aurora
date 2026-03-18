@@ -5,12 +5,14 @@ import { shuffle } from "@/lib/utils";
 
 /* ─── In-memory cache shared across all hook instances ─── */
 const _cache = new Map();
-const CACHE_TTL = 2 * 60 * 1000; // 2 minutes
+const CACHE_TTL = 2 * 60 * 1000; // 2 minutes for pagination/detail pages
+const SHUFFLE_CACHE_TTL = 5 * 1000; // 5 seconds for shuffled landing pages
 
 function getCached(key) {
   const entry = _cache.get(key);
   if (!entry) return null;
-  if (Date.now() - entry.ts > CACHE_TTL) { _cache.delete(key); return null; }
+  const ttl = key.includes('shuffle') || key.includes('infinite:') ? SHUFFLE_CACHE_TTL : CACHE_TTL;
+  if (Date.now() - entry.ts > ttl) { _cache.delete(key); return null; }
   return entry.data;
 }
 function setCache(key, data) {
@@ -64,6 +66,7 @@ export function useCachedNftsInfinite(pageSize = 50, collection = null) {
     if (append) setLoadingMore(true); else if (!cached) setLoading(true);
     try {
       let url = `/api/nft/cached?limit=${pageSize}&offset=${pageOffset}&shuffle=${pageOffset === 0 ? 'true' : 'false'}`;
+      if (pageOffset === 0) url += `&_t=${Date.now()}`; // bust CDN/browser cache on first page
       if (collection) url += `&collection=${encodeURIComponent(collection)}`;
       const res = await fetch(url);
       if (!res.ok) throw new Error("fail");
@@ -118,7 +121,7 @@ export function useCachedNfts(limit = 50, collection = null) {
     (async () => {
       if (!cached) setLoading(true);
       try {
-        let url = `/api/nft/cached?limit=${limit}&shuffle=true`;
+        let url = `/api/nft/cached?limit=${limit}&shuffle=true&_t=${Date.now()}`;
         if (collection) url += `&collection=${encodeURIComponent(collection)}`;
         const res = await fetch(url);
         if (!res.ok) throw new Error("fail");

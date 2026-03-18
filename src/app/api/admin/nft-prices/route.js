@@ -28,7 +28,37 @@ export async function POST(request) {
     const body = await request.json();
     const { getServiceSupabase } = await import("@/lib/supabase");
     const sb = getServiceSupabase();
-    // Upsert nft_pricing
+
+    // ── Bulk update mode ──
+    if (body.bulk === true) {
+      const { min_price, max_price, mint_fee, is_listed } = body;
+      // Get all cached_nfts
+      const { data: nfts } = await sb.from("cached_nfts").select("id, contract_address, token_id, chain_id").eq("is_active", true);
+      if (!nfts?.length) return NextResponse.json({ updated: 0 });
+
+      let updated = 0;
+      for (const nft of nfts) {
+        // Random price between min and max (or fixed if min===max)
+        const minP = parseFloat(min_price) || 0.002;
+        const maxP = parseFloat(max_price) || minP;
+        const price = minP === maxP ? minP : +(minP + Math.random() * (maxP - minP)).toFixed(6);
+
+        await sb.from("nft_pricing").upsert({
+          cached_nft_id: nft.id,
+          chain_id: nft.chain_id || 8453,
+          contract_address: (nft.contract_address || "").toLowerCase(),
+          token_id: nft.token_id || "0",
+          mint_price_eth: price,
+          mint_fee_eth: parseFloat(mint_fee) || 0.001,
+          is_listed: is_listed !== false,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: "chain_id,contract_address,token_id" });
+        updated++;
+      }
+      return NextResponse.json({ success: true, updated });
+    }
+
+    // ── Single update mode ──
     const { data, error } = await sb.from("nft_pricing").upsert({
       cached_nft_id: body.cached_nft_id,
       chain_id: body.chain_id || 8453,

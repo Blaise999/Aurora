@@ -148,3 +148,131 @@ export async function POST(request) {
     );
   }
 }
+/**
+ * PUT /api/admin/nft/pricing
+ * Bulk-update pricing for all (or filtered) NFTs.
+ * Body: {
+ *   min_price_eth, max_price_eth,     — random price in this range
+ *   mint_fee_eth,                      — flat fee for all
+ *   filter_chain_id?,                  — optional: only this chain
+ *   filter_collection?,                — optional: only matching collection
+ *   filter_featured?,                  — optional: true/false
+ * }
+ */
+export async function PUT(request) {
+  try {
+    const body = await request.json();
+    const {
+      min_price_eth,
+      max_price_eth,
+      mint_fee_eth,
+      filter_chain_id,
+      filter_collection,
+      filter_featured,
+    } = body;
+
+    if (min_price_eth == null || max_price_eth == null) {
+      return NextResponse.json(
+        { error: "min_price_eth and max_price_eth are required" },
+        { status: 400 }
+      );
+    }
+
+    const minP = parseFloat(min_price_eth);
+    const maxP = parseFloat(max_price_eth);
+    if (isNaN(minP) || isNaN(maxP) || minP < 0 || maxP < minP) {
+      return NextResponse.json(
+        { error: "Invalid price range" },
+        { status: 400 }
+      );
+    }
+
+    const fee = mint_fee_eth != null ? parseFloat(mint_fee_eth) : null;
+
+    const { getServiceSupabase } = await import("@/lib/supabase");
+    const sb = getServiceSupabase();
+
+    // 1. Get matching cached_nfts IDs
+    let query = sb
+      .from("cached_nfts")
+      .select("id, chain_id, contract_address, token_id, collection_name")
+      .eq("is_active", true);
+
+    if (filter_chain_id) query = query.eq("chain_id", parseInt(filter_chain_id));
+    if (filter_collection) query = query.ilike("collection_name", `%${filter_collection}%`);
+
+    const { data: nfts, error: fetchErr } = await query;
+    if (fetchErr) throw fetchErr;
+
+    if (!nfts || nfts.length === 0) {
+      return NextResponse.json({ ok: true, updated: 0, message: "No NFTs matched filters" });
+    }
+
+    // 2. If filter_featured is set, we need to check existing pricing
+    let targetNfts = nfts;
+    if (filter_featured === "true" || filter_featured === "false") {
+      const ids = nfts.map(n => n.id);
+      const { data: pricingRows } = await sb
+        .from("nft_pricing")
+        .select("cached_nft_id, is_featured")
+        .in("cached_nft_id", ids);
+
+      const featuredSet = new Set();
+      (pricingRows || []).forEach(p => {
+        if (filter_featured === "true" && p.is_featured) featuredSet.add(p.cached_nft_id);
+        if (filter_featured === "false" && !p.is_featured) featuredSet.add(p.cached_nft_id);
+      });
+      targetNfts = nfts.filter(n => featuredSet.has(n.id));
+    }
+
+    if (targetNfts.length === 0) {
+      return NextResponse.json({ ok: true, updated: 0, message: "No NFTs matched filters" });
+    }
+
+    // 3. Build upsert rows with random price in range
+    const rows = targetNfts.map(n => {
+      const randomPrice = minP === maxP
+        ? minP
+        : Math.round((minP + Math.random() * (maxP - minP)) * 10000) / 10000;
+
+      const row = {
+        cached_nft_id: n.id,
+        chain_id: n.chain_id,
+        contract_address: n.contract_address.toLowerCase(),
+        token_id: String(n.token_id),
+        mint_price_eth: randomPrice,
+        updated_at: new Date().toISOString(),
+      };
+      if (fee !== null) row.mint_fee_eth = fee;
+      return row;
+    });
+
+    // 4. Upsert in batches of 200
+    let updated = 0;
+    for (let i = 0; i < rows.length; i += 200) {
+      const batch = rows.slice(i, i + 200);
+      const { error: upsertErr } = await sb
+        .from("nft_pricing")
+        .upsert(batch, { onConflict: "chain_id,contract_address,token_id" });
+      if (upsertErr) {
+        console.error("[BULK PRICING] batch error:", upsertErr);
+      } else {
+        updated += batch.length;
+      }
+    }
+
+    return NextResponse.json({
+      ok: true,
+      updated,
+      total: targetNfts.length,
+      priceRange: `${minP} - ${maxP} ETH`,
+      fee: fee !== null ? `${fee} ETH` : "unchanged",
+    });
+  } catch (e) {
+    console.error("[/api/admin/nft/pricing PUT]", e);
+    return NextResponse.json(
+      { error: e?.message || "Unknown error" },
+      { status: 500 }
+    );
+  }
+}

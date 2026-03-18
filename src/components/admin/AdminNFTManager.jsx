@@ -11,6 +11,141 @@ import Badge from '@/components/ui/Badge';
 
 const CHAIN_LABELS = { 1: 'Ethereum', 8453: 'Base', 84532: 'Base Sepolia', 137: 'Polygon' };
 
+/* ── Bulk Pricing Card ── */
+function BulkPricingCard({ onComplete }) {
+  const [minPrice, setMinPrice] = useState('0.002');
+  const [maxPrice, setMaxPrice] = useState('0.01');
+  const [fee, setFee] = useState('0.001');
+  const [chainFilter, setBulkChain] = useState('');
+  const [collectionFilter, setBulkCollection] = useState('');
+  const [featuredFilter, setBulkFeatured] = useState('');
+  const [applying, setApplying] = useState(false);
+  const [result, setResult] = useState(null);
+  const [expanded, setExpanded] = useState(false);
+
+  const handleApply = async () => {
+    setApplying(true);
+    setResult(null);
+    try {
+      const body = {
+        min_price_eth: parseFloat(minPrice),
+        max_price_eth: parseFloat(maxPrice),
+        mint_fee_eth: parseFloat(fee),
+      };
+      if (chainFilter) body.filter_chain_id = chainFilter;
+      if (collectionFilter.trim()) body.filter_collection = collectionFilter.trim();
+      if (featuredFilter) body.filter_featured = featuredFilter;
+
+      const res = await fetch('/api/admin/nft/pricing', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Bulk update failed');
+      setResult(data);
+      if (data.updated > 0 && onComplete) onComplete();
+    } catch (e) {
+      setResult({ error: e.message });
+    } finally {
+      setApplying(false);
+    }
+  };
+
+  return (
+    <Card className="p-5">
+      <button
+        onClick={() => setExpanded(e => !e)}
+        className="w-full flex items-center justify-between"
+      >
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-accent-violet/10 flex items-center justify-center">
+            <Filter size={18} className="text-accent-violet" />
+          </div>
+          <div className="text-left">
+            <h3 className="font-display font-semibold text-text text-base">Bulk Price Scale</h3>
+            <p className="text-xs text-muted mt-0.5">Set price range for all (or filtered) NFTs at once</p>
+          </div>
+        </div>
+        <ChevronRight size={16} className={`text-muted transition-transform ${expanded ? 'rotate-90' : ''}`} />
+      </button>
+
+      {expanded && (
+        <div className="mt-5 space-y-4 border-t border-border-light pt-5">
+          {/* Price range */}
+          <div className="grid sm:grid-cols-3 gap-3">
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-text">Min Price (ETH)</label>
+              <input type="number" step="0.001" min="0" value={minPrice} onChange={e => setMinPrice(e.target.value)}
+                className="w-full px-3 py-2 bg-surface2/50 border border-border-light rounded-xl text-sm font-mono text-text focus:outline-none focus:border-accent/40" />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-text">Max Price (ETH)</label>
+              <input type="number" step="0.001" min="0" value={maxPrice} onChange={e => setMaxPrice(e.target.value)}
+                className="w-full px-3 py-2 bg-surface2/50 border border-border-light rounded-xl text-sm font-mono text-text focus:outline-none focus:border-accent/40" />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-text">Mint Fee (ETH)</label>
+              <input type="number" step="0.001" min="0" value={fee} onChange={e => setFee(e.target.value)}
+                className="w-full px-3 py-2 bg-surface2/50 border border-border-light rounded-xl text-sm font-mono text-text focus:outline-none focus:border-accent/40" />
+            </div>
+          </div>
+
+          <p className="text-[11px] text-muted-dim">Each NFT gets a random price between min–max. Fee is flat for all.</p>
+
+          {/* Filters */}
+          <div className="grid sm:grid-cols-3 gap-3">
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted">Filter: Chain</label>
+              <select value={chainFilter} onChange={e => setBulkChain(e.target.value)}
+                className="w-full bg-surface2/50 border border-border-light rounded-xl px-3 py-2 text-sm text-text focus:outline-none">
+                <option value="">All Chains</option>
+                <option value="8453">Base</option>
+                <option value="1">Ethereum</option>
+                <option value="84532">Base Sepolia</option>
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted">Filter: Collection</label>
+              <input type="text" value={collectionFilter} onChange={e => setBulkCollection(e.target.value)} placeholder="e.g. Bored Apes"
+                className="w-full px-3 py-2 bg-surface2/50 border border-border-light rounded-xl text-sm text-text placeholder:text-muted-dim focus:outline-none focus:border-accent/40" />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted">Filter: Featured</label>
+              <select value={featuredFilter} onChange={e => setBulkFeatured(e.target.value)}
+                className="w-full bg-surface2/50 border border-border-light rounded-xl px-3 py-2 text-sm text-text focus:outline-none">
+                <option value="">All</option>
+                <option value="true">Featured Only</option>
+                <option value="false">Not Featured</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <Button variant="primary" size="md" onClick={handleApply} disabled={applying}>
+              {applying ? <><Loader2 size={14} className="animate-spin" /> Applying...</> : <><Check size={14} /> Apply to All Matching NFTs</>}
+            </Button>
+            <span className="text-xs text-muted-dim">This overwrites existing prices for matched NFTs</span>
+          </div>
+
+          {result && (
+            <div className={`p-3 rounded-xl border ${result.error ? 'bg-danger/5 border-danger/20' : 'bg-success/5 border-success/20'}`}>
+              {result.error ? (
+                <p className="text-sm text-danger flex items-center gap-2"><AlertCircle size={14} />{result.error}</p>
+              ) : (
+                <div className="text-sm text-success flex items-center gap-2">
+                  <CheckCircle2 size={14} />
+                  Updated {result.updated} of {result.total} NFTs — Range: {result.priceRange} — Fee: {result.fee}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </Card>
+  );
+}
+
 export default function AdminNFTManager() {
   /* ── State ────────────────────────────────────────── */
   const [nfts, setNfts] = useState([]);
@@ -286,6 +421,9 @@ export default function AdminNFTManager() {
           </div>
         )}
       </Card>
+
+      {/* BULK PRICING SCALE */}
+      <BulkPricingCard onComplete={fetchNfts} />
 
       {/* FILTERS */}
       <Card className="p-4">

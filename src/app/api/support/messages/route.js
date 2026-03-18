@@ -39,14 +39,22 @@ export async function POST(req) {
 
     await sb.from('support_conversations').update({ updated_at: new Date().toISOString() }).eq('id', conversation_id);
 
-    if (sender_type === 'visitor') {
-      await sb.from('admin_notifications').insert({
+    // Fire ntfy + admin_notifications for ANY non-admin message (visitor OR user)
+    // Each call is independent — one failing doesn't block the other
+    if (sender_type !== 'admin') {
+      // ntfy push — always fire, never let it fail silently
+      void notifyNewSupportMessage({
+        visitorName: sender_name || 'Anonymous',
+        message,
+      }).catch((e) => console.error('[SUPPORT] ntfy failed:', e));
+
+      // DB notification — independent
+      void sb.from('admin_notifications').insert({
         type: 'support',
         title: 'New Support Message',
-        body: 'From: ' + (sender_name || 'Anonymous') + ' - ' + message.slice(0, 100),
+        body: 'From: ' + (sender_name || 'Anonymous') + ' — ' + message.slice(0, 100),
         metadata: { conversation_id, sender_name },
-      });
-      await notifyNewSupportMessage({ visitorName: sender_name, message });
+      }).then(() => {}).catch((e) => console.error('[SUPPORT] admin_notifications insert failed:', e));
     }
 
     return NextResponse.json({ message: data });

