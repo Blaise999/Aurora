@@ -4,17 +4,26 @@ import { injected, walletConnect, coinbaseWallet, safe } from "wagmi/connectors"
 
 const wcProjectId = process.env.NEXT_PUBLIC_WC_PROJECT_ID || "";
 
-// Build connectors array — only add WalletConnect if project ID exists
+// Build connectors array
+// - injected() with shimDisconnect: false so it doesn't fight with EIP-6963
+// - EIP-6963 multiInjectedProviderDiscovery is ON by default in wagmi v2
+//   which auto-detects OKX, Phantom, Rabby, Trust, Brave, etc.
 const connectors = [
-  injected({ shimDisconnect: false }),
+  injected({
+    shimDisconnect: false,
+    // This is the fallback injected connector.
+    // EIP-6963 wallets (OKX, Phantom, Rabby, etc.) are discovered
+    // automatically by wagmi and appear as separate connectors.
+  }),
   coinbaseWallet({
-    appName: "AuroraNft",
+    appName: "AuroraNFT",
     appLogoUrl: "https://aurora-nft.vercel.app/pictures/logo.png",
   }),
   safe(),
 ];
 
-// Only add WalletConnect if configured — avoids "provider not found" errors
+// WalletConnect supports 300+ wallets via QR code / deep link
+// OKX, Trust, Rainbow, Zerion, Phantom, etc. all work through WC
 if (wcProjectId) {
   connectors.splice(
     1,
@@ -23,8 +32,8 @@ if (wcProjectId) {
       projectId: wcProjectId,
       showQrModal: true,
       metadata: {
-        name: "AuroraNft",
-        description: "Discover & Mint Digital Art on Base",
+        name: "AuroraNFT",
+        description: "Discover & Collect Digital Art on Base",
         url: "https://aurora-nft.vercel.app",
         icons: ["https://aurora-nft.vercel.app/pictures/logo.png"],
       },
@@ -36,6 +45,10 @@ export const wagmiConfig = createConfig({
   chains: [base, baseSepolia],
   ssr: true,
   connectors,
+  // multiInjectedProviderDiscovery is true by default in wagmi v2
+  // This enables EIP-6963 which auto-discovers installed wallets:
+  // OKX, Phantom, Rabby, Frame, Taho, etc.
+  multiInjectedProviderDiscovery: true,
   transports: {
     [base.id]: http(
       process.env.NEXT_PUBLIC_BASE_RPC || "https://mainnet.base.org"

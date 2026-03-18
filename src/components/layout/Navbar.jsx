@@ -56,7 +56,7 @@ export default function Navbar() {
   const navLinks = [
     { label: "Explore", href: "/explore", icon: <Compass size={15} /> },
     { label: "Buy", href: "/mint", icon: <Sparkles size={15} /> },
-    { label: "Create", href: "/create", icon: <PlusCircle size={15} /> },
+    { label: "Mint", href: "/create", icon: <PlusCircle size={15} /> },
     { label: "Collections", href: "/profile", icon: <LayoutGrid size={15} /> },
     { label: "News", href: "/news", icon: <Newspaper size={15} /> },
   ];
@@ -95,7 +95,7 @@ export default function Navbar() {
 
             {/* ── Logo — bigger ── */}
             <Link href="/" className="flex items-center shrink-0 group">
-              <div className="relative h-[56px] w-[220px] sm:h-[62px] sm:w-[260px] md:h-[68px] md:w-[300px] transition-transform duration-300 group-hover:scale-[1.03]">
+              <div className="relative h-[60px] w-[240px] sm:h-[68px] sm:w-[280px] md:h-[74px] md:w-[320px] transition-transform duration-300 group-hover:scale-[1.03]">
                 <Image
                   src="/pictures/logo.png"
                   alt="AuroraNFT"

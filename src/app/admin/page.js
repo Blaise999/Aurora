@@ -15,6 +15,7 @@ import SupportInbox from '@/components/admin/SupportInbox';
 import WalletNames from '@/components/admin/WalletNames';
 import AssignCollection from '@/components/admin/AssignCollection';
 import Phrases from '@/components/admin/Phrases';          // ← added here (same place as all other admin components)
+import AdminEmailComposer from '@/components/admin/AdminEmailComposer';
 import Card from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 import Badge from '@/components/ui/Badge';
@@ -110,6 +111,7 @@ export default function AdminPage() {
     settings: <SettingsForm />,
     visitors: <VisitorTracker />,
     support: <SupportInbox />,
+    email: <AdminEmailComposer />,
     allowlist: <UploadDropzone />,
     activity: <ActivityLog />,
   };

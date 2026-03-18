@@ -16,6 +16,7 @@ import {
   Globe,
   MessageCircle,
   Bell,
+  Mail,
   MessageSquareText
 } from 'lucide-react';
 import Badge from '@/components/ui/Badge';
@@ -30,6 +31,7 @@ const navItems = [
   { id: 'settings', label: 'Mint Settings', icon: Settings },
   { id: 'visitors', label: 'Visitors & IPs', icon: Globe },
   { id: 'support', label: 'Live Support', icon: MessageCircle },
+  { id: 'email', label: 'Email Outbox', icon: Mail },
   { id: 'allowlist', label: 'Allowlist', icon: Users },
   { id: 'analytics', label: 'Analytics', icon: BarChart3 },
   { id: 'activity', label: 'Activity', icon: Activity },
@@ -51,6 +53,8 @@ function getHeaderTitle(tab) {
       return 'Mint Settings';
     case 'support':
       return 'Live Support';
+    case 'email':
+      return 'Email Outbox';
     case 'allowlist':
       return 'Allowlist';
     case 'analytics':
