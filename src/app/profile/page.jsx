@@ -275,8 +275,8 @@ export default function PremiumProfilePage() {
         <div className="mt-4 flex flex-wrap items-center gap-3">
           <div className="inline-flex items-center gap-2 rounded-full border border-border-light bg-card/60 px-3 py-1.5 text-xs text-muted">
             <ExternalLink size={13} className="text-accent" />
-            NFT detail route:
-            <span className="font-mono text-text">/profile/nft/[id]</span>
+           
+            <span className="font-mono text-text"></span>
           </div>
 
           {hasUsableWallet && (
