@@ -27,6 +27,7 @@ export async function GET() {
     return NextResponse.json({
       minting_fee: "0.002",
       buy_fee: "0.002",
+      create_mint_fee: "0.005",
       sale_active: "true",
       max_per_wallet: "10",
       treasury_wallet: "",

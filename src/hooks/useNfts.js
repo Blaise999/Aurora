@@ -212,7 +212,7 @@ export function useSettings() {
         if (!c) { setSettings(d); setCache(cacheKey, d); }
       } catch {
         if (!c && !cached) setSettings({
-          minting_fee: "0.002", buy_fee: "0.002", sale_active: "true",
+          minting_fee: "0.002", buy_fee: "0.002", create_mint_fee: "0.005", sale_active: "true",
           max_per_wallet: "10", treasury_wallet: "", contract_address: ""
         });
       } finally { if (!c) setLoading(false); }

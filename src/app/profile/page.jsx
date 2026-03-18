@@ -18,6 +18,8 @@ import {
   Globe2,
   ExternalLink,
   ChevronRight,
+  Sparkles,
+  PlusCircle,
 } from 'lucide-react'
 
 import { useSession } from '@/hooks/useSession'
@@ -71,6 +73,8 @@ export default function PremiumProfilePage() {
   const [tab, setTab] = useState('collections')
   const [nfts, setNfts] = useState([])
   const [loading, setLoading] = useState(true)
+  const [listedNfts, setListedNfts] = useState([])
+  const [listedLoading, setListedLoading] = useState(true)
   const [showWalletModal, setShowWalletModal] = useState(false)
   const [syncingWallet, setSyncingWallet] = useState(false)
   const [redirecting, setRedirecting] = useState(false)
@@ -183,6 +187,34 @@ export default function PremiumProfilePage() {
     }
 
     loadNFTs()
+  }, [isLoggedIn])
+
+  // ── Load user listed/created NFTs ──
+  useEffect(() => {
+    if (!isLoggedIn) return
+
+    async function loadListed() {
+      setListedLoading(true)
+      try {
+        const res = await fetch('/api/user/listed', { cache: 'no-store' })
+        const json = await res.json()
+
+        if (!res.ok) {
+          console.error('Failed to load listed:', json?.error)
+          setListedNfts([])
+          return
+        }
+
+        setListedNfts(Array.isArray(json?.nfts) ? json.nfts : [])
+      } catch (err) {
+        console.error('Failed to load listed:', err)
+        setListedNfts([])
+      } finally {
+        setListedLoading(false)
+      }
+    }
+
+    loadListed()
   }, [isLoggedIn])
 
   // ── Sync live wallet to profile if new ──
@@ -438,9 +470,9 @@ export default function PremiumProfilePage() {
                   tab={tab}
                   setTab={setTab}
                   tabs={[
-                    { key: 'collections', label: 'Collections', icon: <LayoutGrid size={16} /> },
+                    { key: 'collections', label: 'NFT Bought', icon: <LayoutGrid size={16} /> },
                     { key: 'activity', label: 'Activity', icon: <Activity size={16} /> },
-                    { key: 'listed', label: 'Listed', icon: <Tag size={16} /> },
+                    { key: 'listed', label: 'NFT Minted', icon: <Sparkles size={16} /> },
                   ]}
                 />
               </div>
@@ -527,13 +559,83 @@ export default function PremiumProfilePage() {
                     )}
 
                     {tab === 'listed' && (
-                      <div className="rounded-2xl border border-border-light bg-surface2/40 p-10 text-center">
-                        <Tag size={40} className="mx-auto mb-4 text-muted" />
-                        <p className="text-xl font-semibold">No active listings yet</p>
-                        <p className="mx-auto mt-2 max-w-md text-sm text-muted">
-                          When marketplace listing goes live, your assets for sale will appear here with pricing and status.
-                        </p>
-                      </div>
+                      <>
+                        {listedLoading ? (
+                          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+                            {Array.from({ length: 4 }).map((_, i) => (
+                              <NftCardSkeleton key={i} />
+                            ))}
+                          </div>
+                        ) : listedNfts.length > 0 ? (
+                          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+                            {listedNfts.map((nft) => (
+                              <div
+                                key={nft.id}
+                                className="group rounded-[20px] overflow-hidden border border-border-light bg-white/[0.02] hover:border-accent-violet/30 transition-all duration-300"
+                              >
+                                <div className="relative aspect-square overflow-hidden bg-surface2/40">
+                                  {nft.image_url ? (
+                                    <img
+                                      src={nft.image_url}
+                                      alt={nft.name}
+                                      className="w-full h-full object-contain"
+                                    />
+                                  ) : (
+                                    <div className="w-full h-full flex items-center justify-center">
+                                      <Sparkles size={32} className="text-muted-dim" />
+                                    </div>
+                                  )}
+                                  <div className="absolute top-3 left-3">
+                                    <span className="px-2.5 py-1 rounded-full bg-accent-violet/20 backdrop-blur-md border border-accent-violet/30 text-[10px] font-semibold text-accent-violet">
+                                      Created
+                                    </span>
+                                  </div>
+                                </div>
+                                <div className="p-4 space-y-2">
+                                  <p className="text-[10px] text-muted-dim font-mono uppercase tracking-wide">
+                                    {nft.collection || 'User Created'}
+                                  </p>
+                                  <p className="text-sm font-display font-semibold text-text truncate">
+                                    {nft.name}
+                                  </p>
+                                  {nft.description && (
+                                    <p className="text-[11px] text-muted line-clamp-2">{nft.description}</p>
+                                  )}
+                                  <div className="flex items-center justify-between pt-2 border-t border-white/[0.06]">
+                                    <div>
+                                      <p className="text-[9px] text-muted-dim uppercase">Fee Paid</p>
+                                      <p className="text-sm text-accent-violet font-mono font-semibold mt-0.5">
+                                        {nft.mint_fee_eth || 0} ETH
+                                      </p>
+                                    </div>
+                                    <div className="text-right">
+                                      <p className="text-[9px] text-muted-dim uppercase">Status</p>
+                                      <p className="text-sm text-success font-medium mt-0.5">
+                                        {nft.status === 'confirmed' ? 'Minted' : nft.status}
+                                      </p>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="rounded-2xl border border-border-light bg-surface2/40 p-10 text-center">
+                            <Sparkles size={40} className="mx-auto mb-4 text-muted" />
+                            <p className="text-xl font-semibold">No created NFTs yet</p>
+                            <p className="mx-auto mt-2 max-w-md text-sm text-muted">
+                              Create your first NFT and it will appear here.
+                            </p>
+                            <button
+                              onClick={() => router.push('/create')}
+                              className="mt-4 inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-accent-violet/10 border border-accent-violet/20 text-sm font-medium text-accent-violet hover:bg-accent-violet/20 transition-colors"
+                            >
+                              <PlusCircle size={16} />
+                              Create NFT
+                            </button>
+                          </div>
+                        )}
+                      </>
                     )}
                   </>
                 )}

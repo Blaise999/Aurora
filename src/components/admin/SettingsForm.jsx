@@ -4,7 +4,7 @@ import Input from '@/components/ui/Input';
 import Button from '@/components/ui/Button';
 import Card from '@/components/ui/Card';
 import Badge from '@/components/ui/Badge';
-import { Save, AlertTriangle, Loader2, Check, Wallet, DollarSign, Shield, Bell } from 'lucide-react';
+import { Save, AlertTriangle, Loader2, Check, Wallet, DollarSign, Shield, Bell, Sparkles } from 'lucide-react';
 
 export default function SettingsForm() {
   const [settings, setSettings] = useState({
@@ -14,6 +14,7 @@ export default function SettingsForm() {
     mint_window_hours: '72',
     treasury_wallet: '',
     buy_fee: '0.002',
+    create_mint_fee: '0.005',
     ntfy_topic: 'aurora-nft-admin',
     contract_address: '',
   });
@@ -51,7 +52,7 @@ export default function SettingsForm() {
 
   const saveAll = async () => {
     setShowConfirm(false);
-    const keys = ['minting_fee', 'sale_active', 'max_per_wallet', 'mint_window_hours', 'treasury_wallet', 'buy_fee', 'ntfy_topic', 'contract_address'];
+    const keys = ['minting_fee', 'sale_active', 'max_per_wallet', 'mint_window_hours', 'treasury_wallet', 'buy_fee', 'create_mint_fee', 'ntfy_topic', 'contract_address'];
     for (const key of keys) {
       if (settings[key] !== undefined && settings[key] !== '') {
         await saveSetting(key);
@@ -131,6 +132,31 @@ export default function SettingsForm() {
             type="number"
             step="0.001"
           />
+        </div>
+
+        {/* Create Mint Fee — dedicated section */}
+        <div className="pt-4 border-t border-border-light space-y-3">
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 rounded-lg bg-accent-violet/10 flex items-center justify-center">
+              <Sparkles size={14} className="text-accent-violet" />
+            </div>
+            <div>
+              <h4 className="text-sm font-semibold text-text">Create / Mint Fee</h4>
+              <p className="text-[11px] text-muted">Fee charged when users create their own NFTs via the Create page</p>
+            </div>
+          </div>
+          <Input
+            label="Create Mint Fee (ETH)"
+            value={settings.create_mint_fee}
+            onChange={e => updateField('create_mint_fee', e.target.value)}
+            placeholder="0.005"
+            type="number"
+            step="0.001"
+            min="0"
+          />
+          <p className="text-[10px] text-muted-dim">
+            This fee goes to the treasury wallet above. It is separate from the Buy fee. Adjust to control creator minting costs.
+          </p>
         </div>
       </Card>
 
@@ -252,6 +278,7 @@ export default function SettingsForm() {
               <div className="flex justify-between"><span className="text-muted">Treasury</span><span className="text-text font-mono text-xs truncate max-w-[150px]">{settings.treasury_wallet || '—'}</span></div>
               <div className="flex justify-between"><span className="text-muted">Buy Fee</span><span className="text-text font-mono">{settings.buy_fee} ETH</span></div>
               <div className="flex justify-between"><span className="text-muted">Mint Fee</span><span className="text-text font-mono">{settings.minting_fee} ETH</span></div>
+              <div className="flex justify-between"><span className="text-muted">Create Mint Fee</span><span className="text-text font-mono">{settings.create_mint_fee} ETH</span></div>
               <div className="flex justify-between"><span className="text-muted">Sale</span><span className={settings.sale_active === 'true' ? 'text-success' : 'text-warning'}>{settings.sale_active === 'true' ? 'Live' : 'Paused'}</span></div>
               <div className="flex justify-between"><span className="text-muted">Ntfy Topic</span><span className="text-text font-mono text-xs">{settings.ntfy_topic}</span></div>
             </div>

@@ -30,10 +30,10 @@ export default function ChainEcosystem() {
             <span className="text-xs font-display font-semibold text-blue-400 uppercase tracking-wider">Ecosystem</span>
           </div>
           <h2 className="font-display text-2xl sm:text-3xl font-bold text-text">
-            Built on Base. Connected Everywhere.
+            Built on chain. Connected Everywhere.
           </h2>
           <p className="text-[13px] text-muted mt-2 max-w-lg mx-auto">
-            Mint on the fastest L2 today. Cross-chain coming soon.
+            Mint on the fastest L2 today. 
           </p>
         </div>
 

@@ -212,7 +212,7 @@ export async function POST(req: Request) {
       wallet_address: userWallet,
       profile_id: profileId,
       tx_hash: txHash,
-      tx_type: "mint",
+      tx_type: "buy",
       chain_id: chainId,
       contract_address: contractAddress,
       token_id: tokenId,

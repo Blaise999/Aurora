@@ -17,6 +17,7 @@ import {
   Newspaper,
   LayoutGrid,
   Sparkles,
+  PlusCircle,
 } from "lucide-react";
 import { useSession } from "@/hooks/useSession";
 
@@ -54,7 +55,8 @@ export default function Navbar() {
   /* ── More nav links to fill out the navbar ── */
   const navLinks = [
     { label: "Explore", href: "/explore", icon: <Compass size={15} /> },
-    { label: "Mint", href: "/mint", icon: <Sparkles size={15} /> },
+    { label: "Buy", href: "/mint", icon: <Sparkles size={15} /> },
+    { label: "Create", href: "/create", icon: <PlusCircle size={15} /> },
     { label: "Collections", href: "/profile", icon: <LayoutGrid size={15} /> },
     { label: "News", href: "/news", icon: <Newspaper size={15} /> },
   ];
@@ -89,11 +91,11 @@ export default function Navbar() {
         `}
       >
         <div className="mx-auto max-w-[1440px] px-4 sm:px-6 lg:px-8">
-          <div className="flex h-[72px] sm:h-[80px] items-center justify-between gap-4">
+          <div className="flex h-[68px] sm:h-[80px] items-center justify-between gap-4">
 
             {/* ── Logo — bigger ── */}
             <Link href="/" className="flex items-center shrink-0 group">
-              <div className="relative h-[48px] w-[200px] sm:h-[54px] sm:w-[230px] md:h-[58px] md:w-[260px] transition-transform duration-300 group-hover:scale-[1.03]">
+              <div className="relative h-[56px] w-[220px] sm:h-[62px] sm:w-[260px] md:h-[68px] md:w-[300px] transition-transform duration-300 group-hover:scale-[1.03]">
                 <Image
                   src="/pictures/logo.png"
                   alt="AuroraNFT"
@@ -231,7 +233,7 @@ export default function Navbar() {
       {mobileOpen && (
         <div className="fixed inset-0 z-[60] lg:hidden">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setMobileOpen(false)} />
-          <div className="absolute left-3 right-3 top-[84px] rounded-2xl border border-white/[0.08] bg-surface/95 backdrop-blur-2xl p-4 shadow-[0_16px_48px_rgba(0,0,0,0.6)] animate-slide-up">
+          <div className="absolute left-3 right-3 top-[64px] rounded-2xl border border-white/[0.08] bg-surface/95 backdrop-blur-2xl p-3 shadow-[0_16px_48px_rgba(0,0,0,0.6)] animate-slide-up">
             <div className="flex flex-col gap-1.5">
               {navLinks.map((link) => {
                 const active = pathname === link.href || (link.href !== "/" && pathname.startsWith(link.href));

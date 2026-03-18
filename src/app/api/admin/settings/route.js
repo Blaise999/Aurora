@@ -37,7 +37,7 @@ export async function POST(req) {
     // Whitelist of allowed settings keys
     const allowed = [
       'minting_fee', 'sale_active', 'max_per_wallet', 'mint_window_hours',
-      'ntfy_topic', 'treasury_wallet', 'buy_fee', 'contract_address',
+      'ntfy_topic', 'treasury_wallet', 'buy_fee', 'create_mint_fee', 'contract_address',
     ];
     if (!allowed.includes(key)) {
       return NextResponse.json({ error: `Unknown setting: ${key}` }, { status: 400 });

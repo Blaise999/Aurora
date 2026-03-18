@@ -88,10 +88,10 @@ function MintPageContent() {
     isWagmiConnected && chain?.id !== targetChainId;
 
   const mintFee = String(
-    selectedNft?.mintFee || settings?.minting_fee || "0.002"
+    selectedNft?.mintFee || settings?.buy_fee || settings?.minting_fee || "0.002"
   );
   const nftPrice = String(
-    selectedNft?.mintPrice || settings?.minting_fee || "0.002"
+    selectedNft?.mintPrice || settings?.buy_fee || settings?.minting_fee || "0.002"
   );
   const totalPrice = (parseFloat(nftPrice) + parseFloat(mintFee)).toFixed(6);
 
@@ -351,9 +351,9 @@ function MintPageContent() {
 
   const mintButtonLabel = (() => {
     if (!hasUsableWallet) return "Connect Wallet";
-    if (!isWagmiConnected) return `Mint Now — ${totalPrice} ETH`;
+    if (!isWagmiConnected) return `Buy Now — ${totalPrice} ETH`;
     if (isWrongChain) return `Switch to ${chainName}`;
-    return `Mint Now — ${totalPrice} ETH`;
+    return `Buy Now — ${totalPrice} ETH`;
   })();
 
   return (
@@ -377,7 +377,7 @@ function MintPageContent() {
           </Link>
           <span>/</span>
           <span className="text-text">
-            {isSelectedMode ? dn?.name || "Loading..." : "Mint"}
+            {isSelectedMode ? dn?.name || "Loading..." : "Buy"}
           </span>
         </nav>
 
@@ -569,7 +569,7 @@ function MintPageContent() {
                   <div className="space-y-1">
                     <div className="flex items-center gap-2 flex-wrap">
                       <h2 className="font-display text-xl font-semibold text-text">
-                        Mint
+                        Buy
                       </h2>
 
                       {state === "ready" && !alreadyOwned && (
@@ -611,7 +611,7 @@ function MintPageContent() {
                       </span>
                     </div>
                     <div className="flex justify-between text-sm">
-                      <span className="text-muted">Mint Fee</span>
+                      <span className="text-muted">Buy Fee</span>
                       <span className="text-text font-mono font-medium">
                         {mintFee} ETH
                       </span>
@@ -733,13 +733,13 @@ function MintPageContent() {
                             className="mx-auto mb-2 animate-spin text-accent"
                           />
                           <p className="text-sm text-muted">
-                            Checking whether you already bought this NFT...
+                            Checking whether you already own this NFT...
                           </p>
                         </div>
                       ) : alreadyOwned ? (
                         <div className="bg-success/10 border border-success/20 rounded-xl p-4">
                           <p className="text-sm font-medium text-success">
-                            You've already bought this NFT.
+                            You already own this NFT.
                           </p>
                           <p className="text-xs text-muted mt-1">
                             {ownershipMessage}
@@ -793,10 +793,10 @@ function MintPageContent() {
                       </div>
 
                       <p className="text-text font-semibold">
-                        Successfully minted!
+                        Successfully purchased!
                       </p>
                       <p className="text-sm text-muted">
-                        NFT saved to your collection.
+                        NFT added to your collection.
                       </p>
 
                       <div className="flex gap-3 justify-center flex-wrap">
@@ -817,7 +817,7 @@ function MintPageContent() {
                           size="md"
                           onClick={resetBuy}
                         >
-                          Mint Another
+                          Buy Another
                         </Button>
                       </div>
                     </div>
@@ -890,15 +890,15 @@ function MintPageContent() {
               <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-pill bg-accent/10 border border-accent/20 mb-6">
                 <span className="w-2 h-2 rounded-full bg-accent animate-pulse" />
                 <span className="text-xs font-display font-semibold text-accent uppercase tracking-wider">
-                  Browse & Mint
+                  Browse & Buy
                 </span>
               </div>
 
               <h1 className="font-display font-extrabold text-3xl sm:text-4xl lg:text-5xl mb-4">
-                Choose an NFT to <span className="text-gradient">Mint</span>
+                Choose an NFT to <span className="text-gradient">Buy</span>
               </h1>
               <p className="text-muted text-base sm:text-lg leading-relaxed">
-                Click any NFT to see its details and mint it to your wallet.
+                Click any NFT to see its details and buy it for your collection.
               </p>
             </div>
 

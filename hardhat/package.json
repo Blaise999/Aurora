@@ -1,0 +1,19 @@
+{
+  "name": "aurora-creator-contracts",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "compile": "npx hardhat compile",
+    "test": "npx hardhat test",
+    "deploy:sepolia": "npx hardhat run scripts/deploy-creator.js --network baseSepolia",
+    "deploy:base": "npx hardhat run scripts/deploy-creator.js --network base",
+    "verify:sepolia": "npx hardhat run scripts/verify-creator.js --network baseSepolia",
+    "verify:base": "npx hardhat run scripts/verify-creator.js --network base"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^4.0.0",
+    "@openzeppelin/contracts": "^5.0.2",
+    "dotenv": "^16.4.5",
+    "hardhat": "^2.22.0"
+  }
+}

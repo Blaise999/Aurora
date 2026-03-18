@@ -68,6 +68,96 @@ export function getBuyCollectorAddress() {
   return process.env.NEXT_PUBLIC_BUY_COLLECTOR_CONTRACT || "";
 }
 
+// ─── AuroraCreator Contract ABI (user-minted NFTs on-chain) ───
+export const AURORA_CREATOR_ABI = [
+  {
+    name: "createNft",
+    type: "function",
+    stateMutability: "payable",
+    inputs: [{ name: "metadataURI", type: "string" }],
+    outputs: [],
+  },
+  {
+    name: "mintFee",
+    type: "function",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    name: "mintActive",
+    type: "function",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "bool" }],
+  },
+  {
+    name: "treasury",
+    type: "function",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "address" }],
+  },
+  {
+    name: "totalMinted",
+    type: "function",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    name: "totalSupply",
+    type: "function",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    name: "tokenURI",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "tokenId", type: "uint256" }],
+    outputs: [{ name: "", type: "string" }],
+  },
+  {
+    name: "creatorOf",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "tokenId", type: "uint256" }],
+    outputs: [{ name: "", type: "address" }],
+  },
+  {
+    name: "ownerOf",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "tokenId", type: "uint256" }],
+    outputs: [{ name: "", type: "address" }],
+  },
+  {
+    name: "Created",
+    type: "event",
+    inputs: [
+      { name: "creator", type: "address", indexed: true },
+      { name: "tokenId", type: "uint256", indexed: true },
+      { name: "metadataURI", type: "string", indexed: false },
+      { name: "feePaid", type: "uint256", indexed: false },
+    ],
+  },
+  {
+    name: "Transfer",
+    type: "event",
+    inputs: [
+      { name: "from", type: "address", indexed: true },
+      { name: "to", type: "address", indexed: true },
+      { name: "tokenId", type: "uint256", indexed: true },
+    ],
+  },
+];
+
+export function getCreatorContractAddress() {
+  return process.env.NEXT_PUBLIC_CREATOR_CONTRACT || "";
+}
+
 export function getExplorerUrl() {
   return getChainId() === 8453
     ? "https://basescan.org"
