@@ -3,6 +3,10 @@ import { base, baseSepolia } from "wagmi/chains";
 import { injected, walletConnect, coinbaseWallet, safe } from "wagmi/connectors";
 
 const wcProjectId = process.env.NEXT_PUBLIC_WC_PROJECT_ID || "";
+const chainId = parseInt(process.env.NEXT_PUBLIC_CHAIN_ID || "8453", 10);
+
+// Put the active chain first so wagmi defaults to it
+const chains = chainId === 8453 ? [base, baseSepolia] : [baseSepolia, base];
 
 // Build connectors array
 // - injected() with shimDisconnect: false so it doesn't fight with EIP-6963
@@ -42,7 +46,7 @@ if (wcProjectId) {
 }
 
 export const wagmiConfig = createConfig({
-  chains: [base, baseSepolia],
+  chains,
   ssr: true,
   connectors,
   // multiInjectedProviderDiscovery is true by default in wagmi v2

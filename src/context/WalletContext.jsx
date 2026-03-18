@@ -1,101 +1,97 @@
 "use client";
-import { createContext, useContext, useState, useCallback, useEffect } from "react";
-import { CHAIN_CONFIG, CHAIN_ID } from "@/lib/constants";
+import { createContext, useContext, useState, useCallback, lazy, Suspense } from "react";
+import { useAccount, useConnect, useDisconnect, useSwitchChain } from "wagmi";
+import { getChainId } from "@/lib/web3/contract";
+
+const LazyWalletModal = lazy(() => import("@/components/WalletConnectModal"));
 
 const WalletContext = createContext(null);
 
+/**
+ * WalletProvider — wraps wagmi hooks so legacy code using useWallet()
+ * still works, but now routes through wagmi (supports ALL wallets,
+ * not just MetaMask via window.ethereum).
+ *
+ * Also renders a global WalletConnectModal so any component that calls
+ * connect() will trigger the multi-wallet picker.
+ */
 export function WalletProvider({ children }) {
-  const [address, setAddress] = useState(null);
-  const [chainId, setChainId] = useState(null);
-  const [connecting, setConnecting] = useState(false);
+  const { address, isConnected, chain } = useAccount();
+  const { connect, connectors, isPending: connecting } = useConnect();
+  const { disconnect: wagmiDisconnect } = useDisconnect();
+  const { switchChain: wagmiSwitchChain } = useSwitchChain();
+
+  const [showWalletModal, setShowWalletModal] = useState(false);
   const [error, setError] = useState(null);
 
-  const isConnected = !!address;
-  const isWrongChain = chainId && chainId !== CHAIN_ID;
+  const targetChainId = getChainId();
+  const chainId = chain?.id || null;
+  const isWrongChain = isConnected && chainId !== targetChainId;
 
-  // ── REMOVED auto-connect on page load ──
-  // Previously this called eth_accounts which opens wallet apps.
-  // Now we only connect when user explicitly clicks "Connect Wallet".
-
-  // Listen for account/chain changes ONLY after user has connected
-  useEffect(() => {
-    if (typeof window === "undefined" || !window.ethereum) return;
-
-    const handleAccounts = (accounts) => {
-      if (accounts.length === 0) {
-        setAddress(null);
-      } else {
-        setAddress(accounts[0]);
-      }
-    };
-    const handleChain = (hexChain) => {
-      setChainId(parseInt(hexChain, 16));
-    };
-
-    window.ethereum.on("accountsChanged", handleAccounts);
-    window.ethereum.on("chainChanged", handleChain);
-    return () => {
-      window.ethereum.removeListener("accountsChanged", handleAccounts);
-      window.ethereum.removeListener("chainChanged", handleChain);
-    };
-  }, []);
-
-  const connect = useCallback(async () => {
-    if (!window.ethereum) {
-      setError("Please install MetaMask or another web3 wallet");
-      return;
-    }
-    setConnecting(true);
+  // Open the wallet connect modal (used by components that call useWallet().connect)
+  const openConnect = useCallback(() => {
     setError(null);
-    try {
-      const accounts = await window.ethereum.request({ method: "eth_requestAccounts" });
-      setAddress(accounts[0]);
-      const hexChain = await window.ethereum.request({ method: "eth_chainId" });
-      setChainId(parseInt(hexChain, 16));
-    } catch (err) {
-      setError(err.message || "Failed to connect");
-    } finally {
-      setConnecting(false);
-    }
+    setShowWalletModal(true);
   }, []);
+
+  // Quick-connect: tries a specific connector (for programmatic use)
+  const quickConnect = useCallback(
+    async (connector) => {
+      setError(null);
+      try {
+        const c = connector || connectors[0];
+        if (!c) {
+          setError("No wallet connectors available");
+          return;
+        }
+        connect({ connector: c });
+      } catch (err) {
+        setError(err?.message || "Connection failed");
+      }
+    },
+    [connect, connectors]
+  );
 
   const disconnect = useCallback(() => {
-    setAddress(null);
-    setChainId(null);
-  }, []);
+    wagmiDisconnect();
+    setError(null);
+  }, [wagmiDisconnect]);
 
   const switchChain = useCallback(async () => {
-    if (!window.ethereum) return;
     try {
-      await window.ethereum.request({
-        method: "wallet_switchEthereumChain",
-        params: [{ chainId: CHAIN_CONFIG.chainId }],
-      });
+      wagmiSwitchChain({ chainId: targetChainId });
     } catch (err) {
-      if (err.code === 4902) {
-        await window.ethereum.request({
-          method: "wallet_addEthereumChain",
-          params: [CHAIN_CONFIG],
-        });
-      }
+      setError(err?.message || "Failed to switch chain");
     }
-  }, []);
+  }, [wagmiSwitchChain, targetChainId]);
 
   return (
     <WalletContext.Provider
       value={{
-        address,
+        address: address ? String(address).toLowerCase() : null,
         chainId,
         isConnected,
         isWrongChain,
         connecting,
         error,
-        connect,
+        connect: openConnect,
+        quickConnect,
         disconnect,
         switchChain,
+        showWalletModal,
+        setShowWalletModal,
       }}
     >
       {children}
+      {/* Global wallet modal — any component calling connect() triggers this */}
+      {showWalletModal && (
+        <Suspense fallback={null}>
+          <LazyWalletModal
+            open={showWalletModal}
+            onClose={() => setShowWalletModal(false)}
+          />
+        </Suspense>
+      )}
     </WalletContext.Provider>
   );
 }

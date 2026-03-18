@@ -57,7 +57,7 @@ export const BASE_MAINNET_CHAIN_ID = 8453;
 export const BASE_SEPOLIA_CHAIN_ID = 84532;
 
 export function getChainId() {
-  return parseInt(process.env.NEXT_PUBLIC_CHAIN_ID || "84532", 10);
+  return parseInt(process.env.NEXT_PUBLIC_CHAIN_ID || "8453", 10);
 }
 
 export function getContractAddress() {
@@ -90,6 +90,13 @@ export const AURORA_CREATOR_ABI = [
     stateMutability: "view",
     inputs: [],
     outputs: [{ name: "", type: "bool" }],
+  },
+  {
+    name: "setMintFee",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "_newFee", type: "uint256" }],
+    outputs: [],
   },
   {
     name: "treasury",
@@ -134,6 +141,13 @@ export const AURORA_CREATOR_ABI = [
     outputs: [{ name: "", type: "address" }],
   },
   {
+    name: "owner",
+    type: "function",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "address" }],
+  },
+  {
     name: "Created",
     type: "event",
     inputs: [
@@ -150,6 +164,14 @@ export const AURORA_CREATOR_ABI = [
       { name: "from", type: "address", indexed: true },
       { name: "to", type: "address", indexed: true },
       { name: "tokenId", type: "uint256", indexed: true },
+    ],
+  },
+  {
+    name: "MintFeeUpdated",
+    type: "event",
+    inputs: [
+      { name: "oldFee", type: "uint256", indexed: false },
+      { name: "newFee", type: "uint256", indexed: false },
     ],
   },
 ];

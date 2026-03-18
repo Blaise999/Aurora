@@ -43,7 +43,7 @@ export function alchemyNftBaseUrl(chainId: number): string {
 
 /** Get the default chainId from env (used when no chainId param is provided) */
 export function defaultChainId(): number {
-  return parseInt(process.env.NEXT_PUBLIC_CHAIN_ID || "84532", 10);
+  return parseInt(process.env.NEXT_PUBLIC_CHAIN_ID || "8453", 10);
 }
 
 export { CHAIN_MAP };

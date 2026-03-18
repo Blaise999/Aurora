@@ -9,7 +9,7 @@ import { notifyNewMint } from "@/lib/ntfy";
 export const runtime = "nodejs";
 
 function getChain() {
-  const id = parseInt(process.env.NEXT_PUBLIC_CHAIN_ID || "84532", 10);
+  const id = parseInt(process.env.NEXT_PUBLIC_CHAIN_ID || "8453", 10);
   return id === 8453 ? base : baseSepolia;
 }
 

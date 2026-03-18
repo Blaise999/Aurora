@@ -6,7 +6,6 @@ import { wagmiConfig } from '@/lib/web3/wagmi-config';
 
 const queryClient = new QueryClient();
 
-
 export default function Web3Provider({ children }) {
   return (
     <WagmiProvider config={wagmiConfig}>

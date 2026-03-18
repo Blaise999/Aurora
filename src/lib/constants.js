@@ -1,6 +1,6 @@
-// Chain config
-export const CHAIN_ID = parseInt(process.env.NEXT_PUBLIC_CHAIN_ID || "84532");
-export const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || "https://sepolia.base.org";
+// Chain config — defaults to Base Mainnet (8453)
+export const CHAIN_ID = parseInt(process.env.NEXT_PUBLIC_CHAIN_ID || "8453");
+export const RPC_URL = process.env.NEXT_PUBLIC_BASE_RPC || "https://mainnet.base.org";
 
 // Contracts
 export const AURORA_CONTRACT = process.env.NEXT_PUBLIC_AURORA_CONTRACT || "";
@@ -10,7 +10,7 @@ export const TREASURY_WALLET = process.env.NEXT_PUBLIC_TREASURY_WALLET || "";
 // Alchemy
 export const ALCHEMY_API_KEY = process.env.NEXT_PUBLIC_ALCHEMY_API_KEY || "";
 
-// Base Sepolia chain info
+// Base chain info
 export const CHAIN_CONFIG = {
   chainId: `0x${CHAIN_ID.toString(16)}`,
   chainName: CHAIN_ID === 8453 ? "Base" : "Base Sepolia",
