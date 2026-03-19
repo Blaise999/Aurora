@@ -129,7 +129,7 @@ export default function LiveDrops() {
           </div>
 
           <Link
-            href="/mint"
+            href="/explore"
             className="hidden sm:inline-flex items-center gap-1.5 text-[13px] text-muted transition-colors hover:text-accent group"
           >
             Explore all drops
@@ -297,7 +297,7 @@ export default function LiveDrops() {
                         </p>
                       </div>
 
-                      <Link href="/mint">
+                      <Link href="/explore">
                         <Button variant="secondary" size="sm">
                           View details
                         </Button>
@@ -312,7 +312,7 @@ export default function LiveDrops() {
 
         <div className="mt-6 sm:hidden">
           <Link
-            href="/mint"
+            href="/explore"
             className="inline-flex items-center gap-1.5 text-[13px] text-muted transition-colors hover:text-accent"
           >
             Explore all drops <ArrowRight size={14} />

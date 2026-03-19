@@ -135,7 +135,7 @@ export default function HeroTriptych() {
                   Explore NFTs <ArrowRight size={18} />
                 </Button>
               </Link>
-              <Link href="/mint">
+              <Link href="/create">
                 <Button variant="secondary" size="lg">
                   View Mint
                 </Button>

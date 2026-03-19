@@ -4,7 +4,7 @@ import Image from 'next/image';
 const footerLinks = {
   Platform: [
     { label: 'Explore', href: '/explore' },
-    { label: 'Drops', href: '/mint' },
+    { label: 'Drops', href: '/explore' },
     { label: 'Rankings', href: '/explore?sort=trending' },
   ],
   Company: [

@@ -334,9 +334,9 @@ export default function HeroCarousel() {
                         Explore <ArrowRight size={16} />
                       </Button>
                     </Link>
-                    <Link href="/mint">
+                    <Link href="/create">
                       <Button variant="secondary" size="lg">
-                        Connect Wallet
+                        Create an NFT
                       </Button>
                     </Link>
                   </div>
