@@ -1,5 +1,4 @@
 import dynamic from "next/dynamic";
-import PageShell from "@/components/layout/PageShell";
 import HeroCarousel from "@/components/hero/HeroCarousel";
 
 // ── Above-the-fold: loaded eagerly ──
@@ -28,7 +27,7 @@ const FAQ = dynamic(() => import("@/components/home/FAQ"), { ssr: false });
 
 export default function Home() {
   return (
-    <PageShell heroFused>
+    <>
       {/* ── HERO ── */}
       <HeroCarousel />
       <LiveStats />
@@ -63,6 +62,6 @@ export default function Home() {
       {/* ── INFO ── */}
       <Roadmap />
       <FAQ />
-    </PageShell>
+    </>
   );
 }
