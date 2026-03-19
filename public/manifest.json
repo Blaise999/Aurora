@@ -1,11 +1,6 @@
 {
-  "name": "Aurora NFT",
+  "name": "AuroraNFT",
   "short_name": "AuroraNFT",
-  "description": "Discover, Mint & Collect Digital Art on Base",
-  "start_url": "/",
-  "display": "standalone",
-  "background_color": "#070A19",
-  "theme_color": "#070A19",
   "icons": [
     {
       "src": "/icon-192.png",
@@ -17,5 +12,8 @@
       "sizes": "512x512",
       "type": "image/png"
     }
-  ]
+  ],
+  "theme_color": "#050816",
+  "background_color": "#050816",
+  "display": "standalone"
 }
