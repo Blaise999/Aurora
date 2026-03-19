@@ -51,22 +51,19 @@ export function useTrendingNfts(limit = 12) { return useCachedNfts(limit); }
 
 /* ─── Infinite-scroll capable NFT fetcher ─── */
 export function useCachedNftsInfinite(pageSize = 50, collection = null) {
-  const cacheKey = `infinite:${pageSize}:${collection || "all"}`;
-  const cached = getCached(cacheKey);
-
-  const [nfts, setNfts] = useState(cached?.nfts || []);
-  const [loading, setLoading] = useState(!cached);
+  const [nfts, setNfts] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState(null);
-  const [offset, setOffset] = useState(cached?.offset || 0);
-  const [hasMore, setHasMore] = useState(cached?.hasMore ?? true);
-  const [total, setTotal] = useState(cached?.total || 0);
+  const [offset, setOffset] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
+  const [total, setTotal] = useState(0);
 
   const fetchPage = useCallback(async (pageOffset, append = false) => {
-    if (append) setLoadingMore(true); else if (!cached) setLoading(true);
+    if (append) setLoadingMore(true); else setLoading(true);
     try {
       let url = `/api/nft/cached?limit=${pageSize}&offset=${pageOffset}&shuffle=${pageOffset === 0 ? 'true' : 'false'}`;
-      if (pageOffset === 0) url += `&_t=${Date.now()}`; // bust CDN/browser cache on first page
+      if (pageOffset === 0) url += `&_t=${Date.now()}`;
       if (collection) url += `&collection=${encodeURIComponent(collection)}`;
       const res = await fetch(url);
       if (!res.ok) throw new Error("fail");
@@ -75,22 +72,17 @@ export function useCachedNftsInfinite(pageSize = 50, collection = null) {
       setTotal(d.total || 0);
       setHasMore(d.hasMore ?? newNfts.length === pageSize);
       if (append) {
-        setNfts(prev => {
-          const merged = [...prev, ...newNfts];
-          setCache(cacheKey, { nfts: merged, offset: pageOffset, hasMore: d.hasMore, total: d.total });
-          return merged;
-        });
+        setNfts(prev => [...prev, ...newNfts]);
       } else {
         setNfts(newNfts);
-        setCache(cacheKey, { nfts: newNfts, offset: pageOffset, hasMore: d.hasMore, total: d.total });
       }
     } catch (e) {
       setError(e.message);
-      if (!append && !cached) setNfts(shuffle(LOCAL_NFTS).slice(0, pageSize));
+      if (!append) setNfts(shuffle(LOCAL_NFTS).slice(0, pageSize));
     } finally {
       if (append) setLoadingMore(false); else setLoading(false);
     }
-  }, [pageSize, collection, cacheKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [pageSize, collection]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     setOffset(0);
@@ -110,16 +102,15 @@ export function useCachedNftsInfinite(pageSize = 50, collection = null) {
 /* ─── Simple cached NFTs with SWR pattern ─── */
 export function useCachedNfts(limit = 50, collection = null) {
   const cacheKey = `cached:${limit}:${collection || "all"}`;
-  const cached = getCached(cacheKey);
 
-  const [nfts, setNfts] = useState(cached || []);
-  const [loading, setLoading] = useState(!cached);
+  const [nfts, setNfts] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   useEffect(() => {
     let c = false;
+    setLoading(true);
     (async () => {
-      if (!cached) setLoading(true);
       try {
         let url = `/api/nft/cached?limit=${limit}&shuffle=true&_t=${Date.now()}`;
         if (collection) url += `&collection=${encodeURIComponent(collection)}`;
@@ -128,16 +119,15 @@ export function useCachedNfts(limit = 50, collection = null) {
         const d = await res.json();
         if (!c && d.nfts?.length) {
           setNfts(d.nfts);
-          setCache(cacheKey, d.nfts);
-        } else if (!c && !cached) {
+        } else if (!c) {
           setNfts(shuffle(LOCAL_NFTS).slice(0, limit));
         }
       } catch (e) {
-        if (!c) { setError(e.message); if (!cached) setNfts(shuffle(LOCAL_NFTS).slice(0, limit)); }
+        if (!c) { setError(e.message); setNfts(shuffle(LOCAL_NFTS).slice(0, limit)); }
       } finally { if (!c) setLoading(false); }
     })();
     return () => { c = true; };
-  }, [limit, collection, cacheKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [limit, collection]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return { nfts, loading, error };
 }

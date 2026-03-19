@@ -19,7 +19,9 @@ export default function TrendingNftBar() {
 
   const items = useMemo(() => {
     if (!rawNfts?.length || rawNfts.length < 4) return fallback;
-    const list = rawNfts.slice(0, 4).map(n => ({
+    // Shuffle so every page load shows different trending NFTs
+    const shuffled = [...rawNfts].sort(() => Math.random() - 0.5);
+    const list = shuffled.slice(0, 4).map(n => ({
       id: n.id, contractAddress: n.contractAddress, tokenId: n.tokenId,
       name: n.name, collectionName: n.collection, chain: n.chain,
       normalized_metadata: { image: n.image }, price: '—', lastSale: '—'

@@ -11,8 +11,10 @@ export default function TrendingCollections() {
 
   const cols = useMemo(() => {
     if (!rawNfts?.length) return mockCollections;
+    // Shuffle source NFTs so collections appear in different order each load
+    const shuffled = [...rawNfts].sort(() => Math.random() - 0.5);
     const g = {};
-    for (const n of rawNfts) {
+    for (const n of shuffled) {
       const k = n.collection || 'Unknown';
       if (!g[k]) g[k] = { name: k, image: n.image, items: 0, ca: n.contractAddress };
       g[k].items++;

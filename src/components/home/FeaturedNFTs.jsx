@@ -16,7 +16,9 @@ export default function FeaturedNFTs() {
 
   const nfts = useMemo(() => {
     if (!rawNfts?.length) return fallback;
-    const list = rawNfts.map(n => ({
+    // Shuffle so every page load shows different order
+    const shuffled = [...rawNfts].sort(() => Math.random() - 0.5);
+    const list = shuffled.map(n => ({
       id: n.id, contractAddress: n.contractAddress, tokenId: n.tokenId,
       name: n.name, description: n.description, collectionName: n.collection,
       chain: n.chain, normalized_metadata: { image: n.image }, image: n.image,

@@ -43,13 +43,7 @@ const nextConfig = {
           { key: "Cache-Control", value: "public, max-age=31536000, immutable" },
         ],
       },
-      // Cache API responses at the edge
-      {
-        source: "/api/nft/cached",
-        headers: [
-          { key: "Cache-Control", value: "public, s-maxage=60, stale-while-revalidate=300" },
-        ],
-      },
+      // Let /api/nft/cached control its own caching (shuffle = no-store)
       {
         source: "/api/settings",
         headers: [
