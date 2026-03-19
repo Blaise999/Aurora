@@ -216,7 +216,7 @@ export default function HeroCarousel() {
   return (
     <section
       ref={heroRef}
-      className="relative w-full h-screen min-h-[580px] sm:min-h-[700px] max-h-[1000px] overflow-hidden -mt-12 sm:-mt-14 lg:-mt-[68px]"
+      className="relative w-full min-h-[calc(100vh-48px)] sm:min-h-[calc(100vh-56px)] lg:min-h-[calc(100vh-68px)] max-h-[1000px] overflow-hidden"
     >
       {slides.map((slide, i) => {
         const shouldMountImage = keepBg.has(i);
@@ -274,8 +274,8 @@ export default function HeroCarousel() {
 
       <CursorSpotlight />
 
-      <div className="relative z-[3] h-full max-w-[1400px] mx-auto px-6 md:px-8 flex items-center">
-        <div className="grid lg:grid-cols-2 gap-8 lg:gap-16 items-center w-full pt-10 sm:pt-14 lg:pt-16">
+      <div className="relative z-[3] h-full max-w-[1400px] mx-auto px-6 md:px-8 flex items-start lg:items-center">
+        <div className="grid lg:grid-cols-2 gap-8 lg:gap-16 items-center w-full pt-20 sm:pt-24 lg:pt-24 pb-20 sm:pb-24">
           <div className="relative min-h-[300px] sm:min-h-[340px] overflow-hidden">
             {slides.map((slide, i) => {
               const badge = SLIDE_BADGES[i % SLIDE_BADGES.length];

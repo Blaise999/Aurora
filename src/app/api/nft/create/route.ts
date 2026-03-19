@@ -31,6 +31,11 @@ type LogWithTopics = {
   topics: readonly `0x${string}`[];
 };
 
+type AttributeInput = {
+  trait_type?: unknown;
+  value?: unknown;
+};
+
 function hasTopics(log: unknown): log is LogWithTopics {
   if (!log || typeof log !== "object") return false;
 
@@ -59,6 +64,11 @@ function getClientForChain(chainId: number) {
     chain: baseSepolia,
     transport: http(process.env.BASE_SEPOLIA_RPC_URL),
   });
+}
+
+function parseNumber(value: unknown, fallback = 0): number {
+  const parsed = Number.parseFloat(String(value ?? ""));
+  return Number.isFinite(parsed) ? parsed : fallback;
 }
 
 /**
@@ -115,9 +125,23 @@ export async function POST(req: Request) {
       externalUrl,
       attributes,
       imageBase64,
-      fee,
+      feeUsd,
+      feeEth,
+      ethPriceAtMint,
       creatorContract: clientContract,
-    } = body;
+    } = body as {
+      txHash?: string;
+      name?: string;
+      description?: string;
+      collection?: string;
+      externalUrl?: string;
+      attributes?: AttributeInput[];
+      imageBase64?: string;
+      feeUsd?: string | number;
+      feeEth?: string | number;
+      ethPriceAtMint?: string | number;
+      creatorContract?: string;
+    };
 
     if (!txHash || !name) {
       return NextResponse.json(
@@ -172,6 +196,7 @@ export async function POST(req: Request) {
 
     let onChainTokenId: string | null = null;
     let onChainCreator: string | null = null;
+    let onChainFeePaidEth: number | null = null;
 
     // Parse Created event from logs
     for (const rawLog of receipt.logs) {
@@ -195,6 +220,7 @@ export async function POST(req: Request) {
         if (decoded.eventName === "Created" && decoded.args) {
           const tokenId = decoded.args.tokenId;
           const creator = decoded.args.creator;
+          const feePaid = decoded.args.feePaid;
 
           if (tokenId != null) {
             onChainTokenId = String(tokenId);
@@ -202,6 +228,14 @@ export async function POST(req: Request) {
 
           if (creator != null) {
             onChainCreator = String(creator).toLowerCase();
+          }
+
+          if (feePaid != null) {
+            try {
+              onChainFeePaidEth = Number(feePaid) / 1e18;
+            } catch {
+              onChainFeePaidEth = null;
+            }
           }
 
           if (onChainTokenId) break;
@@ -250,14 +284,25 @@ export async function POST(req: Request) {
       );
     }
 
-    const mintFee = Number.parseFloat(String(fee || "0.005"));
+    const parsedFeeEth = parseNumber(feeEth, 0);
+    const parsedFeeUsd = parseNumber(feeUsd, 0);
+    const parsedEthPriceAtMint = parseNumber(ethPriceAtMint, 0);
+
+    const mintFeeEth =
+      onChainFeePaidEth !== null ? onChainFeePaidEth : parsedFeeEth;
+
+    const mintFeeUsd = parsedFeeUsd;
+    const ethPriceSnapshot = parsedEthPriceAtMint;
+
     const imageUrl = imageBase64 || "";
     const validAttrs = Array.isArray(attributes)
-      ? attributes.filter(
-          (a: any) =>
-            String(a?.trait_type || "").trim() &&
-            String(a?.value || "").trim()
-        )
+      ? attributes.filter((a) => {
+          const attr = a as AttributeInput;
+          return (
+            String(attr?.trait_type || "").trim() &&
+            String(attr?.value || "").trim()
+          );
+        })
       : [];
 
     // 5. Save to user_listed
@@ -281,7 +326,9 @@ export async function POST(req: Request) {
           ? "Base Sepolia"
           : `Chain ${chainId}`,
       tx_hash: txHash,
-      mint_fee_eth: mintFee,
+      mint_fee_eth: mintFeeEth,
+      mint_fee_usd: mintFeeUsd,
+      eth_price_at_mint: ethPriceSnapshot,
       status: "confirmed",
       created_at: new Date().toISOString(),
     };
@@ -308,8 +355,10 @@ export async function POST(req: Request) {
         token_id: onChainTokenId,
         tx_hash: txHash,
         mint_price_eth: 0,
-        mint_fee_eth: mintFee,
-        total_paid_eth: mintFee,
+        mint_fee_eth: mintFeeEth,
+        mint_fee_usd: mintFeeUsd,
+        eth_price_at_mint: ethPriceSnapshot,
+        total_paid_eth: mintFeeEth,
         snapshot_name: name,
         snapshot_image: (imageUrl || "").slice(0, 500),
         snapshot_desc: (description || "").slice(0, 500),
@@ -332,7 +381,7 @@ export async function POST(req: Request) {
         chain_id: chainId,
         contract_address: contractAddr,
         token_id: onChainTokenId,
-        amount_eth: mintFee,
+        amount_eth: mintFeeEth,
         admin_wallet: "",
         status: "confirmed",
         metadata: {
@@ -340,6 +389,9 @@ export async function POST(req: Request) {
           nft_name: name,
           collection: collection || "User Created",
           on_chain_token_id: onChainTokenId,
+          mint_fee_usd: mintFeeUsd,
+          mint_fee_eth: mintFeeEth,
+          eth_price_at_mint: ethPriceSnapshot,
         },
       });
 
@@ -354,7 +406,7 @@ export async function POST(req: Request) {
       nftName: name,
       buyer: notifBuyer,
       price: "0",
-      fee: String(mintFee),
+      fee: String(mintFeeEth),
       txHash,
     }).catch(() => {});
 
@@ -363,7 +415,7 @@ export async function POST(req: Request) {
       tokenId: onChainTokenId,
       buyer: notifBuyer,
       price: "0",
-      fee: String(mintFee),
+      fee: String(mintFeeEth),
       contractAddress: contractAddr,
       chainId,
     }).catch(() => {});
@@ -372,13 +424,16 @@ export async function POST(req: Request) {
       await supabase.from("admin_notifications").insert({
         type: "create_mint",
         title: "New NFT Created!",
-        body: `${name} (Token #${onChainTokenId}) created by ${notifBuyer} — ${mintFee} ETH fee`,
+        body: `${name} (Token #${onChainTokenId}) created by ${notifBuyer} — $${mintFeeUsd} / ${mintFeeEth} ETH fee`,
         metadata: {
           txHash,
           tokenId: onChainTokenId,
           creator: notifBuyer,
           nftName: name,
           contractAddress: contractAddr,
+          mint_fee_usd: mintFeeUsd,
+          mint_fee_eth: mintFeeEth,
+          eth_price_at_mint: ethPriceSnapshot,
         },
       });
     } catch {
@@ -394,6 +449,9 @@ export async function POST(req: Request) {
       chainId,
       name,
       collection: collection || "User Created",
+      mintFeeUsd,
+      mintFeeEth,
+      ethPriceAtMint: ethPriceSnapshot,
     });
   } catch (error: unknown) {
     const message =

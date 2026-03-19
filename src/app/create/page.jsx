@@ -135,7 +135,7 @@ function CreatePageContent() {
   });
 
   const onChainFee = onChainFeeRaw ? formatEther(onChainFeeRaw) : null;
-  const createMintFee = onChainFee || settings?.create_mint_fee || "0.005";
+  const createMintFee = onChainFee || settings?.create_mint_fee_usd || "0.005";
   const isMintActive = mintActiveOnChain !== false;
 
   // Form state
