@@ -57,14 +57,14 @@ export async function POST(req) {
 
     if (error) throw error;
 
-    const { error: updateError } = await sb
+    void sb
       .from('support_conversations')
       .update({ updated_at: new Date().toISOString() })
-      .eq('id', conversation_id);
-
-    if (updateError) {
-      console.error('[SUPPORT] failed updating conversation timestamp:', updateError);
-    }
+      .eq('id', conversation_id)
+      .then(() => {})
+      .catch((e) =>
+        console.error('[SUPPORT] failed updating conversation timestamp:', e)
+      );
 
     if (sender_type !== 'admin') {
       void notifyNewSupportMessage({

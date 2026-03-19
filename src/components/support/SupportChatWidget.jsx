@@ -17,6 +17,18 @@ function generateVisitorId() {
   return id;
 }
 
+function makeTempMessage({ conversationId, senderType, senderName, message }) {
+  return {
+    id: 'temp_' + Math.random().toString(36).slice(2) + Date.now(),
+    conversation_id: conversationId,
+    sender_type: senderType,
+    sender_name: senderName,
+    message,
+    created_at: new Date().toISOString(),
+    _optimistic: true,
+  };
+}
+
 export default function SupportChatWidget() {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState([]);
@@ -30,6 +42,7 @@ export default function SupportChatWidget() {
 
   const scrollRef = useRef(null);
   const inputRef = useRef(null);
+  const realtimeReadyRef = useRef(false);
 
   const scrollToBottom = useCallback(() => {
     if (scrollRef.current) {
@@ -39,71 +52,98 @@ export default function SupportChatWidget() {
 
   const appendMessageIfMissing = useCallback((newMessage) => {
     if (!newMessage?.id) return;
+
     setMessages((prev) => {
       if (prev.some((m) => m.id === newMessage.id)) return prev;
+
+      const optimisticIndex = prev.findIndex(
+        (m) =>
+          m._optimistic &&
+          m.sender_type === newMessage.sender_type &&
+          m.sender_name === newMessage.sender_name &&
+          m.message === newMessage.message
+      );
+
+      if (optimisticIndex !== -1) {
+        const next = [...prev];
+        next[optimisticIndex] = newMessage;
+        return next;
+      }
+
       return [...prev, newMessage];
     });
   }, []);
 
-  const initConversation = useCallback(async (name) => {
-    setStartingChat(true);
+  const removeTempMessage = useCallback((tempId) => {
+    setMessages((prev) => prev.filter((m) => m.id !== tempId));
+  }, []);
 
-    try {
-      const visitorId = generateVisitorId();
+  const initConversation = useCallback(
+    async (name) => {
+      setStartingChat(true);
 
-      const res = await fetch('/api/support/conversations', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          visitor_id: visitorId,
-          visitor_name: name?.trim() || 'Anonymous',
-        }),
-      });
+      try {
+        const visitorId = generateVisitorId();
 
-      const data = await res.json();
+        const res = await fetch('/api/support/conversations', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            visitor_id: visitorId,
+            visitor_name: name?.trim() || 'Anonymous',
+          }),
+        });
 
-      if (!res.ok) {
-        throw new Error(data?.error || 'Failed to start conversation');
-      }
+        const data = await res.json();
 
-      if (data.conversation) {
-        setConversationId(data.conversation.id);
-
-        const msgRes = await fetch(
-          '/api/support/messages?conversation_id=' +
-            encodeURIComponent(data.conversation.id),
-          { cache: 'no-store' }
-        );
-
-        const msgData = await msgRes.json();
-
-        if (!msgRes.ok) {
-          throw new Error(msgData?.error || 'Failed to load messages');
+        if (!res.ok) {
+          throw new Error(data?.error || 'Failed to start conversation');
         }
 
-        setMessages(msgData.messages || []);
-        setNameSet(true);
+        if (data.conversation) {
+          setConversationId(data.conversation.id);
 
-        setTimeout(() => {
-          scrollToBottom();
-          inputRef.current?.focus();
-        }, 80);
+          const msgRes = await fetch(
+            '/api/support/messages?conversation_id=' +
+              encodeURIComponent(data.conversation.id),
+            { cache: 'no-store' }
+          );
+
+          const msgData = await msgRes.json();
+
+          if (!msgRes.ok) {
+            throw new Error(msgData?.error || 'Failed to load messages');
+          }
+
+          setMessages(msgData.messages || []);
+          setNameSet(true);
+
+          requestAnimationFrame(() => {
+            scrollToBottom();
+            inputRef.current?.focus();
+          });
+        }
+      } catch (e) {
+        console.error('[SUPPORT WIDGET] Failed to init conversation:', e);
+      } finally {
+        setStartingChat(false);
       }
-    } catch (e) {
-      console.error('[SUPPORT WIDGET] Failed to init conversation:', e);
-    } finally {
-      setStartingChat(false);
-    }
-  }, [scrollToBottom]);
+    },
+    [scrollToBottom]
+  );
 
   useEffect(() => {
     if (!conversationId) return;
+
+    realtimeReadyRef.current = false;
 
     const sb = getSupabaseBrowser();
     if (!sb) return;
 
     const channel = sb
-      .channel('support-' + conversationId)
+      .channel('support-' + conversationId, {
+        config: { broadcast: { self: true } },
+      })
       .on(
         'postgres_changes',
         {
@@ -119,28 +159,43 @@ export default function SupportChatWidget() {
             setUnread((prev) => prev + 1);
           }
 
-          setTimeout(scrollToBottom, 50);
+          requestAnimationFrame(scrollToBottom);
         }
       )
       .subscribe((status) => {
         console.log('[SUPPORT WIDGET] realtime status:', status);
+        if (status === 'SUBSCRIBED') {
+          realtimeReadyRef.current = true;
+        }
       });
 
     return () => {
+      realtimeReadyRef.current = false;
       sb.removeChannel(channel);
     };
   }, [conversationId, isOpen, appendMessageIfMissing, scrollToBottom]);
 
   useEffect(() => {
-    scrollToBottom();
+    requestAnimationFrame(scrollToBottom);
   }, [messages, scrollToBottom]);
 
   const handleSend = async () => {
-    if (!input.trim() || !conversationId || sending) return;
+    if (!input.trim() || !conversationId) return;
 
     const msg = input.trim();
+    const senderName = visitorName?.trim() || 'Anonymous';
+
+    const tempMessage = makeTempMessage({
+      conversationId,
+      senderType: 'visitor',
+      senderName,
+      message: msg,
+    });
+
     setInput('');
     setSending(true);
+    appendMessageIfMissing(tempMessage);
+    requestAnimationFrame(scrollToBottom);
 
     try {
       const res = await fetch('/api/support/messages', {
@@ -149,7 +204,7 @@ export default function SupportChatWidget() {
         body: JSON.stringify({
           conversation_id: conversationId,
           sender_type: 'visitor',
-          sender_name: visitorName?.trim() || 'Anonymous',
+          sender_name: senderName,
           message: msg,
         }),
       });
@@ -162,11 +217,14 @@ export default function SupportChatWidget() {
 
       if (data.message) {
         appendMessageIfMissing(data.message);
+      } else {
+        removeTempMessage(tempMessage.id);
       }
 
-      setTimeout(scrollToBottom, 50);
+      requestAnimationFrame(scrollToBottom);
     } catch (e) {
       console.error('[SUPPORT WIDGET] Failed to send message:', e);
+      removeTempMessage(tempMessage.id);
       setInput(msg);
     } finally {
       setSending(false);
@@ -315,10 +373,12 @@ export default function SupportChatWidget() {
                       </p>
 
                       <p className="text-[10px] text-muted-dim mt-1">
-                        {new Date(msg.created_at).toLocaleTimeString([], {
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })}
+                        {msg._optimistic
+                          ? 'Sending...'
+                          : new Date(msg.created_at).toLocaleTimeString([], {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
                       </p>
                     </div>
                   </div>
@@ -334,13 +394,13 @@ export default function SupportChatWidget() {
                     onChange={(e) => setInput(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSend()}
                     placeholder={conversationId ? 'Type a message...' : 'Starting chat...'}
-                    disabled={!conversationId || sending}
+                    disabled={!conversationId}
                     className="flex-1 bg-white/[0.04] border border-white/[0.08] rounded-xl px-4 py-2.5 text-sm text-text placeholder:text-muted-dim focus:outline-none focus:border-accent/40 disabled:opacity-60"
                   />
 
                   <button
                     onClick={handleSend}
-                    disabled={!input.trim() || !conversationId || sending}
+                    disabled={!input.trim() || !conversationId}
                     className="w-10 h-10 rounded-xl bg-gradient-to-br from-accent to-accent-violet flex items-center justify-center text-bg disabled:opacity-30 hover:opacity-90 transition-opacity"
                   >
                     {sending ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}

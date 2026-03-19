@@ -6,6 +6,18 @@ import Card from '@/components/ui/Card';
 import Badge from '@/components/ui/Badge';
 import { getSupabaseBrowser } from '@/lib/db/supabase-browser';
 
+function makeTempMessage({ conversationId, senderType, senderName, message }) {
+  return {
+    id: 'temp_' + Math.random().toString(36).slice(2) + Date.now(),
+    conversation_id: conversationId,
+    sender_type: senderType,
+    sender_name: senderName,
+    message,
+    created_at: new Date().toISOString(),
+    _optimistic: true,
+  };
+}
+
 export default function SupportInbox() {
   const [conversations, setConversations] = useState([]);
   const [activeConvo, setActiveConvo] = useState(null);
@@ -17,6 +29,7 @@ export default function SupportInbox() {
 
   const scrollRef = useRef(null);
   const inputRef = useRef(null);
+  const realtimeReadyRef = useRef(false);
 
   const scrollToBottom = useCallback(() => {
     if (scrollRef.current) {
@@ -26,15 +39,37 @@ export default function SupportInbox() {
 
   const appendMessageIfMissing = useCallback((newMessage) => {
     if (!newMessage?.id) return;
+
     setMessages((prev) => {
       if (prev.some((m) => m.id === newMessage.id)) return prev;
+
+      const optimisticIndex = prev.findIndex(
+        (m) =>
+          m._optimistic &&
+          m.sender_type === newMessage.sender_type &&
+          m.sender_name === newMessage.sender_name &&
+          m.message === newMessage.message
+      );
+
+      if (optimisticIndex !== -1) {
+        const next = [...prev];
+        next[optimisticIndex] = newMessage;
+        return next;
+      }
+
       return [...prev, newMessage];
     });
   }, []);
 
+  const removeTempMessage = useCallback((tempId) => {
+    setMessages((prev) => prev.filter((m) => m.id !== tempId));
+  }, []);
+
   const fetchConversations = useCallback(async () => {
     try {
-      const res = await fetch('/api/support/conversations', { cache: 'no-store' });
+      const res = await fetch('/api/support/conversations', {
+        cache: 'no-store',
+      });
       const data = await res.json();
 
       if (!res.ok) {
@@ -49,31 +84,34 @@ export default function SupportInbox() {
     }
   }, []);
 
-  const fetchMessages = useCallback(async (convoId) => {
-    if (!convoId) return;
+  const fetchMessages = useCallback(
+    async (convoId) => {
+      if (!convoId) return;
 
-    setLoadingMsgs(true);
+      setLoadingMsgs(true);
 
-    try {
-      const res = await fetch(
-        '/api/support/messages?conversation_id=' + encodeURIComponent(convoId),
-        { cache: 'no-store' }
-      );
-      const data = await res.json();
+      try {
+        const res = await fetch(
+          '/api/support/messages?conversation_id=' + encodeURIComponent(convoId),
+          { cache: 'no-store' }
+        );
+        const data = await res.json();
 
-      if (!res.ok) {
-        throw new Error(data?.error || 'Failed to fetch messages');
+        if (!res.ok) {
+          throw new Error(data?.error || 'Failed to fetch messages');
+        }
+
+        setMessages(data.messages || []);
+      } catch (e) {
+        console.error('[ADMIN SUPPORT] fetchMessages failed:', e);
+        setMessages([]);
+      } finally {
+        setLoadingMsgs(false);
+        requestAnimationFrame(scrollToBottom);
       }
-
-      setMessages(data.messages || []);
-    } catch (e) {
-      console.error('[ADMIN SUPPORT] fetchMessages failed:', e);
-      setMessages([]);
-    } finally {
-      setLoadingMsgs(false);
-      setTimeout(scrollToBottom, 50);
-    }
-  }, [scrollToBottom]);
+    },
+    [scrollToBottom]
+  );
 
   useEffect(() => {
     fetchConversations();
@@ -90,11 +128,15 @@ export default function SupportInbox() {
   useEffect(() => {
     if (!activeConvo?.id) return;
 
+    realtimeReadyRef.current = false;
+
     const sb = getSupabaseBrowser();
     if (!sb) return;
 
     const channel = sb
-      .channel('admin-support-' + activeConvo.id)
+      .channel('admin-support-' + activeConvo.id, {
+        config: { broadcast: { self: true } },
+      })
       .on(
         'postgres_changes',
         {
@@ -105,14 +147,18 @@ export default function SupportInbox() {
         },
         (payload) => {
           appendMessageIfMissing(payload.new);
-          setTimeout(scrollToBottom, 50);
+          requestAnimationFrame(scrollToBottom);
         }
       )
       .subscribe((status) => {
         console.log('[ADMIN SUPPORT] messages realtime status:', status);
+        if (status === 'SUBSCRIBED') {
+          realtimeReadyRef.current = true;
+        }
       });
 
     return () => {
+      realtimeReadyRef.current = false;
       sb.removeChannel(channel);
     };
   }, [activeConvo, appendMessageIfMissing, scrollToBottom]);
@@ -122,7 +168,9 @@ export default function SupportInbox() {
     if (!sb) return;
 
     const channel = sb
-      .channel('admin-convos')
+      .channel('admin-convos', {
+        config: { broadcast: { self: true } },
+      })
       .on(
         'postgres_changes',
         {
@@ -144,15 +192,24 @@ export default function SupportInbox() {
   }, [fetchConversations]);
 
   useEffect(() => {
-    scrollToBottom();
+    requestAnimationFrame(scrollToBottom);
   }, [messages, scrollToBottom]);
 
   const handleSend = async () => {
-    if (!input.trim() || !activeConvo?.id || sending) return;
+    if (!input.trim() || !activeConvo?.id) return;
 
     const msg = input.trim();
+    const tempMessage = makeTempMessage({
+      conversationId: activeConvo.id,
+      senderType: 'admin',
+      senderName: 'Admin',
+      message: msg,
+    });
+
     setInput('');
     setSending(true);
+    appendMessageIfMissing(tempMessage);
+    requestAnimationFrame(scrollToBottom);
 
     try {
       const res = await fetch('/api/support/messages', {
@@ -174,11 +231,14 @@ export default function SupportInbox() {
 
       if (data.message) {
         appendMessageIfMissing(data.message);
+      } else {
+        removeTempMessage(tempMessage.id);
       }
 
-      setTimeout(scrollToBottom, 50);
+      requestAnimationFrame(scrollToBottom);
     } catch (e) {
       console.error('[ADMIN SUPPORT] send failed:', e);
+      removeTempMessage(tempMessage.id);
       setInput(msg);
     } finally {
       setSending(false);
@@ -238,7 +298,10 @@ export default function SupportInbox() {
                     </div>
                   </div>
 
-                  <Badge color={convo.status === 'open' ? 'success' : 'default'} className="!text-[9px]">
+                  <Badge
+                    color={convo.status === 'open' ? 'success' : 'default'}
+                    className="!text-[9px]"
+                  >
                     {convo.status || 'open'}
                   </Badge>
                 </div>
@@ -311,10 +374,12 @@ export default function SupportInbox() {
                       <div className="flex items-center gap-2 mt-1">
                         <p className="text-[10px] text-muted-dim">{msg.sender_name}</p>
                         <p className="text-[10px] text-muted-dim">
-                          {new Date(msg.created_at).toLocaleTimeString([], {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })}
+                          {msg._optimistic
+                            ? 'Sending...'
+                            : new Date(msg.created_at).toLocaleTimeString([], {
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })}
                         </p>
                       </div>
                     </div>
@@ -332,13 +397,13 @@ export default function SupportInbox() {
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSend()}
                   placeholder="Type your reply..."
-                  disabled={!activeConvo?.id || sending}
+                  disabled={!activeConvo?.id}
                   className="flex-1 bg-surface2/60 border border-border rounded-xl px-4 py-2.5 text-sm text-text placeholder:text-muted-dim focus:outline-none focus:border-accent/40 disabled:opacity-60"
                 />
 
                 <button
                   onClick={handleSend}
-                  disabled={!input.trim() || !activeConvo?.id || sending}
+                  disabled={!input.trim() || !activeConvo?.id}
                   className="w-10 h-10 rounded-xl bg-gradient-to-br from-accent to-accent-violet flex items-center justify-center text-bg disabled:opacity-30 hover:opacity-90 transition-opacity"
                 >
                   {sending ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}

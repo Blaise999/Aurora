@@ -34,9 +34,9 @@ export async function POST(req) {
 
     const payload = {
       visitor_id,
-      visitor_name: visitor_name || 'Anonymous',
-      visitor_email: visitor_email || null,
-      wallet_address: wallet_address || null,
+      visitor_name: visitor_name?.trim() || 'Anonymous',
+      visitor_email: visitor_email?.trim() || null,
+      wallet_address: wallet_address?.trim() || null,
       updated_at: new Date().toISOString(),
     };
 
