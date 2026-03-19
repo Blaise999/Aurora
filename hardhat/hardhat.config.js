@@ -1,14 +1,23 @@
 require("@nomicfoundation/hardhat-toolbox");
 require("dotenv").config();
 
-const DEPLOYER_KEY = process.env.DEPLOYER_PRIVATE_KEY || "0x" + "00".repeat(32);
+const rawDeployerKey = process.env.DEPLOYER_PRIVATE_KEY || "";
+const DEPLOYER_KEY = rawDeployerKey
+  ? rawDeployerKey.startsWith("0x")
+    ? rawDeployerKey
+    : `0x${rawDeployerKey}`
+  : "0x" + "00".repeat(32);
 
 /** @type import('hardhat/config').HardhatUserConfig */
 module.exports = {
   solidity: {
-    version: "0.8.20",
+    version: "0.8.24",
     settings: {
-      optimizer: { enabled: true, runs: 200 },
+      evmVersion: "cancun",
+      optimizer: {
+        enabled: true,
+        runs: 200,
+      },
     },
   },
   networks: {
@@ -27,27 +36,6 @@ module.exports = {
     },
   },
   etherscan: {
-    apiKey: {
-      baseSepolia: process.env.BASESCAN_API_KEY || "",
-      base: process.env.BASESCAN_API_KEY || "",
-    },
-    customChains: [
-      {
-        network: "baseSepolia",
-        chainId: 84532,
-        urls: {
-          apiURL: "https://api-sepolia.basescan.org/api",
-          browserURL: "https://sepolia.basescan.org",
-        },
-      },
-      {
-        network: "base",
-        chainId: 8453,
-        urls: {
-          apiURL: "https://api.basescan.org/api",
-          browserURL: "https://basescan.org",
-        },
-      },
-    ],
+    apiKey: process.env.ETHERSCAN_API_KEY || "",
   },
 };

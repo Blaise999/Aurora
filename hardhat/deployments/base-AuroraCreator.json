@@ -1,0 +1,18 @@
+{
+  "contract": "AuroraCreator",
+  "address": "0x50dd23c855c08B3180cd9f33D172535d381Fda75",
+  "network": "base",
+  "chainId": 8453,
+  "deployer": "0x15c71E17f64DFBb6890f732a71E16eDD506C9f9B",
+  "treasury": "0x15c71E17f64DFBb6890f732a71E16eDD506C9f9B",
+  "mintFee": "0.005",
+  "nftName": "Aurora",
+  "nftSymbol": "ACREATE",
+  "deployedAt": "2026-03-19T00:00:00.000Z",
+  "constructorArgs": [
+    "0x15c71E17f64DFBb6890f732a71E16eDD506C9f9B",
+    "5000000000000000",
+    "Aurora",
+    "ACREATE"
+  ]
+}

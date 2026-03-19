@@ -1,4 +1,5 @@
-const { ethers, run } = require("hardhat");
+const hre = require("hardhat");
+const { run } = hre;
 const fs = require("fs");
 
 /**
@@ -6,7 +7,7 @@ const fs = require("fs");
  * Reads deployment info from ./deployments/<network>-AuroraCreator.json
  *
  * Usage:
- *   npx hardhat run scripts/verify-creator.js --network baseSepolia
+ *   npx hardhat run scripts/verify-creator.js --network base
  */
 async function main() {
   const network = hre.network.name;
@@ -14,7 +15,7 @@ async function main() {
 
   if (!fs.existsSync(deployPath)) {
     console.error(`No deployment found at ${deployPath}`);
-    console.error("Deploy first with: npm run deploy:sepolia");
+    console.error("Deploy first or create the deployment JSON manually.");
     process.exit(1);
   }
 
@@ -29,10 +30,10 @@ async function main() {
     });
     console.log("✅ Verification successful!");
   } catch (err) {
-    if (err.message.includes("Already Verified")) {
+    if ((err.message || "").includes("Already Verified")) {
       console.log("✅ Already verified.");
     } else {
-      console.error("Verification failed:", err.message);
+      console.error("Verification failed:", err.message || err);
     }
   }
 }
