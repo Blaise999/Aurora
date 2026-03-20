@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Search,
   Loader2,
@@ -10,6 +10,9 @@ import {
   User,
   Layers,
   Image as ImageIcon,
+  Shuffle,
+  Users,
+  Sparkles,
 } from "lucide-react";
 import Card from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
@@ -22,12 +25,17 @@ export default function AssignCollection() {
   const [selectedProfile, setSelectedProfile] = useState(null);
   const [selectedNft, setSelectedNft] = useState(null);
   const [assigning, setAssigning] = useState(false);
+  const [bulkAssigning, setBulkAssigning] = useState(false);
   const [success, setSuccess] = useState("");
   const [error, setError] = useState("");
   const [profileSearch, setProfileSearch] = useState("");
   const [nftSearch, setNftSearch] = useState("");
   const [assignments, setAssignments] = useState([]);
   const [assignLoading, setAssignLoading] = useState(false);
+  const [profileTypeFilter, setProfileTypeFilter] = useState("all");
+  const [bulkSeededOnly, setBulkSeededOnly] = useState(true);
+  const [bulkMin, setBulkMin] = useState(20);
+  const [bulkMax, setBulkMax] = useState(20);
 
   const fetchProfiles = useCallback(async () => {
     try {
@@ -39,7 +47,7 @@ export default function AssignCollection() {
 
   const fetchNfts = useCallback(async () => {
     try {
-      const res = await fetch("/api/nft/cached?limit=500&admin=true&shuffle=false");
+      const res = await fetch("/api/nft/cached?limit=800&admin=true&shuffle=false");
       const data = await res.json();
       setNfts(data.nfts || []);
     } catch {}
@@ -65,6 +73,16 @@ export default function AssignCollection() {
     else setAssignments([]);
   }, [selectedProfile, fetchAssignments]);
 
+  const seededCount = useMemo(
+    () => profiles.filter((p) => p.is_seeded).length,
+    [profiles]
+  );
+
+  const regularCount = useMemo(
+    () => profiles.filter((p) => !p.is_seeded).length,
+    [profiles]
+  );
+
   const handleAssign = async () => {
     if (!selectedProfile || !selectedNft) return;
 
@@ -80,8 +98,8 @@ export default function AssignCollection() {
           profileId: selectedProfile.id,
           cachedNftId: selectedNft.dbId || selectedNft.id || null,
           chainId: selectedNft.chainId || 8453,
-          contractAddress: selectedNft.contractAddress,
-          tokenId: selectedNft.tokenId,
+          contractAddress: selectedNft.contractAddress || selectedNft.contract_address,
+          tokenId: selectedNft.tokenId || selectedNft.token_id,
         }),
       });
 
@@ -100,6 +118,41 @@ export default function AssignCollection() {
     }
 
     setAssigning(false);
+  };
+
+  const handleBulkRandomize = async (minNfts, maxNfts) => {
+    setBulkAssigning(true);
+    setError("");
+    setSuccess("");
+
+    try {
+      const res = await fetch("/api/admin/assign-collection", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mode: "bulk_randomize",
+          seededOnly: bulkSeededOnly,
+          minNfts,
+          maxNfts,
+          nftPoolLimit: 800,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Bulk randomize failed");
+
+      setSuccess(
+        `Bulk randomized ${data.affectedRows || 0} assignments across ${
+          data.profilesTargeted || 0
+        } ${bulkSeededOnly ? "seeded" : "matching"} users (${data.minNfts}-${data.maxNfts} NFTs each).`
+      );
+
+      if (selectedProfile) fetchAssignments(selectedProfile.id);
+    } catch (e) {
+      setError(e.message);
+    }
+
+    setBulkAssigning(false);
   };
 
   const handleRemove = async (nft) => {
@@ -122,8 +175,12 @@ export default function AssignCollection() {
   };
 
   const filteredProfiles = profiles.filter((p) => {
+    if (profileTypeFilter === "seeded" && !p.is_seeded) return false;
+    if (profileTypeFilter === "regular" && p.is_seeded) return false;
+
     if (!profileSearch) return true;
     const s = profileSearch.toLowerCase();
+
     return (
       p.first_name?.toLowerCase().includes(s) ||
       p.username?.toLowerCase().includes(s) ||
@@ -134,10 +191,13 @@ export default function AssignCollection() {
   const filteredNfts = nfts.filter((n) => {
     if (!nftSearch) return true;
     const s = nftSearch.toLowerCase();
+
     return (
       n.name?.toLowerCase().includes(s) ||
       n.collection?.toLowerCase().includes(s) ||
-      n.contractAddress?.toLowerCase().includes(s)
+      n.collection_name?.toLowerCase().includes(s) ||
+      n.contractAddress?.toLowerCase().includes(s) ||
+      n.contract_address?.toLowerCase().includes(s)
     );
   });
 
@@ -152,19 +212,191 @@ export default function AssignCollection() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="font-display font-bold text-lg text-text flex items-center gap-2">
+        <h2 className="flex items-center gap-2 font-display text-lg font-bold text-text">
           <Layers size={18} className="text-accent" /> Assign NFTs to Users
         </h2>
-        <p className="text-xs text-muted mt-0.5">
-          Tap an NFT, pick a user, and assign it to their collection.
+        <p className="mt-0.5 text-xs text-muted">
+          Assign one-by-one or bulk-randomize NFTs for seeded users.
         </p>
       </div>
 
+      <Card className="p-5 space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 className="flex items-center gap-2 font-display text-sm font-semibold text-text">
+              <Shuffle size={14} className="text-accent" /> Bulk Randomize
+            </h3>
+            <p className="mt-1 text-xs text-muted">
+              Fast-fill collections for seeded users or all matching users.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <Badge color="accent">Seeded: {seededCount}</Badge>
+            <Badge color="violet">Regular: {regularCount}</Badge>
+            <Badge color="success">NFT Pool: {nfts.length}</Badge>
+          </div>
+        </div>
+
+        <div className="grid gap-4 lg:grid-cols-4">
+          <div className="rounded-xl border border-border-light bg-surface2/40 p-3">
+            <p className="text-[11px] uppercase tracking-wide text-muted-dim">Target Users</p>
+            <div className="mt-3 flex gap-2">
+              <button
+                onClick={() => setBulkSeededOnly(true)}
+                className={`rounded-lg px-3 py-2 text-xs font-medium transition ${
+                  bulkSeededOnly
+                    ? "border border-accent/30 bg-accent/10 text-accent"
+                    : "border border-border-light bg-transparent text-muted"
+                }`}
+              >
+                Seeded Only
+              </button>
+              <button
+                onClick={() => setBulkSeededOnly(false)}
+                className={`rounded-lg px-3 py-2 text-xs font-medium transition ${
+                  !bulkSeededOnly
+                    ? "border border-accent/30 bg-accent/10 text-accent"
+                    : "border border-border-light bg-transparent text-muted"
+                }`}
+              >
+                All Active
+              </button>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-border-light bg-surface2/40 p-3">
+            <p className="text-[11px] uppercase tracking-wide text-muted-dim">Minimum NFTs</p>
+            <input
+              type="number"
+              min="1"
+              value={bulkMin}
+              onChange={(e) => setBulkMin(Number(e.target.value) || 1)}
+              className="mt-3 w-full rounded-lg border border-border-light bg-surface px-3 py-2 text-sm text-text outline-none"
+            />
+          </div>
+
+          <div className="rounded-xl border border-border-light bg-surface2/40 p-3">
+            <p className="text-[11px] uppercase tracking-wide text-muted-dim">Maximum NFTs</p>
+            <input
+              type="number"
+              min={bulkMin}
+              value={bulkMax}
+              onChange={(e) => setBulkMax(Number(e.target.value) || bulkMin)}
+              className="mt-3 w-full rounded-lg border border-border-light bg-surface px-3 py-2 text-sm text-text outline-none"
+            />
+          </div>
+
+          <div className="rounded-xl border border-border-light bg-surface2/40 p-3">
+            <p className="text-[11px] uppercase tracking-wide text-muted-dim">Quick Presets</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                onClick={() => {
+                  setBulkMin(20);
+                  setBulkMax(20);
+                }}
+                className="rounded-lg border border-border-light px-3 py-2 text-xs text-text"
+              >
+                20 each
+              </button>
+              <button
+                onClick={() => {
+                  setBulkMin(20);
+                  setBulkMax(50);
+                }}
+                className="rounded-lg border border-border-light px-3 py-2 text-xs text-text"
+              >
+                20–50 each
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-3">
+          <Button
+            variant="primary"
+            size="md"
+            onClick={() => handleBulkRandomize(20, 20)}
+            disabled={bulkAssigning}
+          >
+            {bulkAssigning ? (
+              <Loader2 size={14} className="animate-spin" />
+            ) : (
+              <Users size={14} />
+            )}
+            20 NFTs × {bulkSeededOnly ? "Seeded" : "All"} Users
+          </Button>
+
+          <Button
+            variant="secondary"
+            size="md"
+            onClick={() => handleBulkRandomize(20, 50)}
+            disabled={bulkAssigning}
+          >
+            {bulkAssigning ? (
+              <Loader2 size={14} className="animate-spin" />
+            ) : (
+              <Shuffle size={14} />
+            )}
+            Random 20–50 × {bulkSeededOnly ? "Seeded" : "All"} Users
+          </Button>
+
+          <Button
+            variant="secondary"
+            size="md"
+            onClick={() => handleBulkRandomize(bulkMin, bulkMax)}
+            disabled={bulkAssigning}
+          >
+            {bulkAssigning ? (
+              <Loader2 size={14} className="animate-spin" />
+            ) : (
+              <Sparkles size={14} />
+            )}
+            Run Custom Bulk
+          </Button>
+        </div>
+      </Card>
+
       <div className="grid lg:grid-cols-2 gap-6">
         <Card className="p-5 space-y-4">
-          <h3 className="font-display font-semibold text-sm text-text flex items-center gap-2">
-            <User size={14} className="text-accent" /> 1. Select User
-          </h3>
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="flex items-center gap-2 font-display text-sm font-semibold text-text">
+              <User size={14} className="text-accent" /> 1. Select User
+            </h3>
+
+            <div className="flex gap-2">
+              <button
+                onClick={() => setProfileTypeFilter("all")}
+                className={`rounded-lg px-3 py-1.5 text-[11px] font-medium ${
+                  profileTypeFilter === "all"
+                    ? "border border-accent/30 bg-accent/10 text-accent"
+                    : "border border-border-light text-muted"
+                }`}
+              >
+                All
+              </button>
+              <button
+                onClick={() => setProfileTypeFilter("seeded")}
+                className={`rounded-lg px-3 py-1.5 text-[11px] font-medium ${
+                  profileTypeFilter === "seeded"
+                    ? "border border-accent/30 bg-accent/10 text-accent"
+                    : "border border-border-light text-muted"
+                }`}
+              >
+                Seeded
+              </button>
+              <button
+                onClick={() => setProfileTypeFilter("regular")}
+                className={`rounded-lg px-3 py-1.5 text-[11px] font-medium ${
+                  profileTypeFilter === "regular"
+                    ? "border border-accent/30 bg-accent/10 text-accent"
+                    : "border border-border-light text-muted"
+                }`}
+              >
+                Regular
+              </button>
+            </div>
+          </div>
 
           <div className="relative">
             <Search
@@ -176,11 +408,11 @@ export default function AssignCollection() {
               value={profileSearch}
               onChange={(e) => setProfileSearch(e.target.value)}
               placeholder="Search users..."
-              className="w-full pl-9 pr-3 py-2 rounded-lg bg-surface2 border border-border-light text-sm text-text placeholder:text-muted-dim/50 focus:outline-none focus:border-accent/40"
+              className="w-full rounded-lg border border-border-light bg-surface2 py-2 pl-9 pr-3 text-sm text-text placeholder:text-muted-dim/50 focus:border-accent/40 focus:outline-none"
             />
           </div>
 
-          <div className="max-h-60 overflow-y-auto space-y-1.5 scrollbar-thin">
+          <div className="max-h-60 space-y-1.5 overflow-y-auto scrollbar-thin">
             {filteredProfiles.map((p) => (
               <button
                 key={p.id}
@@ -188,35 +420,53 @@ export default function AssignCollection() {
                   setSelectedProfile(p);
                   setSuccess("");
                 }}
-                className={`w-full flex items-center gap-3 p-3 rounded-xl text-left transition-all ${
+                className={`w-full rounded-xl border p-3 text-left transition-all ${
                   selectedProfile?.id === p.id
-                    ? "bg-accent/10 border border-accent/30"
-                    : "hover:bg-white/[0.03] border border-transparent"
+                    ? "border-accent/30 bg-accent/10"
+                    : "border-transparent hover:bg-white/[0.03]"
                 }`}
               >
-                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-accent/20 to-accent-violet/20 flex items-center justify-center shrink-0">
-                  <span className="font-bold text-xs text-accent">
-                    {p.first_name?.[0]?.toUpperCase() || "?"}
-                  </span>
-                </div>
+                <div className="flex items-center gap-3">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-accent/20 to-accent-violet/20">
+                    <span className="text-xs font-bold text-accent">
+                      {p.first_name?.[0]?.toUpperCase() ||
+                        p.username?.[0]?.toUpperCase() ||
+                        "?"}
+                    </span>
+                  </div>
 
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-text truncate">
-                    {p.first_name || p.username || "User"}
-                  </p>
-                  <p className="text-[10px] text-muted-dim truncate">{p.email}</p>
-                </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <p className="truncate text-sm font-medium text-text">
+                        {p.first_name || p.username || "User"}
+                      </p>
+                      {p.is_seeded ? (
+                        <span className="rounded-full border border-cyan-500/20 bg-cyan-500/10 px-2 py-0.5 text-[10px] font-semibold text-cyan-300">
+                          Seeded
+                        </span>
+                      ) : (
+                        <span className="rounded-full border border-violet-500/20 bg-violet-500/10 px-2 py-0.5 text-[10px] font-semibold text-violet-300">
+                          Regular
+                        </span>
+                      )}
+                    </div>
+                    <p className="truncate text-[10px] text-muted-dim">{p.email}</p>
+                    {p.username ? (
+                      <p className="truncate text-[10px] text-muted-dim">@{p.username}</p>
+                    ) : null}
+                  </div>
 
-                {selectedProfile?.id === p.id && (
-                  <Check size={14} className="text-accent shrink-0" />
-                )}
+                  {selectedProfile?.id === p.id && (
+                    <Check size={14} className="shrink-0 text-accent" />
+                  )}
+                </div>
               </button>
             ))}
           </div>
         </Card>
 
         <Card className="p-5 space-y-4">
-          <h3 className="font-display font-semibold text-sm text-text flex items-center gap-2">
+          <h3 className="flex items-center gap-2 font-display text-sm font-semibold text-text">
             <ImageIcon size={14} className="text-accent" /> 2. Select NFT
           </h3>
 
@@ -230,11 +480,11 @@ export default function AssignCollection() {
               value={nftSearch}
               onChange={(e) => setNftSearch(e.target.value)}
               placeholder="Search NFTs..."
-              className="w-full pl-9 pr-3 py-2 rounded-lg bg-surface2 border border-border-light text-sm text-text placeholder:text-muted-dim/50 focus:outline-none focus:border-accent/40"
+              className="w-full rounded-lg border border-border-light bg-surface2 py-2 pl-9 pr-3 text-sm text-text placeholder:text-muted-dim/50 focus:border-accent/40 focus:outline-none"
             />
           </div>
 
-          <div className="max-h-60 overflow-y-auto space-y-1.5 scrollbar-thin">
+          <div className="max-h-60 space-y-1.5 overflow-y-auto scrollbar-thin">
             {filteredNfts.slice(0, 100).map((n) => (
               <button
                 key={n.id}
@@ -242,37 +492,41 @@ export default function AssignCollection() {
                   setSelectedNft(n);
                   setSuccess("");
                 }}
-                className={`w-full flex items-center gap-3 p-2.5 rounded-xl text-left transition-all ${
+                className={`w-full flex items-center gap-3 rounded-xl border p-2.5 text-left transition-all ${
                   selectedNft?.id === n.id
-                    ? "bg-accent/10 border border-accent/30"
-                    : "hover:bg-white/[0.03] border border-transparent"
+                    ? "border-accent/30 bg-accent/10"
+                    : "border-transparent hover:bg-white/[0.03]"
                 }`}
               >
-                <div className="w-10 h-10 rounded-lg bg-surface2 overflow-hidden shrink-0">
-                  {n.image ? (
-                    <img src={n.image} alt="" className="w-full h-full object-cover" />
+                <div className="h-10 w-10 shrink-0 overflow-hidden rounded-lg bg-surface2">
+                  {n.image || n.image_url ? (
+                    <img
+                      src={n.image || n.image_url}
+                      alt=""
+                      className="h-full w-full object-cover"
+                    />
                   ) : (
-                    <div className="w-full h-full flex items-center justify-center">
+                    <div className="flex h-full w-full items-center justify-center">
                       <ImageIcon size={14} className="text-muted-dim" />
                     </div>
                   )}
                 </div>
 
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-text truncate">{n.name}</p>
-                  <p className="text-[10px] text-muted-dim truncate">
-                    {n.collection}
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium text-text">{n.name}</p>
+                  <p className="truncate text-[10px] text-muted-dim">
+                    {n.collection || n.collection_name}
                   </p>
                 </div>
 
                 {selectedNft?.id === n.id && (
-                  <Check size={14} className="text-accent shrink-0" />
+                  <Check size={14} className="shrink-0 text-accent" />
                 )}
               </button>
             ))}
 
             {filteredNfts.length > 100 && (
-              <p className="text-xs text-muted-dim text-center py-2">
+              <p className="py-2 text-center text-xs text-muted-dim">
                 Showing 100 of {filteredNfts.length} — refine search
               </p>
             )}
@@ -282,13 +536,22 @@ export default function AssignCollection() {
 
       {selectedProfile && selectedNft && (
         <Card className="p-5">
-          <div className="flex items-center justify-between flex-wrap gap-4">
+          <div className="flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-3">
               <Badge color="accent">{selectedNft.name}</Badge>
-              <span className="text-muted text-sm">→</span>
+              <span className="text-sm text-muted">→</span>
               <Badge color="violet">
                 {selectedProfile.first_name || selectedProfile.username}
               </Badge>
+              {selectedProfile.is_seeded ? (
+                <span className="rounded-full border border-cyan-500/20 bg-cyan-500/10 px-2 py-1 text-[10px] font-semibold text-cyan-300">
+                  Seeded
+                </span>
+              ) : (
+                <span className="rounded-full border border-violet-500/20 bg-violet-500/10 px-2 py-1 text-[10px] font-semibold text-violet-300">
+                  Regular
+                </span>
+              )}
             </div>
 
             <Button
@@ -306,51 +569,60 @@ export default function AssignCollection() {
             </Button>
           </div>
 
-          {success && <p className="text-success text-xs mt-3">{success}</p>}
-          {error && <p className="text-danger text-xs mt-3">{error}</p>}
+          {success && <p className="mt-3 text-xs text-success">{success}</p>}
+          {error && <p className="mt-3 text-xs text-danger">{error}</p>}
         </Card>
       )}
 
       {selectedProfile && (
         <Card className="p-5 space-y-4">
-          <h3 className="font-display font-semibold text-sm text-text">
-            {selectedProfile.first_name || selectedProfile.username}'s Collection (
-            {assignments.length})
-          </h3>
+          <div className="flex items-center gap-3">
+            <h3 className="font-display text-sm font-semibold text-text">
+              {selectedProfile.first_name || selectedProfile.username}'s Collection ({assignments.length})
+            </h3>
+
+            {selectedProfile.is_seeded ? (
+              <span className="rounded-full border border-cyan-500/20 bg-cyan-500/10 px-2 py-1 text-[10px] font-semibold text-cyan-300">
+                Seeded Account
+              </span>
+            ) : (
+              <span className="rounded-full border border-violet-500/20 bg-violet-500/10 px-2 py-1 text-[10px] font-semibold text-violet-300">
+                Regular Account
+              </span>
+            )}
+          </div>
 
           {assignLoading ? (
             <Loader2 size={16} className="animate-spin text-accent" />
           ) : assignments.length > 0 ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {assignments.map((a) => (
                 <div
                   key={a.id}
-                  className="flex items-center gap-3 p-3 rounded-xl bg-surface2/50 border border-border-light"
+                  className="flex items-center gap-3 rounded-xl border border-border-light bg-surface2/50 p-3"
                 >
-                  <div className="w-10 h-10 rounded-lg bg-surface overflow-hidden shrink-0">
+                  <div className="h-10 w-10 shrink-0 overflow-hidden rounded-lg bg-surface">
                     {a.image_url || a.image ? (
                       <img
                         src={a.image_url || a.image}
                         alt=""
-                        className="w-full h-full object-cover"
+                        className="h-full w-full object-cover"
                       />
                     ) : (
-                      <ImageIcon size={14} className="text-muted-dim mx-auto mt-3" />
+                      <ImageIcon size={14} className="mx-auto mt-3 text-muted-dim" />
                     )}
                   </div>
 
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-medium text-text truncate">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-xs font-medium text-text">
                       {a.nft_name || a.name}
                     </p>
-                    <p className="text-[10px] text-muted-dim">
-                      {a.collection}
-                    </p>
+                    <p className="text-[10px] text-muted-dim">{a.collection}</p>
                   </div>
 
                   <button
                     onClick={() => handleRemove(a)}
-                    className="p-1.5 rounded-lg hover:bg-danger/10 text-muted-dim hover:text-danger transition-colors"
+                    className="rounded-lg p-1.5 text-muted-dim transition-colors hover:bg-danger/10 hover:text-danger"
                     title="Remove"
                   >
                     <X size={12} />
@@ -359,7 +631,7 @@ export default function AssignCollection() {
               ))}
             </div>
           ) : (
-            <p className="text-muted-dim text-xs">No NFTs assigned yet.</p>
+            <p className="text-xs text-muted-dim">No NFTs assigned yet.</p>
           )}
         </Card>
       )}

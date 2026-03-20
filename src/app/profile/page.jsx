@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation'
 import {
   Wallet,
   LayoutGrid,
-  Tag,
   LogOut,
   ShieldCheck,
   TrendingUp,
@@ -20,6 +19,8 @@ import {
   ChevronRight,
   Sparkles,
   PlusCircle,
+  Eye,
+  Share2,
 } from 'lucide-react'
 
 import { useSession } from '@/hooks/useSession'
@@ -46,15 +47,6 @@ import { calcPortfolioValue } from '@/lib/portfolio/calcPortfolioValue'
 export default function PremiumProfilePage() {
   const router = useRouter()
 
-  /* ──────────────────────────────────────────────────────────────
-   * FIX: removed `useAccount()` from wagmi.
-   * The collections section was stuck on "Connect Wallet" because
-   * wagmi's useAccount requires an active browser-wallet session
-   * (MetaMask popup etc.) — but the rest of the app uses the
-   * server-session `linkedWallet` from useSession().
-   * Now we do the same: useSession for the saved wallet,
-   * and useWallet (WalletContext) for any live browser wallet.
-   * ────────────────────────────────────────────────────────────── */
   const {
     profile,
     isLoggedIn,
@@ -78,24 +70,48 @@ export default function PremiumProfilePage() {
   const [showWalletModal, setShowWalletModal] = useState(false)
   const [syncingWallet, setSyncingWallet] = useState(false)
   const [redirecting, setRedirecting] = useState(false)
+  const [sharing, setSharing] = useState(false)
+  const [shareCopied, setShareCopied] = useState(false)
 
   const liveWallet = liveWalletAddress
     ? String(liveWalletAddress).toLowerCase()
     : null
+
   const savedWallet = linkedWallet
     ? String(linkedWallet).toLowerCase()
     : profile?.wallet_address
-    ? String(profile.wallet_address).toLowerCase()
-    : null
+      ? String(profile.wallet_address).toLowerCase()
+      : null
 
   const effectiveWallet = liveWallet || savedWallet || null
   const hasUsableWallet = Boolean(effectiveWallet)
   const walletUiConnected = Boolean(effectiveWallet)
   const needsFirstWalletLink = !hasUsableWallet && !hasLinkedWallet
 
+  const publicUsername = useMemo(() => {
+    if (!profile) return null
+    return profile.username || null
+  }, [profile])
+
+  const publicProfileHref = useMemo(() => {
+    if (!publicUsername) return null
+    return `/u/${publicUsername}`
+  }, [publicUsername])
+
+  const publicProfileUrl = useMemo(() => {
+    if (!publicProfileHref) return ''
+    if (typeof window === 'undefined') return publicProfileHref
+    return `${window.location.origin}${publicProfileHref}`
+  }, [publicProfileHref])
+
   const chainName = useMemo(() => {
     if (!chainId) return 'Base'
-    const chains = { 8453: 'Base', 84532: 'Base Sepolia', 1: 'Ethereum', 137: 'Polygon' }
+    const chains = {
+      8453: 'Base',
+      84532: 'Base Sepolia',
+      1: 'Ethereum',
+      137: 'Polygon',
+    }
     return chains[chainId] || `Chain ${chainId}`
   }, [chainId])
 
@@ -153,7 +169,6 @@ export default function PremiumProfilePage() {
     }))
   }, [nfts])
 
-  // ── Redirects ──
   useEffect(() => {
     if (isLoggedIn === false) {
       setRedirecting(true)
@@ -161,7 +176,6 @@ export default function PremiumProfilePage() {
     }
   }, [isLoggedIn, router])
 
-  // ── Load NFTs from API (session-based, no wallet needed) ──
   useEffect(() => {
     if (!isLoggedIn) return
 
@@ -189,7 +203,6 @@ export default function PremiumProfilePage() {
     loadNFTs()
   }, [isLoggedIn])
 
-  // ── Load user listed/created NFTs ──
   useEffect(() => {
     if (!isLoggedIn) return
 
@@ -217,7 +230,6 @@ export default function PremiumProfilePage() {
     loadListed()
   }, [isLoggedIn])
 
-  // ── Sync live wallet to profile if new ──
   useEffect(() => {
     if (!isLoggedIn || !liveWallet) return
     if (savedWallet && savedWallet === liveWallet) return
@@ -248,11 +260,50 @@ export default function PremiumProfilePage() {
 
   const handleConnect = () => setShowWalletModal(true)
 
+  const handleViewPublicProfile = () => {
+    if (!publicProfileHref) return
+    router.push(publicProfileHref)
+  }
+
+  const handleShareProfile = async () => {
+    if (!publicProfileHref) return
+
+    try {
+      setSharing(true)
+
+      const shareData = {
+        title: `${profile?.first_name || profile?.username || 'Collector'} on Aurora NFT`,
+        text: `Check out ${profile?.first_name || profile?.username || 'this collector'}'s public Aurora NFT profile.`,
+        url: publicProfileUrl,
+      }
+
+      if (navigator.share) {
+        await navigator.share(shareData)
+        return
+      }
+
+      await navigator.clipboard.writeText(publicProfileUrl)
+      setShareCopied(true)
+      window.setTimeout(() => setShareCopied(false), 2200)
+    } catch (err) {
+      if (err?.name !== 'AbortError') {
+        try {
+          await navigator.clipboard.writeText(publicProfileUrl)
+          setShareCopied(true)
+          window.setTimeout(() => setShareCopied(false), 2200)
+        } catch (copyErr) {
+          console.error('Failed to share profile:', copyErr)
+        }
+      }
+    } finally {
+      setSharing(false)
+    }
+  }
+
   if (!isLoggedIn || redirecting) return null
 
   return (
     <div className="relative min-h-screen overflow-hidden">
-      {/* Ambient glow */}
       <div className="pointer-events-none absolute inset-0">
         <div className="absolute top-[-120px] left-[10%] h-[320px] w-[320px] rounded-full bg-accent/10 blur-[120px]" />
         <div className="absolute top-[120px] right-[8%] h-[360px] w-[360px] rounded-full bg-accent-violet/10 blur-[140px]" />
@@ -261,7 +312,6 @@ export default function PremiumProfilePage() {
       </div>
 
       <div className="relative z-10 mx-auto max-w-[1600px] px-4 py-8 sm:px-6 sm:py-10 lg:px-8 lg:py-12">
-        {/* ── Hero banner ── */}
         <ProfileHero
           greeting={greeting}
           profile={profile}
@@ -271,13 +321,20 @@ export default function PremiumProfilePage() {
           onLogout={logout}
         />
 
-        {/* ── Status pills ── */}
         <div className="mt-4 flex flex-wrap items-center gap-3">
           <div className="inline-flex items-center gap-2 rounded-full border border-border-light bg-card/60 px-3 py-1.5 text-xs text-muted">
             <ExternalLink size={13} className="text-accent" />
             NFT detail route:
             <span className="font-mono text-text">/profile/nft/[id]</span>
           </div>
+
+          {publicProfileHref && (
+            <div className="inline-flex items-center gap-2 rounded-full border border-accent/20 bg-accent/10 px-3 py-1.5 text-xs text-accent">
+              <Eye size={13} />
+              Public profile:
+              <span className="font-mono text-text">{publicProfileHref}</span>
+            </div>
+          )}
 
           {hasUsableWallet && (
             <div className="inline-flex items-center gap-2 rounded-full border border-success/20 bg-success/10 px-3 py-1.5 text-xs text-success">
@@ -292,11 +349,16 @@ export default function PremiumProfilePage() {
               Syncing wallet...
             </div>
           )}
+
+          {shareCopied && (
+            <div className="inline-flex items-center gap-2 rounded-full border border-cyan-500/20 bg-cyan-500/10 px-3 py-1.5 text-xs text-cyan-300">
+              <Share2 size={13} />
+              Public profile link copied
+            </div>
+          )}
         </div>
 
-        {/* ── Main grid ── */}
         <div className="mt-8 grid grid-cols-1 gap-6 xl:grid-cols-12">
-          {/* ── Left sidebar ── */}
           <div className="space-y-6 xl:col-span-3">
             <ProfileIdentityCard
               profile={profile}
@@ -331,7 +393,6 @@ export default function PremiumProfilePage() {
 
             <ActivityTimeline items={recentActivity} />
 
-            {/* Quick Actions — in sidebar instead of floating alone */}
             <div className="rounded-[28px] border border-border-light bg-card/70 p-6 backdrop-blur-xl">
               <div className="mb-5">
                 <p className="mb-2 text-xs uppercase tracking-[0.22em] text-muted-dim">
@@ -341,11 +402,28 @@ export default function PremiumProfilePage() {
               </div>
 
               <div className="space-y-3">
+                {publicProfileHref && (
+                  <QuickAction
+                    icon={<Eye size={16} />}
+                    label="View Public Profile"
+                    onClick={handleViewPublicProfile}
+                  />
+                )}
+
+                {publicProfileHref && (
+                  <QuickAction
+                    icon={<Share2 size={16} />}
+                    label={sharing ? 'Sharing...' : shareCopied ? 'Link Copied' : 'Share Public Profile'}
+                    onClick={handleShareProfile}
+                  />
+                )}
+
                 <QuickAction
                   icon={<LayoutGrid size={16} />}
                   label="Explore NFTs"
                   onClick={() => router.push('/explore')}
                 />
+
                 {!isLiveConnected && hasUsableWallet && (
                   <QuickAction
                     icon={<Wallet size={16} />}
@@ -353,6 +431,7 @@ export default function PremiumProfilePage() {
                     onClick={handleConnect}
                   />
                 )}
+
                 <QuickAction
                   icon={<LogOut size={16} />}
                   label="Sign Out"
@@ -363,9 +442,7 @@ export default function PremiumProfilePage() {
             </div>
           </div>
 
-          {/* ── Right / main content ── */}
           <div className="space-y-6 xl:col-span-9">
-            {/* Stats row */}
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
               <PortfolioMiniStat
                 icon={<TrendingUp size={18} />}
@@ -393,7 +470,6 @@ export default function PremiumProfilePage() {
               />
             </div>
 
-            {/* Chart + info cards */}
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
               <div className="lg:col-span-2">
                 <PortfolioOverviewCard
@@ -428,11 +504,11 @@ export default function PremiumProfilePage() {
                         collectionCount > 8
                           ? 'Elite'
                           : collectionCount > 3
-                          ? 'Rising'
-                          : 'New',
+                            ? 'Rising'
+                            : 'New',
                     },
                     { label: 'Preferred Chain', value: chainName },
-                    { label: 'Visibility', value: 'Verified' },
+                    { label: 'Visibility', value: publicProfileHref ? 'Public Profile Ready' : 'Private' },
                   ]}
                 />
 
@@ -452,6 +528,11 @@ export default function PremiumProfilePage() {
                       label="Wallet linked"
                       value={hasUsableWallet ? 'Linked' : 'Pending'}
                     />
+                    <StatusRow
+                      icon={<Eye size={16} />}
+                      label="Public profile"
+                      value={publicProfileHref ? 'Enabled' : 'Missing username'}
+                    />
                     <StatusRow icon={<Globe2 size={16} />} label="Network" value={chainName} />
                     <StatusRow
                       icon={<Clock3 size={16} />}
@@ -463,7 +544,6 @@ export default function PremiumProfilePage() {
               </div>
             </div>
 
-            {/* ── Tabs: Collections / Activity / Listed ── */}
             <div className="overflow-hidden rounded-[30px] border border-border-light bg-card/70 backdrop-blur-xl">
               <div className="border-b border-border-light px-5 pt-5 sm:px-6">
                 <ProfileTabs
@@ -571,46 +651,46 @@ export default function PremiumProfilePage() {
                             {listedNfts.map((nft) => (
                               <div
                                 key={nft.id}
-                                className="group rounded-[20px] overflow-hidden border border-border-light bg-white/[0.02] hover:border-accent-violet/30 transition-all duration-300"
+                                className="group overflow-hidden rounded-[20px] border border-border-light bg-white/[0.02] transition-all duration-300 hover:border-accent-violet/30"
                               >
                                 <div className="relative aspect-square overflow-hidden bg-surface2/40">
                                   {nft.image_url ? (
                                     <img
                                       src={nft.image_url}
                                       alt={nft.name}
-                                      className="w-full h-full object-contain"
+                                      className="h-full w-full object-contain"
                                     />
                                   ) : (
-                                    <div className="w-full h-full flex items-center justify-center">
+                                    <div className="flex h-full w-full items-center justify-center">
                                       <Sparkles size={32} className="text-muted-dim" />
                                     </div>
                                   )}
                                   <div className="absolute top-3 left-3">
-                                    <span className="px-2.5 py-1 rounded-full bg-accent-violet/20 backdrop-blur-md border border-accent-violet/30 text-[10px] font-semibold text-accent-violet">
+                                    <span className="rounded-full border border-accent-violet/30 bg-accent-violet/20 px-2.5 py-1 text-[10px] font-semibold text-accent-violet backdrop-blur-md">
                                       Created
                                     </span>
                                   </div>
                                 </div>
-                                <div className="p-4 space-y-2">
-                                  <p className="text-[10px] text-muted-dim font-mono uppercase tracking-wide">
+                                <div className="space-y-2 p-4">
+                                  <p className="font-mono text-[10px] uppercase tracking-wide text-muted-dim">
                                     {nft.collection || 'User Created'}
                                   </p>
-                                  <p className="text-sm font-display font-semibold text-text truncate">
+                                  <p className="truncate font-display text-sm font-semibold text-text">
                                     {nft.name}
                                   </p>
                                   {nft.description && (
-                                    <p className="text-[11px] text-muted line-clamp-2">{nft.description}</p>
+                                    <p className="line-clamp-2 text-[11px] text-muted">{nft.description}</p>
                                   )}
-                                  <div className="flex items-center justify-between pt-2 border-t border-white/[0.06]">
+                                  <div className="flex items-center justify-between border-t border-white/[0.06] pt-2">
                                     <div>
-                                      <p className="text-[9px] text-muted-dim uppercase">Fee Paid</p>
-                                      <p className="text-sm text-accent-violet font-mono font-semibold mt-0.5">
+                                      <p className="text-[9px] uppercase text-muted-dim">Fee Paid</p>
+                                      <p className="mt-0.5 font-mono text-sm font-semibold text-accent-violet">
                                         {nft.mint_fee_eth || 0} ETH
                                       </p>
                                     </div>
                                     <div className="text-right">
-                                      <p className="text-[9px] text-muted-dim uppercase">Status</p>
-                                      <p className="text-sm text-success font-medium mt-0.5">
+                                      <p className="text-[9px] uppercase text-muted-dim">Status</p>
+                                      <p className="mt-0.5 text-sm font-medium text-success">
                                         {nft.status === 'confirmed' ? 'Minted' : nft.status}
                                       </p>
                                     </div>
@@ -628,7 +708,7 @@ export default function PremiumProfilePage() {
                             </p>
                             <button
                               onClick={() => router.push('/create')}
-                              className="mt-4 inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-accent-violet/10 border border-accent-violet/20 text-sm font-medium text-accent-violet hover:bg-accent-violet/20 transition-colors"
+                              className="mt-4 inline-flex items-center gap-2 rounded-xl border border-accent-violet/20 bg-accent-violet/10 px-5 py-2.5 text-sm font-medium text-accent-violet transition-colors hover:bg-accent-violet/20"
                             >
                               <PlusCircle size={16} />
                               Create NFT
