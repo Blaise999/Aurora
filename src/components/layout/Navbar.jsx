@@ -235,7 +235,7 @@ export default function Navbar() {
                           onClick={() => setUserMenuOpen(false)}
                           className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-white/85 transition-colors hover:bg-white/[0.06] hover:text-white"
                         >
-                          <Users size={15} /> People
+                          <Users size={15} /> Users
                         </Link>
                         {linkedWallet && (
                           <div className="flex items-center gap-3 rounded-xl px-3 py-2 text-[11px] text-white/30">
