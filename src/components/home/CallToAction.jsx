@@ -28,7 +28,7 @@ export default function CallToAction() {
             Join thousands of collectors minting unique digital artifacts with verified on-chain provenance.
           </p>
           <div className="flex flex-wrap items-center justify-center gap-4">
-            <Link href="/mint"><Button variant="primary" size="lg">Start Minting <ArrowRight size={16} /></Button></Link>
+            <Link href="/create"><Button variant="primary" size="lg">Start Minting <ArrowRight size={16} /></Button></Link>
             <Link href="/explore"><Button variant="secondary" size="lg">Browse Collection</Button></Link>
           </div>
           <div className="flex items-center justify-center gap-6 sm:gap-12 mt-10 pt-8 border-t border-white/[0.06]">

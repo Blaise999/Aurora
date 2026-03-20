@@ -29,7 +29,7 @@ export default function MintCTA() {
 
         <div className="flex flex-wrap justify-center gap-4">
           <Link
-            href="/mint"
+            href="/create"
             className="px-8 py-4 rounded-pill font-display font-bold text-sm bg-gradient-to-r from-accent to-accent-violet text-bg hover:shadow-glow-lg transition-all duration-300 hover:scale-[1.03]"
           >
             Start Minting

@@ -12,8 +12,8 @@ const footerLinks = {
     { label: 'Privacy Policy', href: '/privacy' },
   ],
   Community: [
-    { label: 'Twitter', href: '#' },
-    { label: 'GitHub', href: '#' },
+    { label: 'Telegram', href: '#' },
+    
   ],
 };
 

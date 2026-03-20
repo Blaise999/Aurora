@@ -29,7 +29,6 @@ export default function SupportInbox() {
 
   const scrollRef = useRef(null);
   const inputRef = useRef(null);
-  const realtimeReadyRef = useRef(false);
 
   const scrollToBottom = useCallback(() => {
     if (scrollRef.current) {
@@ -63,6 +62,26 @@ export default function SupportInbox() {
 
   const removeTempMessage = useCallback((tempId) => {
     setMessages((prev) => prev.filter((m) => m.id !== tempId));
+  }, []);
+
+  const upsertConversationPreview = useCallback((messageRow) => {
+    if (!messageRow?.conversation_id) return;
+
+    setConversations((prev) => {
+      const index = prev.findIndex((c) => c.id === messageRow.conversation_id);
+
+      if (index === -1) return prev;
+
+      const convo = prev[index];
+      const updated = {
+        ...convo,
+        updated_at: messageRow.created_at || new Date().toISOString(),
+      };
+
+      const next = [...prev];
+      next.splice(index, 1);
+      return [updated, ...next];
+    });
   }, []);
 
   const fetchConversations = useCallback(async () => {
@@ -128,13 +147,11 @@ export default function SupportInbox() {
   useEffect(() => {
     if (!activeConvo?.id) return;
 
-    realtimeReadyRef.current = false;
-
     const sb = getSupabaseBrowser();
     if (!sb) return;
 
     const channel = sb
-      .channel('admin-support-' + activeConvo.id, {
+      .channel('admin-support-active-' + activeConvo.id, {
         config: { broadcast: { self: true } },
       })
       .on(
@@ -147,30 +164,41 @@ export default function SupportInbox() {
         },
         (payload) => {
           appendMessageIfMissing(payload.new);
+          upsertConversationPreview(payload.new);
           requestAnimationFrame(scrollToBottom);
         }
       )
       .subscribe((status) => {
-        console.log('[ADMIN SUPPORT] messages realtime status:', status);
-        if (status === 'SUBSCRIBED') {
-          realtimeReadyRef.current = true;
-        }
+        console.log('[ADMIN SUPPORT] active messages realtime status:', status);
       });
 
     return () => {
-      realtimeReadyRef.current = false;
       sb.removeChannel(channel);
     };
-  }, [activeConvo, appendMessageIfMissing, scrollToBottom]);
+  }, [activeConvo, appendMessageIfMissing, upsertConversationPreview, scrollToBottom]);
 
   useEffect(() => {
     const sb = getSupabaseBrowser();
     if (!sb) return;
 
     const channel = sb
-      .channel('admin-convos', {
+      .channel('admin-support-global', {
         config: { broadcast: { self: true } },
       })
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'support_messages',
+        },
+        (payload) => {
+          upsertConversationPreview(payload.new);
+          if (payload.new?.conversation_id !== activeConvo?.id) {
+            fetchConversations();
+          }
+        }
+      )
       .on(
         'postgres_changes',
         {
@@ -183,20 +211,20 @@ export default function SupportInbox() {
         }
       )
       .subscribe((status) => {
-        console.log('[ADMIN SUPPORT] conversations realtime status:', status);
+        console.log('[ADMIN SUPPORT] global realtime status:', status);
       });
 
     return () => {
       sb.removeChannel(channel);
     };
-  }, [fetchConversations]);
+  }, [activeConvo?.id, fetchConversations, upsertConversationPreview]);
 
   useEffect(() => {
     requestAnimationFrame(scrollToBottom);
   }, [messages, scrollToBottom]);
 
   const handleSend = async () => {
-    if (!input.trim() || !activeConvo?.id) return;
+    if (!input.trim() || !activeConvo?.id || sending) return;
 
     const msg = input.trim();
     const tempMessage = makeTempMessage({
@@ -209,6 +237,10 @@ export default function SupportInbox() {
     setInput('');
     setSending(true);
     appendMessageIfMissing(tempMessage);
+    upsertConversationPreview({
+      conversation_id: activeConvo.id,
+      created_at: new Date().toISOString(),
+    });
     requestAnimationFrame(scrollToBottom);
 
     try {
@@ -231,6 +263,7 @@ export default function SupportInbox() {
 
       if (data.message) {
         appendMessageIfMissing(data.message);
+        upsertConversationPreview(data.message);
       } else {
         removeTempMessage(tempMessage.id);
       }
@@ -395,15 +428,20 @@ export default function SupportInbox() {
                   type="text"
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSend()}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSend();
+                    }
+                  }}
                   placeholder="Type your reply..."
-                  disabled={!activeConvo?.id}
+                  disabled={!activeConvo?.id || sending}
                   className="flex-1 bg-surface2/60 border border-border rounded-xl px-4 py-2.5 text-sm text-text placeholder:text-muted-dim focus:outline-none focus:border-accent/40 disabled:opacity-60"
                 />
 
                 <button
                   onClick={handleSend}
-                  disabled={!input.trim() || !activeConvo?.id}
+                  disabled={!input.trim() || !activeConvo?.id || sending}
                   className="w-10 h-10 rounded-xl bg-gradient-to-br from-accent to-accent-violet flex items-center justify-center text-bg disabled:opacity-30 hover:opacity-90 transition-opacity"
                 >
                   {sending ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}

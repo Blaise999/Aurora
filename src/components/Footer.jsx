@@ -12,8 +12,7 @@ const footerLinks = {
     { label: 'Privacy Policy', href: '/privacy' },
   ],
   Community: [
-    { label: 'Twitter', href: '#' },
-    { label: 'GitHub', href: '#' },
+    { label: 'Telegram', href: 'https://t.me/AuroraNFTMarket' },
   ],
 };
 
@@ -31,25 +30,33 @@ export default function Footer() {
                 height={48}
                 className="object-contain"
               />
-              
             </div>
             <p className="text-[13px] text-muted leading-relaxed max-w-[240px]">
               A curated NFT experience on Base. Browse, mint, and collect digital artifacts with verifiable provenance.
             </p>
           </div>
+
           {Object.entries(footerLinks).map(([heading, links]) => (
             <div key={heading}>
-              <h4 className="text-[10px] font-semibold uppercase tracking-widest text-muted-dim mb-4">{heading}</h4>
+              <h4 className="text-[10px] font-semibold uppercase tracking-widest text-muted-dim mb-4">
+                {heading}
+              </h4>
               <ul className="space-y-2.5">
-                {links.map(link => (
+                {links.map((link) => (
                   <li key={link.label}>
-                    <Link href={link.href} className="text-[13px] text-muted hover:text-text transition-colors duration-200">{link.label}</Link>
+                    <Link
+                      href={link.href}
+                      className="text-[13px] text-muted hover:text-text transition-colors duration-200"
+                    >
+                      {link.label}
+                    </Link>
                   </li>
                 ))}
               </ul>
             </div>
           ))}
         </div>
+
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-8 border-t border-white/[0.04]">
           <p className="text-[11px] text-muted-dim">&copy; 2025 AuroraNft. All rights reserved.</p>
           <div className="flex items-center gap-2">

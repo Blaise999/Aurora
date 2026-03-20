@@ -43,6 +43,7 @@ export async function POST(req) {
 
     const cleanMessage = message.trim();
     const cleanSenderName = sender_name?.trim() || 'Anonymous';
+    const now = new Date().toISOString();
 
     const { data, error } = await sb
       .from('support_messages')
@@ -57,14 +58,14 @@ export async function POST(req) {
 
     if (error) throw error;
 
-    void sb
+    const { error: convoUpdateError } = await sb
       .from('support_conversations')
-      .update({ updated_at: new Date().toISOString() })
-      .eq('id', conversation_id)
-      .then(() => {})
-      .catch((e) =>
-        console.error('[SUPPORT] failed updating conversation timestamp:', e)
-      );
+      .update({ updated_at: now })
+      .eq('id', conversation_id);
+
+    if (convoUpdateError) {
+      console.error('[SUPPORT] failed updating conversation timestamp:', convoUpdateError);
+    }
 
     if (sender_type !== 'admin') {
       void notifyNewSupportMessage({

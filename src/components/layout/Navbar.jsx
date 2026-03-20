@@ -59,7 +59,7 @@ export default function Navbar() {
 
   const navLinks = [
     { label: "Marketplace", href: "/explore", icon: <Compass size={15} /> },
-    { label: "Users", href: "/people", icon: <Users size={15} /> },
+    { label: "Search", href: "/people", icon: <Users size={15} /> },
     { label: "Mint", href: "/create", icon: <PlusCircle size={15} /> },
     { label: "Profile", href: "/profile", icon: <LayoutGrid size={15} /> },
     { label: "News", href: "/news", icon: <Newspaper size={15} /> },

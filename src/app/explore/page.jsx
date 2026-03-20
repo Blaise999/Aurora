@@ -61,12 +61,12 @@ export default function ExplorePage() {
           </div>
           <h1 className="font-display font-extrabold text-3xl sm:text-4xl lg:text-5xl mb-4">
             Explore <span className="text-gradient">NFTs</span>
-          </h1>
-          <p className="text-muted max-w-xl">
-            Browse the full collection of unique digital artworks.
-            {total > 0 && <span className="text-accent font-mono ml-1">{total.toLocaleString()} NFTs</span>}
-          </p>
-        </div>
+       </h1>
+<p className="text-muted max-w-xl">
+  Browse the full collection of unique digital artworks.
+</p>
+</div>
+
 
         {/* Tabs */}
         <div className="flex gap-2 mb-8 overflow-x-auto no-scrollbar pb-2">

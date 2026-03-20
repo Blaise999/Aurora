@@ -1,17 +1,22 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { MessageCircle, Send, Loader2, Minimize2 } from 'lucide-react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { MessageCircle, Send, Loader2, X, Minimize2 } from 'lucide-react';
 import { getSupabaseBrowser } from '@/lib/db/supabase-browser';
+
+const VISITOR_ID_KEY = 'aurora_visitor_id';
+const SUPPORT_NAME_KEY = 'aurora_support_name';
+const SUPPORT_CONVO_KEY = 'aurora_support_conversation_id';
+const SUPPORT_SESSION_CUT_KEY = 'aurora_support_session_cutoff';
 
 function generateVisitorId() {
   if (typeof window === 'undefined') return 'ssr';
 
-  let id = sessionStorage.getItem('aurora_visitor_id');
+  let id = sessionStorage.getItem(VISITOR_ID_KEY);
 
   if (!id) {
     id = 'v_' + Math.random().toString(36).slice(2) + Date.now().toString(36);
-    sessionStorage.setItem('aurora_visitor_id', id);
+    sessionStorage.setItem(VISITOR_ID_KEY, id);
   }
 
   return id;
@@ -39,10 +44,10 @@ export default function SupportChatWidget() {
   const [nameSet, setNameSet] = useState(false);
   const [startingChat, setStartingChat] = useState(false);
   const [unread, setUnread] = useState(0);
+  const [sessionCutoff, setSessionCutoff] = useState(null);
 
   const scrollRef = useRef(null);
   const inputRef = useRef(null);
-  const realtimeReadyRef = useRef(false);
 
   const scrollToBottom = useCallback(() => {
     if (scrollRef.current) {
@@ -78,19 +83,56 @@ export default function SupportChatWidget() {
     setMessages((prev) => prev.filter((m) => m.id !== tempId));
   }, []);
 
+  const persistSessionCutoff = useCallback((value) => {
+    setSessionCutoff(value);
+    if (typeof window !== 'undefined') {
+      if (value) {
+        sessionStorage.setItem(SUPPORT_SESSION_CUT_KEY, value);
+      } else {
+        sessionStorage.removeItem(SUPPORT_SESSION_CUT_KEY);
+      }
+    }
+  }, []);
+
+  const hydrateExistingSession = useCallback(async () => {
+    if (typeof window === 'undefined') return;
+
+    const savedName = sessionStorage.getItem(SUPPORT_NAME_KEY) || '';
+    const savedConvoId = sessionStorage.getItem(SUPPORT_CONVO_KEY) || '';
+    const savedCutoff = sessionStorage.getItem(SUPPORT_SESSION_CUT_KEY) || '';
+
+    if (savedName) {
+      setVisitorName(savedName);
+      setNameSet(true);
+    }
+
+    if (savedConvoId) {
+      setConversationId(savedConvoId);
+    }
+
+    if (savedCutoff) {
+      setSessionCutoff(savedCutoff);
+    }
+  }, []);
+
+  useEffect(() => {
+    hydrateExistingSession();
+  }, [hydrateExistingSession]);
+
   const initConversation = useCallback(
     async (name) => {
       setStartingChat(true);
 
       try {
         const visitorId = generateVisitorId();
+        const cleanName = name?.trim() || 'Anonymous';
 
         const res = await fetch('/api/support/conversations', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             visitor_id: visitorId,
-            visitor_name: name?.trim() || 'Anonymous',
+            visitor_name: cleanName,
           }),
         });
 
@@ -100,23 +142,19 @@ export default function SupportChatWidget() {
           throw new Error(data?.error || 'Failed to start conversation');
         }
 
-        if (data.conversation) {
-          setConversationId(data.conversation.id);
+        if (data.conversation?.id) {
+          const convoId = data.conversation.id;
 
-          const msgRes = await fetch(
-            '/api/support/messages?conversation_id=' +
-              encodeURIComponent(data.conversation.id),
-            { cache: 'no-store' }
-          );
-
-          const msgData = await msgRes.json();
-
-          if (!msgRes.ok) {
-            throw new Error(msgData?.error || 'Failed to load messages');
-          }
-
-          setMessages(msgData.messages || []);
+          setConversationId(convoId);
+          setVisitorName(cleanName);
           setNameSet(true);
+          setMessages([]);
+
+          sessionStorage.setItem(SUPPORT_NAME_KEY, cleanName);
+          sessionStorage.setItem(SUPPORT_CONVO_KEY, convoId);
+
+          const freshCutoff = new Date().toISOString();
+          persistSessionCutoff(freshCutoff);
 
           requestAnimationFrame(() => {
             scrollToBottom();
@@ -129,13 +167,11 @@ export default function SupportChatWidget() {
         setStartingChat(false);
       }
     },
-    [scrollToBottom]
+    [persistSessionCutoff, scrollToBottom]
   );
 
   useEffect(() => {
     if (!conversationId) return;
-
-    realtimeReadyRef.current = false;
 
     const sb = getSupabaseBrowser();
     if (!sb) return;
@@ -164,13 +200,9 @@ export default function SupportChatWidget() {
       )
       .subscribe((status) => {
         console.log('[SUPPORT WIDGET] realtime status:', status);
-        if (status === 'SUBSCRIBED') {
-          realtimeReadyRef.current = true;
-        }
       });
 
     return () => {
-      realtimeReadyRef.current = false;
       sb.removeChannel(channel);
     };
   }, [conversationId, isOpen, appendMessageIfMissing, scrollToBottom]);
@@ -179,8 +211,20 @@ export default function SupportChatWidget() {
     requestAnimationFrame(scrollToBottom);
   }, [messages, scrollToBottom]);
 
+  const visibleMessages = useMemo(() => {
+    if (!sessionCutoff) return messages;
+
+    const cutoffTime = new Date(sessionCutoff).getTime();
+
+    return messages.filter((msg) => {
+      if (msg._optimistic) return true;
+      const created = new Date(msg.created_at).getTime();
+      return created >= cutoffTime;
+    });
+  }, [messages, sessionCutoff]);
+
   const handleSend = async () => {
-    if (!input.trim() || !conversationId) return;
+    if (!input.trim() || !conversationId || sending) return;
 
     const msg = input.trim();
     const senderName = visitorName?.trim() || 'Anonymous';
@@ -238,9 +282,29 @@ export default function SupportChatWidget() {
     await initConversation(visitorName);
   };
 
-  const handleOpen = () => {
+  const handleOpen = async () => {
     setIsOpen(true);
     setUnread(0);
+
+    if (conversationId) {
+      const freshCutoff = new Date().toISOString();
+      persistSessionCutoff(freshCutoff);
+      setMessages([]);
+      requestAnimationFrame(() => inputRef.current?.focus());
+    }
+  };
+
+  const handleMinimize = () => {
+    setIsOpen(false);
+  };
+
+  const handleClose = () => {
+    setIsOpen(false);
+    setInput('');
+    setMessages([]);
+
+    const freshCutoff = new Date().toISOString();
+    persistSessionCutoff(freshCutoff);
   };
 
   return (
@@ -284,12 +348,23 @@ export default function SupportChatWidget() {
               </div>
             </div>
 
-            <button
-              onClick={() => setIsOpen(false)}
-              className="p-1.5 text-muted hover:text-text transition-colors rounded-lg hover:bg-white/[0.06]"
-            >
-              <Minimize2 size={18} />
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={handleMinimize}
+                className="p-1.5 text-muted hover:text-text transition-colors rounded-lg hover:bg-white/[0.06]"
+                aria-label="Minimize chat"
+              >
+                <Minimize2 size={18} />
+              </button>
+
+              <button
+                onClick={handleClose}
+                className="p-1.5 text-muted hover:text-text transition-colors rounded-lg hover:bg-white/[0.06]"
+                aria-label="Close chat"
+              >
+                <X size={18} />
+              </button>
+            </div>
           </div>
 
           {!nameSet ? (
@@ -337,20 +412,22 @@ export default function SupportChatWidget() {
                 className="flex-1 overflow-y-auto p-4 space-y-3"
                 style={{ scrollbarWidth: 'thin' }}
               >
-                <div className="flex gap-2.5">
-                  <div className="w-7 h-7 rounded-full bg-accent/20 flex items-center justify-center shrink-0 mt-0.5">
-                    <MessageCircle size={12} className="text-accent" />
-                  </div>
+                {visibleMessages.length === 0 && (
+                  <div className="flex gap-2.5">
+                    <div className="w-7 h-7 rounded-full bg-accent/20 flex items-center justify-center shrink-0 mt-0.5">
+                      <MessageCircle size={12} className="text-accent" />
+                    </div>
 
-                  <div className="bg-white/[0.04] rounded-2xl rounded-tl-sm px-4 py-2.5 max-w-[80%]">
-                    <p className="text-sm text-text">
-                      Welcome {visitorName || 'there'}! How can we help you today?
-                    </p>
-                    <p className="text-[10px] text-muted-dim mt-1">Support Team</p>
+                    <div className="bg-white/[0.04] rounded-2xl rounded-tl-sm px-4 py-2.5 max-w-[80%]">
+                      <p className="text-sm text-text">
+                        Welcome {visitorName || 'there'}! How can we help you today?
+                      </p>
+                      <p className="text-[10px] text-muted-dim mt-1">Support Team</p>
+                    </div>
                   </div>
-                </div>
+                )}
 
-                {messages.map((msg) => (
+                {visibleMessages.map((msg) => (
                   <div
                     key={msg.id}
                     className={`flex gap-2.5 ${msg.sender_type === 'visitor' ? 'flex-row-reverse' : ''}`}
@@ -392,15 +469,20 @@ export default function SupportChatWidget() {
                     type="text"
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSend()}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        handleSend();
+                      }
+                    }}
                     placeholder={conversationId ? 'Type a message...' : 'Starting chat...'}
-                    disabled={!conversationId}
+                    disabled={!conversationId || sending}
                     className="flex-1 bg-white/[0.04] border border-white/[0.08] rounded-xl px-4 py-2.5 text-sm text-text placeholder:text-muted-dim focus:outline-none focus:border-accent/40 disabled:opacity-60"
                   />
 
                   <button
                     onClick={handleSend}
-                    disabled={!input.trim() || !conversationId}
+                    disabled={!input.trim() || !conversationId || sending}
                     className="w-10 h-10 rounded-xl bg-gradient-to-br from-accent to-accent-violet flex items-center justify-center text-bg disabled:opacity-30 hover:opacity-90 transition-opacity"
                   >
                     {sending ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
