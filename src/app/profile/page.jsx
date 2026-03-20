@@ -60,6 +60,7 @@ export default function PremiumProfilePage() {
     address: liveWalletAddress,
     isConnected: isLiveConnected,
     chainId,
+    disconnect,
   } = useWallet()
 
   const [tab, setTab] = useState('collections')
@@ -72,6 +73,7 @@ export default function PremiumProfilePage() {
   const [redirecting, setRedirecting] = useState(false)
   const [sharing, setSharing] = useState(false)
   const [shareCopied, setShareCopied] = useState(false)
+  const [reconnecting, setReconnecting] = useState(false)
 
   const liveWallet = liveWalletAddress
     ? String(liveWalletAddress).toLowerCase()
@@ -260,6 +262,37 @@ export default function PremiumProfilePage() {
 
   const handleConnect = () => setShowWalletModal(true)
 
+  const handleReconnectWallet = async () => {
+    try {
+      setReconnecting(true)
+
+      try {
+        if (disconnect) {
+          await disconnect()
+        }
+      } catch (err) {
+        console.error('Wallet disconnect failed:', err)
+      }
+
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.removeItem('wagmi.wallet')
+          localStorage.removeItem('wagmi.connected')
+          localStorage.removeItem('walletconnect')
+          localStorage.removeItem('WALLETCONNECT_DEEPLINK_CHOICE')
+          localStorage.removeItem('wagmi.store')
+        } catch (err) {
+          console.error('Failed clearing wallet cache:', err)
+        }
+      }
+
+      router.push('/connect-wallet?mode=reconnect')
+    } catch (err) {
+      console.error('Reconnect flow failed:', err)
+      setReconnecting(false)
+    }
+  }
+
   const handleViewPublicProfile = () => {
     if (!publicProfileHref) return
     router.push(publicProfileHref)
@@ -350,6 +383,12 @@ export default function PremiumProfilePage() {
             </div>
           )}
 
+          {reconnecting && (
+            <div className="inline-flex items-center gap-2 rounded-full border border-cyan-500/20 bg-cyan-500/10 px-3 py-1.5 text-xs text-cyan-300">
+              Reconnecting wallet...
+            </div>
+          )}
+
           {shareCopied && (
             <div className="inline-flex items-center gap-2 rounded-full border border-cyan-500/20 bg-cyan-500/10 px-3 py-1.5 text-xs text-cyan-300">
               <Share2 size={13} />
@@ -375,7 +414,7 @@ export default function PremiumProfilePage() {
                 </div>
                 <h3 className="mb-2 text-xl font-semibold">Connect your wallet</h3>
                 <p className="mb-5 text-sm leading-relaxed text-muted">
-                  Link your wallet once and we'll save it to your profile for future logins.
+                  Link your wallet once and we&apos;ll save it to your profile for future logins.
                 </p>
                 <Button onClick={handleConnect} size="lg" className="w-full">
                   <Wallet size={16} />
@@ -424,11 +463,12 @@ export default function PremiumProfilePage() {
                   onClick={() => router.push('/explore')}
                 />
 
-                {!isLiveConnected && hasUsableWallet && (
+                {hasUsableWallet && (
                   <QuickAction
                     icon={<Wallet size={16} />}
-                    label="Reconnect Wallet"
-                    onClick={handleConnect}
+                    label={reconnecting ? 'Resetting Wallet...' : 'Reconnect Wallet'}
+                    onClick={handleReconnectWallet}
+                    disabled={reconnecting}
                   />
                 )}
 
@@ -745,11 +785,12 @@ function StatusRow({ icon, label, value }) {
   )
 }
 
-function QuickAction({ icon, label, onClick, danger = false }) {
+function QuickAction({ icon, label, onClick, danger = false, disabled = false }) {
   return (
     <button
       onClick={onClick}
-      className={`w-full flex items-center justify-between rounded-2xl border px-4 py-3 transition-all ${
+      disabled={disabled}
+      className={`w-full flex items-center justify-between rounded-2xl border px-4 py-3 transition-all disabled:opacity-60 disabled:cursor-not-allowed ${
         danger
           ? 'border-red-500/20 bg-red-500/5 text-red-400 hover:bg-red-500/10'
           : 'border-border-light bg-surface2/40 hover:bg-surface2/70'

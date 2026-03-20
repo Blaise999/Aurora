@@ -1,5 +1,16 @@
 import Image from "next/image";
+import Link from "next/link";
 import { notFound } from "next/navigation";
+import {
+  ExternalLink,
+  Wallet,
+  Sparkles,
+  Layers3,
+  BadgeCheck,
+  Grid3X3,
+  Trophy,
+  Copy,
+} from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
 async function getProfile(username) {
@@ -45,88 +56,179 @@ function shortHash(hash) {
   return `${hash.slice(0, 10)}...${hash.slice(-8)}`;
 }
 
-function formatDate(date) {
-  if (!date) return "";
-  try {
-    return new Date(date).toLocaleDateString();
-  } catch {
-    return "";
-  }
+function getDisplayTitle(nft) {
+  return nft.nft_name || nft.name || `Token #${nft.token_id || "—"}`;
 }
 
-function NftCard({ nft, type = "minted" }) {
-  const title = nft.nft_name || nft.name || `Token #${nft.token_id}`;
+function getCollectionName(nft) {
+  return nft.collection || nft.collection_name || "Aurora Collection";
+}
 
+function StatPill({ icon: Icon, label, value }) {
   return (
-    <div className="overflow-hidden rounded-2xl border border-white/10 bg-zinc-950">
-      <div className="relative aspect-square bg-zinc-900">
-        {nft.image_url ? (
-          <Image
-            src={nft.image_url}
-            alt={title}
-            fill
-            className="object-cover"
-          />
-        ) : (
-          <div className="flex h-full items-center justify-center text-sm text-zinc-500">
-            No Image
-          </div>
-        )}
-      </div>
-
-      <div className="p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h3 className="text-base font-semibold text-white">{title}</h3>
-            {nft.collection ? (
-              <p className="mt-1 text-sm text-zinc-400">{nft.collection}</p>
-            ) : null}
-          </div>
-
-          <span className="rounded-full border border-white/10 px-2 py-1 text-xs text-zinc-300">
-            {type === "minted" ? "Minted" : "Collected"}
-          </span>
+    <div className="group relative overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 backdrop-blur-sm transition-all duration-300 hover:border-cyan-400/30 hover:bg-white/[0.05]">
+      <div className="absolute inset-0 bg-gradient-to-br from-cyan-400/10 via-transparent to-fuchsia-500/10 opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
+      <div className="relative flex items-center gap-3">
+        <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-black/40 text-cyan-300">
+          <Icon size={18} />
         </div>
-
-        {nft.description ? (
-          <p className="mt-3 line-clamp-2 text-sm text-zinc-300">
-            {nft.description}
-          </p>
-        ) : null}
-
-        <div className="mt-4 space-y-1 text-xs text-zinc-400">
-          {nft.chain ? <div>Chain: {nft.chain}</div> : null}
-          {nft.token_type ? <div>Type: {nft.token_type}</div> : null}
-          {nft.token_id ? <div>Token ID: {nft.token_id}</div> : null}
-          {type === "minted" && nft.created_at ? (
-            <div>Minted: {formatDate(nft.created_at)}</div>
-          ) : null}
-          {type === "collected" && nft.assigned_at ? (
-            <div>Collected: {formatDate(nft.assigned_at)}</div>
-          ) : null}
-          {nft.tx_hash ? <div>Tx: {shortHash(nft.tx_hash)}</div> : null}
-        </div>
-
-        <div className="mt-4 flex flex-wrap gap-2">
-          {nft.external_url ? (
-            <a
-              href={nft.external_url}
-              target="_blank"
-              rel="noreferrer"
-              className="rounded-xl border border-white/10 px-3 py-2 text-xs text-white hover:bg-white/5"
-            >
-              Open Link
-            </a>
-          ) : null}
-
-          {nft.contract_address ? (
-            <span className="rounded-xl border border-white/10 px-3 py-2 text-xs text-zinc-300">
-              {shortWallet(nft.contract_address)}
-            </span>
-          ) : null}
+        <div>
+          <div className="text-lg font-semibold text-white">{value}</div>
+          <div className="text-xs uppercase tracking-[0.18em] text-zinc-400">
+            {label}
+          </div>
         </div>
       </div>
     </div>
+  );
+}
+
+function EmptyState({ title, text }) {
+  return (
+    <div className="relative overflow-hidden rounded-[28px] border border-white/10 bg-zinc-950/80 p-8">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.12),transparent_30%),radial-gradient(circle_at_bottom_right,rgba(217,70,239,0.10),transparent_30%)]" />
+      <div className="relative flex flex-col items-center justify-center py-10 text-center">
+        <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] text-cyan-300">
+          <Grid3X3 size={24} />
+        </div>
+        <h3 className="text-lg font-semibold text-white">{title}</h3>
+        <p className="mt-2 max-w-md text-sm leading-6 text-zinc-400">{text}</p>
+      </div>
+    </div>
+  );
+}
+
+function SectionHeader({ eyebrow, title, count, subtitle }) {
+  return (
+    <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+      <div>
+        <div className="text-xs uppercase tracking-[0.28em] text-cyan-300/80">
+          {eyebrow}
+        </div>
+        <h2 className="mt-2 text-2xl font-semibold text-white md:text-3xl">
+          {title}
+        </h2>
+        {subtitle ? (
+          <p className="mt-2 text-sm text-zinc-400 md:text-base">{subtitle}</p>
+        ) : null}
+      </div>
+
+      <div className="inline-flex w-fit items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-sm text-zinc-300">
+        <Sparkles size={14} className="text-cyan-300" />
+        <span>{count} items</span>
+      </div>
+    </div>
+  );
+}
+
+function NftCard({ nft, type = "minted" }) {
+  const title = getDisplayTitle(nft);
+  const collectionName = getCollectionName(nft);
+
+  return (
+    <article className="group relative overflow-hidden rounded-[28px] border border-white/10 bg-zinc-950/90 transition-all duration-300 hover:-translate-y-1 hover:border-cyan-400/30 hover:shadow-[0_0_0_1px_rgba(34,211,238,0.12),0_24px_60px_rgba(0,0,0,0.45)]">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(34,211,238,0.14),transparent_28%),radial-gradient(circle_at_bottom_right,rgba(217,70,239,0.12),transparent_26%)] opacity-70" />
+
+      <div className="relative">
+        <div className="relative aspect-[1/1] overflow-hidden border-b border-white/10 bg-black">
+          {nft.image_url ? (
+            <>
+              <Image
+                src={nft.image_url}
+                alt={title}
+                fill
+                className="object-cover transition-transform duration-500 group-hover:scale-105"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-transparent" />
+            </>
+          ) : (
+            <div className="flex h-full items-center justify-center bg-[radial-gradient(circle_at_center,rgba(34,211,238,0.12),transparent_35%),radial-gradient(circle_at_center,rgba(217,70,239,0.10),transparent_60%)]">
+              <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-zinc-400">
+                No Preview
+              </div>
+            </div>
+          )}
+
+          <div className="absolute left-4 top-4 flex items-center gap-2">
+            <span className="rounded-full border border-cyan-400/25 bg-cyan-400/10 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-cyan-200 backdrop-blur-sm">
+              {type === "minted" ? "Minted" : "Collected"}
+            </span>
+
+            {nft.chain ? (
+              <span className="rounded-full border border-white/10 bg-black/40 px-3 py-1 text-[11px] uppercase tracking-[0.16em] text-zinc-300 backdrop-blur-sm">
+                {nft.chain}
+              </span>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="p-5">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h3 className="truncate text-lg font-semibold text-white">{title}</h3>
+              <p className="mt-1 truncate text-sm text-zinc-400">{collectionName}</p>
+            </div>
+
+            {nft.token_id ? (
+              <div className="shrink-0 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs text-zinc-300">
+                #{nft.token_id}
+              </div>
+            ) : null}
+          </div>
+
+          {nft.description ? (
+            <p className="mt-4 line-clamp-3 text-sm leading-6 text-zinc-300">
+              {nft.description}
+            </p>
+          ) : (
+            <p className="mt-4 text-sm leading-6 text-zinc-500">
+              No description added for this NFT yet.
+            </p>
+          )}
+
+          <div className="mt-5 grid grid-cols-2 gap-3">
+            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+              <div className="text-[11px] uppercase tracking-[0.16em] text-zinc-500">
+                Standard
+              </div>
+              <div className="mt-1 truncate text-sm font-medium text-white">
+                {nft.token_type || "NFT"}
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+              <div className="text-[11px] uppercase tracking-[0.16em] text-zinc-500">
+                Tx Hash
+              </div>
+              <div className="mt-1 truncate text-sm font-medium text-white">
+                {nft.tx_hash ? shortHash(nft.tx_hash) : "Unavailable"}
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-5 flex flex-wrap gap-2">
+            {nft.external_url ? (
+              <a
+                href={nft.external_url}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-2.5 text-sm text-white transition hover:border-cyan-400/30 hover:bg-cyan-400/10"
+              >
+                <ExternalLink size={15} />
+                View Asset
+              </a>
+            ) : null}
+
+            {nft.contract_address ? (
+              <span className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-black/30 px-4 py-2.5 text-sm text-zinc-300">
+                <Wallet size={15} className="text-cyan-300" />
+                {shortWallet(nft.contract_address)}
+              </span>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    </article>
   );
 }
 
@@ -141,7 +243,8 @@ export async function generateMetadata({ params }) {
 
   return {
     title: `${profile.display_name || profile.username} | Aurora NFT`,
-    description: profile.bio || `View ${profile.username}'s public Aurora NFT profile.`,
+    description:
+      profile.bio || `View ${profile.username}'s public Aurora NFT profile.`,
   };
 }
 
@@ -155,79 +258,123 @@ export default async function PublicProfilePage({ params }) {
     getCollected(profile.id),
   ]);
 
+  const displayName = profile.display_name || profile.username;
+  const totalShowcase = minted.length + collected.length;
+
   return (
-    <main className="min-h-screen bg-black text-white">
-      <section className="mx-auto max-w-7xl px-4 py-10 md:px-6">
-        <div className="rounded-3xl border border-white/10 bg-zinc-950 p-6 md:p-8">
-          <div className="flex flex-col gap-6 md:flex-row md:items-center">
-            <div className="relative h-24 w-24 overflow-hidden rounded-full border border-white/10 bg-zinc-900 md:h-28 md:w-28">
-              {profile.avatar_url ? (
-                <Image
-                  src={profile.avatar_url}
-                  alt={profile.display_name || profile.username}
-                  fill
-                  className="object-cover"
-                />
-              ) : (
-                <div className="flex h-full items-center justify-center text-2xl font-bold text-zinc-500">
-                  {(profile.display_name || profile.username || "U").charAt(0).toUpperCase()}
+    <main className="min-h-screen overflow-hidden bg-black text-white">
+      <div className="relative">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(34,211,238,0.12),transparent_30%),radial-gradient(circle_at_20%_30%,rgba(168,85,247,0.10),transparent_28%),radial-gradient(circle_at_80%_20%,rgba(217,70,239,0.10),transparent_24%)]" />
+        <div className="absolute inset-0 bg-[linear-gradient(to_bottom,rgba(255,255,255,0.02),transparent_20%,transparent_80%,rgba(255,255,255,0.02))]" />
+      </div>
+
+      <section className="relative mx-auto max-w-7xl px-4 py-8 md:px-6 md:py-12">
+        <div className="relative overflow-hidden rounded-[32px] border border-white/10 bg-zinc-950/85 p-5 shadow-[0_10px_60px_rgba(0,0,0,0.45)] backdrop-blur-xl md:p-8">
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.16),transparent_26%),radial-gradient(circle_at_bottom_right,rgba(217,70,239,0.14),transparent_28%)]" />
+          <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-cyan-300/40 to-transparent" />
+
+          <div className="relative">
+            <div className="flex flex-col gap-8 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex flex-col gap-6 md:flex-row md:items-center">
+                <div className="relative h-28 w-28 shrink-0 overflow-hidden rounded-[28px] border border-white/10 bg-zinc-900 shadow-[0_0_0_1px_rgba(255,255,255,0.03)] md:h-32 md:w-32">
+                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(34,211,238,0.14),transparent_40%),radial-gradient(circle_at_bottom,rgba(217,70,239,0.12),transparent_42%)]" />
+                  {profile.avatar_url ? (
+                    <Image
+                      src={profile.avatar_url}
+                      alt={displayName}
+                      fill
+                      className="object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-full items-center justify-center text-3xl font-bold text-white">
+                      {displayName.charAt(0).toUpperCase()}
+                    </div>
+                  )}
+
+                  <div className="absolute bottom-3 right-3 flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-black/60 text-cyan-300 backdrop-blur-sm">
+                    <BadgeCheck size={16} />
+                  </div>
                 </div>
-              )}
-            </div>
 
-            <div className="flex-1">
-              <h1 className="text-2xl font-bold md:text-3xl">
-                {profile.display_name || profile.username}
-              </h1>
-              <p className="mt-1 text-zinc-400">@{profile.username}</p>
+                <div className="max-w-3xl">
+                  <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1.5 text-[11px] uppercase tracking-[0.2em] text-cyan-200">
+                    <Sparkles size={13} />
+                    Aurora Collector Profile
+                  </div>
 
-              {profile.bio ? (
-                <p className="mt-4 max-w-2xl text-sm leading-6 text-zinc-300 md:text-base">
-                  {profile.bio}
-                </p>
-              ) : (
-                <p className="mt-4 text-sm text-zinc-500">
-                  No bio added yet.
-                </p>
-              )}
+                  <h1 className="text-3xl font-semibold tracking-tight text-white md:text-5xl">
+                    {displayName}
+                  </h1>
 
-              <div className="mt-5 flex flex-wrap gap-3 text-sm text-zinc-400">
-                {profile.wallet_address ? (
-                  <span className="rounded-full border border-white/10 px-3 py-1.5">
-                    {shortWallet(profile.wallet_address)}
-                  </span>
-                ) : null}
+                  <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-zinc-400">
+                    <span>@{profile.username}</span>
+                    {profile.wallet_address ? (
+                      <>
+                        <span className="text-zinc-600">•</span>
+                        <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-zinc-300">
+                          <Wallet size={14} className="text-cyan-300" />
+                          {shortWallet(profile.wallet_address)}
+                        </span>
+                      </>
+                    ) : null}
+                  </div>
 
-                {profile.created_at ? (
-                  <span className="rounded-full border border-white/10 px-3 py-1.5">
-                    Joined {formatDate(profile.created_at)}
-                  </span>
-                ) : null}
+                  {profile.bio ? (
+                    <p className="mt-5 max-w-2xl text-sm leading-7 text-zinc-300 md:text-base">
+                      {profile.bio}
+                    </p>
+                  ) : (
+                    <p className="mt-5 max-w-2xl text-sm leading-7 text-zinc-500 md:text-base">
+                      This collector has not added a bio yet.
+                    </p>
+                  )}
 
-                <span className="rounded-full border border-white/10 px-3 py-1.5">
-                  {minted.length} Minted
-                </span>
+                  <div className="mt-6 flex flex-wrap gap-3">
+                    <Link
+                      href={`/explore?creator=${profile.username}`}
+                      className="inline-flex items-center gap-2 rounded-2xl border border-cyan-400/25 bg-cyan-400/10 px-4 py-3 text-sm font-medium text-cyan-200 transition hover:border-cyan-400/40 hover:bg-cyan-400/15"
+                    >
+                      <Sparkles size={16} />
+                      Explore NFTs
+                    </Link>
 
-                <span className="rounded-full border border-white/10 px-3 py-1.5">
-                  {collected.length} Collected
-                </span>
+                    {profile.wallet_address ? (
+                      <button
+                        type="button"
+                        className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-medium text-white transition hover:bg-white/[0.07]"
+                      >
+                        <Copy size={16} />
+                        Wallet Connected
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 lg:w-[420px]">
+                <StatPill icon={Sparkles} label="Minted" value={minted.length} />
+                <StatPill icon={Layers3} label="Collected" value={collected.length} />
+                <StatPill icon={Trophy} label="Showcase" value={totalShowcase} />
               </div>
             </div>
           </div>
         </div>
 
         <section className="mt-12">
-          <div className="mb-5 flex items-center justify-between">
-            <h2 className="text-xl font-semibold">Minted NFTs</h2>
-            <span className="text-sm text-zinc-500">{minted.length} items</span>
-          </div>
+          <SectionHeader
+            eyebrow="Creator Vault"
+            title="Minted NFTs"
+            count={minted.length}
+            subtitle="Original works this profile has minted on Aurora."
+          />
 
           {minted.length === 0 ? (
-            <div className="rounded-2xl border border-white/10 bg-zinc-950 p-6 text-zinc-500">
-              No minted NFTs yet.
-            </div>
+            <EmptyState
+              title="No minted NFTs yet"
+              text="Once this user starts minting, their drops will show up here in a much cleaner collector-style grid."
+            />
           ) : (
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
               {minted.map((nft) => (
                 <NftCard key={`minted-${nft.id}`} nft={nft} type="minted" />
               ))}
@@ -235,18 +382,21 @@ export default async function PublicProfilePage({ params }) {
           )}
         </section>
 
-        <section className="mt-14">
-          <div className="mb-5 flex items-center justify-between">
-            <h2 className="text-xl font-semibold">Collected NFTs</h2>
-            <span className="text-sm text-zinc-500">{collected.length} items</span>
-          </div>
+        <section className="mt-16">
+          <SectionHeader
+            eyebrow="Collector Vault"
+            title="Collected NFTs"
+            count={collected.length}
+            subtitle="Pieces this profile has acquired and added to their on-chain showcase."
+          />
 
           {collected.length === 0 ? (
-            <div className="rounded-2xl border border-white/10 bg-zinc-950 p-6 text-zinc-500">
-              No collected NFTs yet.
-            </div>
+            <EmptyState
+              title="No collected NFTs yet"
+              text="Collected pieces will appear here once the wallet starts building out its gallery."
+            />
           ) : (
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
               {collected.map((nft) => (
                 <NftCard key={`collected-${nft.id}`} nft={nft} type="collected" />
               ))}
