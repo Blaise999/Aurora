@@ -21,7 +21,7 @@ const connectors = [
   }),
   coinbaseWallet({
     appName: "AuroraNFT",
-    appLogoUrl: "https://aurora-nft.vercel.app/pictures/logo.png",
+    appLogoUrl: "https://auroranft.art/pictures/logo.png",
   }),
   safe(),
 ];
@@ -38,8 +38,8 @@ if (wcProjectId) {
       metadata: {
         name: "AuroraNFT",
         description: "Discover & Collect Digital Art on Base",
-        url: "https://aurora-nft.vercel.app",
-        icons: ["https://aurora-nft.vercel.app/pictures/logo.png"],
+        url: "https://auroranft.art",
+        icons: ["https://auroranft.art/pictures/logo.png"],
       },
     })
   );

@@ -6,7 +6,7 @@ const RESEND_API_KEY = process.env.RESEND_API_KEY || "";
 const SUPPORT_EMAIL = process.env.RESEND_SUPPORT_EMAIL || "support@auroranft.art";
 const LOGO_URL = process.env.NEXT_PUBLIC_APP_URL
   ? `${process.env.NEXT_PUBLIC_APP_URL}/pictures/logo.png`
-  : "https://aurora-nft.vercel.app/pictures/logo.png";
+  : "https://auroranft.art/pictures/logo.png";
 
 function buildBrandedHtml(subject, body, recipientEmail) {
   // Convert newlines to <br> for the body
