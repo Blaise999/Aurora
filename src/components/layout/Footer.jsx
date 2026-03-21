@@ -12,7 +12,7 @@ const footerLinks = {
     { label: 'Privacy Policy', href: '/privacy' },
   ],
   Community: [
-    { label: 'Telegram', href: '#' },
+    { label: 'Telegram', href: 'https://t.me/AuroraNFTMarket' },
     
   ],
 };

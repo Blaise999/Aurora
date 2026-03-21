@@ -85,6 +85,7 @@ export default function SupportChatWidget() {
 
   const persistSessionCutoff = useCallback((value) => {
     setSessionCutoff(value);
+
     if (typeof window !== 'undefined') {
       if (value) {
         sessionStorage.setItem(SUPPORT_SESSION_CUT_KEY, value);
@@ -94,7 +95,7 @@ export default function SupportChatWidget() {
     }
   }, []);
 
-  const hydrateExistingSession = useCallback(async () => {
+  const hydrateExistingSession = useCallback(() => {
     if (typeof window === 'undefined') return;
 
     const savedName = sessionStorage.getItem(SUPPORT_NAME_KEY) || '';
@@ -282,16 +283,10 @@ export default function SupportChatWidget() {
     await initConversation(visitorName);
   };
 
-  const handleOpen = async () => {
+  const handleOpen = () => {
     setIsOpen(true);
     setUnread(0);
-
-    if (conversationId) {
-      const freshCutoff = new Date().toISOString();
-      persistSessionCutoff(freshCutoff);
-      setMessages([]);
-      requestAnimationFrame(() => inputRef.current?.focus());
-    }
+    requestAnimationFrame(() => inputRef.current?.focus());
   };
 
   const handleMinimize = () => {
@@ -312,12 +307,12 @@ export default function SupportChatWidget() {
       {!isOpen && (
         <button
           onClick={handleOpen}
-          className="fixed bottom-6 right-6 z-50 w-14 h-14 rounded-full bg-gradient-to-br from-accent to-accent-violet shadow-glow-lg flex items-center justify-center text-bg hover:scale-110 transition-transform duration-300"
+          className="fixed bottom-6 right-6 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-accent to-accent-violet text-bg shadow-glow-lg transition-transform duration-300 hover:scale-110"
         >
           <MessageCircle size={24} />
 
           {unread > 0 && (
-            <span className="absolute -top-1 -right-1 min-w-[20px] h-5 px-1 rounded-full bg-danger text-white text-[10px] font-bold flex items-center justify-center">
+            <span className="absolute -right-1 -top-1 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-danger px-1 text-[10px] font-bold text-white">
               {unread}
             </span>
           )}
@@ -326,23 +321,23 @@ export default function SupportChatWidget() {
 
       {isOpen && (
         <div
-          className="fixed bottom-6 right-6 z-50 w-[380px] max-w-[calc(100vw-3rem)] h-[520px] max-h-[calc(100vh-6rem)] rounded-2xl overflow-hidden shadow-2xl flex flex-col"
+          className="fixed bottom-6 right-6 z-50 flex h-[520px] max-h-[calc(100vh-6rem)] w-[380px] max-w-[calc(100vw-3rem)] flex-col overflow-hidden rounded-2xl shadow-2xl"
           style={{
             background: 'rgba(11,16,32,0.95)',
             backdropFilter: 'blur(24px)',
             border: '1px solid rgba(255,255,255,0.08)',
           }}
         >
-          <div className="flex items-center justify-between px-5 py-4 border-b border-white/[0.06] bg-gradient-to-r from-accent/10 to-accent-violet/10">
+          <div className="flex items-center justify-between border-b border-white/[0.06] bg-gradient-to-r from-accent/10 to-accent-violet/10 px-5 py-4">
             <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-full bg-gradient-to-br from-accent to-accent-violet flex items-center justify-center">
+              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-accent to-accent-violet">
                 <MessageCircle size={16} className="text-bg" />
               </div>
 
               <div>
                 <p className="text-sm font-semibold text-text">AuroraNft Support</p>
-                <p className="text-[10px] text-success flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
+                <p className="flex items-center gap-1 text-[10px] text-success">
+                  <span className="h-1.5 w-1.5 rounded-full bg-success animate-pulse" />
                   Online
                 </p>
               </div>
@@ -351,7 +346,7 @@ export default function SupportChatWidget() {
             <div className="flex items-center gap-1">
               <button
                 onClick={handleMinimize}
-                className="p-1.5 text-muted hover:text-text transition-colors rounded-lg hover:bg-white/[0.06]"
+                className="rounded-lg p-1.5 text-muted transition-colors hover:bg-white/[0.06] hover:text-text"
                 aria-label="Minimize chat"
               >
                 <Minimize2 size={18} />
@@ -359,7 +354,7 @@ export default function SupportChatWidget() {
 
               <button
                 onClick={handleClose}
-                className="p-1.5 text-muted hover:text-text transition-colors rounded-lg hover:bg-white/[0.06]"
+                className="rounded-lg p-1.5 text-muted transition-colors hover:bg-white/[0.06] hover:text-text"
                 aria-label="Close chat"
               >
                 <X size={18} />
@@ -368,13 +363,13 @@ export default function SupportChatWidget() {
           </div>
 
           {!nameSet ? (
-            <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
-              <div className="w-16 h-16 rounded-full bg-gradient-to-br from-accent/20 to-accent-violet/20 flex items-center justify-center mb-4">
+            <div className="flex flex-1 flex-col items-center justify-center p-6 text-center">
+              <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-accent/20 to-accent-violet/20">
                 <MessageCircle size={28} className="text-accent" />
               </div>
 
-              <h3 className="text-lg font-display font-semibold text-text mb-1">Hi there!</h3>
-              <p className="text-sm text-muted mb-6">
+              <h3 className="mb-1 text-lg font-display font-semibold text-text">Hi there!</h3>
+              <p className="mb-6 text-sm text-muted">
                 Enter your name to start chatting with our team.
               </p>
 
@@ -385,14 +380,14 @@ export default function SupportChatWidget() {
                   onChange={(e) => setVisitorName(e.target.value)}
                   placeholder="Your name..."
                   disabled={startingChat}
-                  className="w-full bg-white/[0.04] border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-text placeholder:text-muted-dim focus:outline-none focus:border-accent/40 disabled:opacity-60"
+                  className="w-full rounded-xl border border-white/[0.08] bg-white/[0.04] px-4 py-3 text-sm text-text placeholder:text-muted-dim focus:border-accent/40 focus:outline-none disabled:opacity-60"
                   autoFocus
                 />
 
                 <button
                   type="submit"
                   disabled={startingChat}
-                  className="w-full py-3 rounded-xl bg-gradient-to-r from-accent to-accent-violet text-bg font-semibold text-sm hover:opacity-90 transition-opacity disabled:opacity-60"
+                  className="w-full rounded-xl bg-gradient-to-r from-accent to-accent-violet py-3 text-sm font-semibold text-bg transition-opacity hover:opacity-90 disabled:opacity-60"
                 >
                   {startingChat ? (
                     <span className="inline-flex items-center gap-2">
@@ -409,20 +404,20 @@ export default function SupportChatWidget() {
             <>
               <div
                 ref={scrollRef}
-                className="flex-1 overflow-y-auto p-4 space-y-3"
+                className="flex-1 space-y-3 overflow-y-auto p-4"
                 style={{ scrollbarWidth: 'thin' }}
               >
                 {visibleMessages.length === 0 && (
                   <div className="flex gap-2.5">
-                    <div className="w-7 h-7 rounded-full bg-accent/20 flex items-center justify-center shrink-0 mt-0.5">
+                    <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent/20">
                       <MessageCircle size={12} className="text-accent" />
                     </div>
 
-                    <div className="bg-white/[0.04] rounded-2xl rounded-tl-sm px-4 py-2.5 max-w-[80%]">
+                    <div className="max-w-[80%] rounded-2xl rounded-tl-sm bg-white/[0.04] px-4 py-2.5">
                       <p className="text-sm text-text">
                         Welcome {visitorName || 'there'}! How can we help you today?
                       </p>
-                      <p className="text-[10px] text-muted-dim mt-1">Support Team</p>
+                      <p className="mt-1 text-[10px] text-muted-dim">Support Team</p>
                     </div>
                   </div>
                 )}
@@ -430,26 +425,28 @@ export default function SupportChatWidget() {
                 {visibleMessages.map((msg) => (
                   <div
                     key={msg.id}
-                    className={`flex gap-2.5 ${msg.sender_type === 'visitor' ? 'flex-row-reverse' : ''}`}
+                    className={`flex gap-2.5 ${
+                      msg.sender_type === 'visitor' ? 'flex-row-reverse' : ''
+                    }`}
                   >
                     {msg.sender_type === 'admin' && (
-                      <div className="w-7 h-7 rounded-full bg-accent-violet/20 flex items-center justify-center shrink-0 mt-0.5">
+                      <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent-violet/20">
                         <span className="text-[10px] font-bold text-accent-violet">A</span>
                       </div>
                     )}
 
                     <div
-                      className={`rounded-2xl px-4 py-2.5 max-w-[80%] ${
+                      className={`max-w-[80%] rounded-2xl px-4 py-2.5 ${
                         msg.sender_type === 'visitor'
-                          ? 'bg-accent/20 rounded-tr-sm'
-                          : 'bg-white/[0.04] rounded-tl-sm'
+                          ? 'rounded-tr-sm bg-accent/20'
+                          : 'rounded-tl-sm bg-white/[0.04]'
                       }`}
                     >
-                      <p className="text-sm text-text whitespace-pre-wrap break-words">
+                      <p className="break-words whitespace-pre-wrap text-sm text-text">
                         {msg.message}
                       </p>
 
-                      <p className="text-[10px] text-muted-dim mt-1">
+                      <p className="mt-1 text-[10px] text-muted-dim">
                         {msg._optimistic
                           ? 'Sending...'
                           : new Date(msg.created_at).toLocaleTimeString([], {
@@ -462,7 +459,7 @@ export default function SupportChatWidget() {
                 ))}
               </div>
 
-              <div className="p-3 border-t border-white/[0.06]">
+              <div className="border-t border-white/[0.06] p-3">
                 <div className="flex gap-2">
                   <input
                     ref={inputRef}
@@ -477,13 +474,13 @@ export default function SupportChatWidget() {
                     }}
                     placeholder={conversationId ? 'Type a message...' : 'Starting chat...'}
                     disabled={!conversationId || sending}
-                    className="flex-1 bg-white/[0.04] border border-white/[0.08] rounded-xl px-4 py-2.5 text-sm text-text placeholder:text-muted-dim focus:outline-none focus:border-accent/40 disabled:opacity-60"
+                    className="flex-1 rounded-xl border border-white/[0.08] bg-white/[0.04] px-4 py-2.5 text-sm text-text placeholder:text-muted-dim focus:border-accent/40 focus:outline-none disabled:opacity-60"
                   />
 
                   <button
                     onClick={handleSend}
                     disabled={!input.trim() || !conversationId || sending}
-                    className="w-10 h-10 rounded-xl bg-gradient-to-br from-accent to-accent-violet flex items-center justify-center text-bg disabled:opacity-30 hover:opacity-90 transition-opacity"
+                    className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-accent to-accent-violet text-bg transition-opacity hover:opacity-90 disabled:opacity-30"
                   >
                     {sending ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
                   </button>
