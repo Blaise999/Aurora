@@ -2,6 +2,9 @@ import { NextResponse } from 'next/server';
 import { getSupabase } from '@/lib/db/supabase';
 import { notifyNewSupportMessage } from '@/lib/ntfy';
 
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
 export async function GET(req) {
   try {
     const { searchParams } = new URL(req.url);
@@ -23,6 +26,7 @@ export async function GET(req) {
 
     return NextResponse.json({ messages: data || [] });
   } catch (err) {
+    console.error('[support/messages][GET]', err);
     return NextResponse.json(
       { error: err?.message || 'Failed to fetch messages' },
       { status: 500 }
@@ -32,7 +36,7 @@ export async function GET(req) {
 
 export async function POST(req) {
   try {
-    const body = await req.json();
+    const body = await req.json().catch(() => ({}));
     const { conversation_id, sender_type, sender_name, message } = body || {};
 
     if (!conversation_id || !sender_type || !message?.trim()) {
@@ -64,31 +68,46 @@ export async function POST(req) {
       .eq('id', conversation_id);
 
     if (convoUpdateError) {
-      console.error('[SUPPORT] failed updating conversation timestamp:', convoUpdateError);
+      console.error('[support/messages] failed updating conversation timestamp:', convoUpdateError);
     }
+
+    let ntfyResult = null;
+    let adminNotifError = null;
 
     if (sender_type !== 'admin') {
-      void notifyNewSupportMessage({
-        visitorName: cleanSenderName,
-        message: cleanMessage,
-      }).catch((e) => console.error('[SUPPORT] ntfy failed:', e));
+      try {
+        ntfyResult = await notifyNewSupportMessage({
+          visitorName: cleanSenderName,
+          message: cleanMessage,
+        });
+        console.log('[support/messages] ntfy result:', ntfyResult);
+      } catch (e) {
+        console.error('[support/messages] ntfy failed hard:', e);
+      }
 
-      void sb
-        .from('admin_notifications')
-        .insert({
-          type: 'support',
-          title: 'New Support Message',
-          body: 'From: ' + cleanSenderName + ' — ' + cleanMessage.slice(0, 100),
-          metadata: { conversation_id, sender_name: cleanSenderName },
-        })
-        .then(() => {})
-        .catch((e) =>
-          console.error('[SUPPORT] admin_notifications insert failed:', e)
-        );
+      const { error } = await sb.from('admin_notifications').insert({
+        type: 'support',
+        title: 'New Support Message',
+        body: `From: ${cleanSenderName} — ${cleanMessage.slice(0, 100)}`,
+        metadata: {
+          conversation_id,
+          sender_name: cleanSenderName,
+        },
+      });
+
+      if (error) {
+        adminNotifError = error.message || String(error);
+        console.error('[support/messages] admin_notifications insert failed:', error);
+      }
     }
 
-    return NextResponse.json({ message: data });
+    return NextResponse.json({
+      message: data,
+      ntfy: ntfyResult, // temporary debug
+      adminNotifError,
+    });
   } catch (err) {
+    console.error('[support/messages][POST]', err);
     return NextResponse.json(
       { error: err?.message || 'Failed to send message' },
       { status: 500 }

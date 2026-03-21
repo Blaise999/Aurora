@@ -1,12 +1,23 @@
 // src/lib/ntfy.js
+//
+// Debug-friendly ntfy sender for Aurora.
+// Priority order:
+//   1) site_settings.ntfy_topic / site_settings.ntfy_auth_token
+//   2) process.env.NTFY_TOPIC / process.env.NTFY_AUTH_TOKEN
+//   3) fallback defaults
+//
+// This version returns rich debug info and logs every attempt.
+
 const NTFY_SERVER = (process.env.NTFY_SERVER || 'https://ntfy.sh').replace(/\/+$/, '');
-const ENV_TOPIC = (process.env.NTFY_TOPIC || 'Aurora').trim();
-const ENV_AUTH = (process.env.NTFY_AUTH_TOKEN || '').trim();
-const SITE_URL =
-  (process.env.NEXT_PUBLIC_SITE_URL ||
+const ENV_TOPIC = String(process.env.NTFY_TOPIC || 'Aurora').trim();
+const ENV_AUTH = String(process.env.NTFY_AUTH_TOKEN || '').trim();
+
+const SITE_URL = String(
+  process.env.NEXT_PUBLIC_SITE_URL ||
     process.env.SITE_URL ||
     process.env.VERCEL_PROJECT_PRODUCTION_URL ||
-    '').trim();
+    ''
+).trim();
 
 let _cachedTopic = null;
 let _cachedAuth = null;
@@ -20,21 +31,18 @@ function normalizeTopic(topic) {
     .replace(/\/+$/, '');
 }
 
-function absoluteAdminUrl(path = '/admin') {
-  const cleanPath = path.startsWith('/') ? path : `/${path}`;
-  if (!SITE_URL) return undefined;
-
-  const base = SITE_URL.startsWith('http') ? SITE_URL : `https://${SITE_URL}`;
-  return `${base.replace(/\/+$/, '')}${cleanPath}`;
-}
-
-// Headers in fetch must be safe ASCII-ish strings.
-// Do not try to force latin1 conversion; just strip unsupported chars.
-function sanitizeHeaderValue(value) {
+function cleanHeader(value) {
   return String(value ?? '')
     .replace(/[\r\n]+/g, ' ')
-    .replace(/[^\x20-\x7E]/g, '')
     .trim();
+}
+
+function buildAbsoluteUrl(path = '/admin') {
+  const safePath = path.startsWith('/') ? path : `/${path}`;
+  if (!SITE_URL) return null;
+
+  const base = SITE_URL.startsWith('http') ? SITE_URL : `https://${SITE_URL}`;
+  return `${base.replace(/\/+$/, '')}${safePath}`;
 }
 
 async function getTopicFromDb() {
@@ -72,16 +80,40 @@ async function getTopicFromDb() {
       source: 'db',
     };
   } catch (err) {
-    const fallbackTopic = normalizeTopic(ENV_TOPIC);
     return {
-      topic: fallbackTopic,
+      topic: normalizeTopic(ENV_TOPIC),
       auth: ENV_AUTH,
-      source: 'env',
-      fallbackError: err?.message || 'Unknown DB error',
+      source: 'env-fallback',
+      dbError: err?.message || 'Unknown DB error',
     };
   }
 }
 
+export function clearNtfyCache() {
+  _cachedTopic = null;
+  _cachedAuth = null;
+  _topicFetchedAt = 0;
+}
+
+export async function getResolvedNtfyConfig() {
+  const resolved = await getTopicFromDb();
+
+  return {
+    server: NTFY_SERVER,
+    envTopic: ENV_TOPIC,
+    dbOrCachedTopic: resolved.topic || null,
+    topic: normalizeTopic(resolved.topic || ENV_TOPIC),
+    topicSource: resolved.source || 'unknown',
+    hasAuth: Boolean((resolved.auth || ENV_AUTH || '').trim()),
+    authSource: (resolved.auth || '').trim() ? resolved.source : ENV_AUTH ? 'env' : 'none',
+    siteUrl: SITE_URL || null,
+    dbError: resolved.dbError || null,
+  };
+}
+
+/**
+ * Send a push notification and return full debug info.
+ */
 export async function sendNtfyNotification({
   title,
   message,
@@ -93,48 +125,57 @@ export async function sendNtfyNotification({
   let error = null;
   let status = null;
   let responseText = '';
-  let resolvedTopic = normalizeTopic(ENV_TOPIC);
-  let resolvedAuth = '';
+  let requestUrl = '';
+  let topic = normalizeTopic(ENV_TOPIC);
   let topicSource = 'env';
+  let hasAuth = false;
+  let clickUrl = null;
 
   try {
     const resolved = await getTopicFromDb();
-    resolvedTopic = normalizeTopic(resolved.topic || ENV_TOPIC);
-    resolvedAuth = String(resolved.auth || '').trim();
+
+    topic = normalizeTopic(resolved.topic || ENV_TOPIC);
     topicSource = resolved.source || 'env';
 
-    if (!resolvedTopic) {
-      throw new Error('NTFY topic is empty');
+    const authToken = String(resolved.auth || ENV_AUTH || '').trim();
+    hasAuth = Boolean(authToken);
+
+    if (!topic) {
+      throw new Error('NTFY topic resolved to empty string');
     }
 
-    const url = `${NTFY_SERVER}/${encodeURIComponent(resolvedTopic)}`;
+    requestUrl = `${NTFY_SERVER}/${encodeURIComponent(topic)}`;
+
+    clickUrl =
+      click && /^https?:\/\//i.test(click)
+        ? click
+        : click
+        ? buildAbsoluteUrl(click)
+        : buildAbsoluteUrl('/admin');
+
     const headers = {
-      Title: sanitizeHeaderValue(title || 'Notification'),
-      Priority: sanitizeHeaderValue(priority || 'default'),
+      Title: cleanHeader(title || 'Notification'),
+      Priority: cleanHeader(priority || 'default'),
       'Content-Type': 'text/plain; charset=utf-8',
     };
 
     const safeTags = Array.isArray(tags)
-      ? tags.map((t) => sanitizeHeaderValue(t)).filter(Boolean)
+      ? tags.map((t) => cleanHeader(t)).filter(Boolean)
       : [];
 
-    if (safeTags.length) headers.Tags = safeTags.join(',');
+    if (safeTags.length) {
+      headers.Tags = safeTags.join(',');
+    }
 
-    const clickUrl =
-      click && /^https?:\/\//i.test(click)
-        ? click
-        : click
-        ? absoluteAdminUrl(click)
-        : absoluteAdminUrl('/admin');
+    if (clickUrl) {
+      headers.Click = clickUrl;
+    }
 
-    if (clickUrl) headers.Click = clickUrl;
-
-    const authToken = resolvedAuth || ENV_AUTH;
     if (authToken) {
       headers.Authorization = `Bearer ${authToken}`;
     }
 
-    const res = await fetch(url, {
+    const res = await fetch(requestUrl, {
       method: 'POST',
       headers,
       body: String(message ?? ''),
@@ -145,26 +186,28 @@ export async function sendNtfyNotification({
     responseText = await res.text().catch(() => '');
 
     if (!res.ok) {
-      error = `${res.status}: ${responseText || 'ntfy request failed'}`;
-      console.error('[NTFY] Failed', {
-        url,
-        topic: resolvedTopic,
+      error = `${res.status}: ${responseText || 'Request failed'}`;
+      console.error('[NTFY] send failed', {
+        requestUrl,
+        topic,
         topicSource,
-        status: res.status,
+        hasAuth,
+        status,
         responseText,
       });
     } else {
       delivered = true;
-      console.log('[NTFY] Delivered', {
-        url,
-        topic: resolvedTopic,
+      console.log('[NTFY] send success', {
+        requestUrl,
+        topic,
         topicSource,
-        status: res.status,
+        hasAuth,
+        status,
       });
     }
   } catch (err) {
     error = err?.message || 'Unknown ntfy error';
-    console.error('[NTFY] Error sending notification:', err);
+    console.error('[NTFY] exception', err);
   }
 
   try {
@@ -173,21 +216,24 @@ export async function sendNtfyNotification({
 
     await sb.from('notification_events').insert({
       channel: 'ntfy',
-      topic: resolvedTopic || ENV_TOPIC,
+      topic,
       title: String(title || ''),
       body: String(message || ''),
       priority: String(priority || 'default'),
       delivered,
       error,
       metadata: {
+        server: NTFY_SERVER,
+        requestUrl,
+        topicSource,
+        hasAuth,
+        clickUrl,
         status,
         responseText,
-        topicSource,
-        server: NTFY_SERVER,
       },
     });
   } catch (dbErr) {
-    console.error('[NTFY] Failed to log notification event:', dbErr);
+    console.error('[NTFY] failed to log notification_events', dbErr);
   }
 
   return {
@@ -195,13 +241,16 @@ export async function sendNtfyNotification({
     error,
     status,
     responseText,
-    topic: resolvedTopic,
+    topic,
     topicSource,
+    hasAuth,
     server: NTFY_SERVER,
+    requestUrl,
+    clickUrl,
   };
 }
 
-// ── Helper functions ──
+// ── Notification helpers ─────────────────────────────────────────
 
 export async function notifyNewVisitor({ ip, city, country, page }) {
   const location = [city, country].filter(Boolean).join(', ') || 'Unknown location';
@@ -226,7 +275,7 @@ export async function notifyNewSupportMessage({ visitorName, message }) {
 
 export async function notifyNewMint({ tokenId, minter, price }) {
   return sendNtfyNotification({
-    title: 'New Mint!',
+    title: 'New Mint',
     message: `Token #${tokenId} minted by ${minter}\nPrice: ${price} ETH`,
     priority: 'default',
     tags: ['art', 'tada'],
@@ -236,7 +285,7 @@ export async function notifyNewMint({ tokenId, minter, price }) {
 
 export async function notifyNewPurchase({ nftName, buyer, price, fee, txHash }) {
   return sendNtfyNotification({
-    title: 'New Purchase!',
+    title: 'New Purchase',
     message: `${nftName || 'NFT'} bought by ${buyer}\nPrice: ${price} ETH + ${fee} ETH fee\nTx: ${txHash || 'N/A'}`,
     priority: 'high',
     tags: ['money_with_wings', 'tada'],
@@ -256,7 +305,7 @@ export async function notifyFailedPayment({ buyer, nftName, error: errMsg }) {
 
 export async function notifySyncComplete({ totalInserted, seedsUsed, errorCount, batchId }) {
   return sendNtfyNotification({
-    title: errorCount > 0 ? 'NFT Sync Warning' : 'NFT Sync Done',
+    title: errorCount > 0 ? 'NFT Sync Warning' : 'NFT Sync Complete',
     message: `${totalInserted} NFTs synced from ${seedsUsed} seeds\n${errorCount} errors\nBatch: ${batchId}`,
     priority: errorCount > 0 ? 'high' : 'default',
     tags: ['package', errorCount > 0 ? 'warning' : 'white_check_mark'],
