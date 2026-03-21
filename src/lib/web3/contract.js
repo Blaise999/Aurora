@@ -1,29 +1,65 @@
 // ─── AuroraNft Mint Contract ABI ───
 export const AURORA_NFT_ABI = [
-  { name: "mint", type: "function", stateMutability: "payable",
-    inputs: [{ name: "quantity", type: "uint256" }], outputs: [] },
-  { name: "price", type: "function", stateMutability: "view",
-    inputs: [], outputs: [{ name: "", type: "uint256" }] },
-  { name: "totalMinted", type: "function", stateMutability: "view",
-    inputs: [], outputs: [{ name: "", type: "uint256" }] },
-  { name: "MAX_SUPPLY", type: "function", stateMutability: "view",
-    inputs: [], outputs: [{ name: "", type: "uint256" }] },
-  { name: "saleActive", type: "function", stateMutability: "view",
-    inputs: [], outputs: [{ name: "", type: "bool" }] },
-  { name: "remainingSupply", type: "function", stateMutability: "view",
-    inputs: [], outputs: [{ name: "", type: "uint256" }] },
-  { name: "Transfer", type: "event",
+  {
+    name: "mint",
+    type: "function",
+    stateMutability: "payable",
+    inputs: [{ name: "quantity", type: "uint256" }],
+    outputs: [],
+  },
+  {
+    name: "price",
+    type: "function",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    name: "totalMinted",
+    type: "function",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    name: "MAX_SUPPLY",
+    type: "function",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    name: "saleActive",
+    type: "function",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "bool" }],
+  },
+  {
+    name: "remainingSupply",
+    type: "function",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    name: "Transfer",
+    type: "event",
     inputs: [
       { name: "from", type: "address", indexed: true },
       { name: "to", type: "address", indexed: true },
       { name: "tokenId", type: "uint256", indexed: true },
-    ] },
-  { name: "Minted", type: "event",
+    ],
+  },
+  {
+    name: "Minted",
+    type: "event",
     inputs: [
       { name: "minter", type: "address", indexed: true },
       { name: "tokenId", type: "uint256", indexed: true },
       { name: "quantity", type: "uint256", indexed: false },
-    ] },
+    ],
+  },
 ];
 
 // ─── BuyCollector Contract ABI (collects fee + price → treasury) ───
@@ -96,6 +132,27 @@ export const AURORA_CREATOR_ABI = [
     type: "function",
     stateMutability: "nonpayable",
     inputs: [{ name: "_newFee", type: "uint256" }],
+    outputs: [],
+  },
+  {
+    name: "setTreasury",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "_newTreasury", type: "address" }],
+    outputs: [],
+  },
+  {
+    name: "toggleMint",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [],
+    outputs: [],
+  },
+  {
+    name: "emergencyWithdraw",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [],
     outputs: [],
   },
   {
@@ -173,6 +230,19 @@ export const AURORA_CREATOR_ABI = [
       { name: "oldFee", type: "uint256", indexed: false },
       { name: "newFee", type: "uint256", indexed: false },
     ],
+  },
+  {
+    name: "TreasuryUpdated",
+    type: "event",
+    inputs: [
+      { name: "oldTreasury", type: "address", indexed: false },
+      { name: "newTreasury", type: "address", indexed: false },
+    ],
+  },
+  {
+    name: "MintToggled",
+    type: "event",
+    inputs: [{ name: "active", type: "bool", indexed: false }],
   },
 ];
 
