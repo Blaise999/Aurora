@@ -73,6 +73,7 @@ export async function GET(req: Request) {
       chain: item.chain || "Base",
       tx_hash: item.tx_hash || "",
       mint_fee_eth: parseFloat(item.mint_fee_eth || 0),
+      listing_price_eth: parseFloat(item.listing_price_eth || 0),
       status: item.status || "confirmed",
       created_at: item.created_at,
 
@@ -83,6 +84,7 @@ export async function GET(req: Request) {
       image: item.image_url || "",
       collection_name: item.collection || "User Created",
       nft_name: item.name || `#${item.token_id}`,
+      price: parseFloat(item.listing_price_eth || 0),
     }));
 
     return NextResponse.json({

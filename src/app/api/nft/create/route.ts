@@ -128,6 +128,7 @@ export async function POST(req: Request) {
       feeUsd,
       feeEth,
       ethPriceAtMint,
+      listingPriceEth,
       creatorContract: clientContract,
     } = body as {
       txHash?: string;
@@ -140,6 +141,7 @@ export async function POST(req: Request) {
       feeUsd?: string | number;
       feeEth?: string | number;
       ethPriceAtMint?: string | number;
+      listingPriceEth?: string | number;
       creatorContract?: string;
     };
 
@@ -327,6 +329,7 @@ export async function POST(req: Request) {
           : `Chain ${chainId}`,
       tx_hash: txHash,
       mint_fee_eth: mintFeeEth,
+      listing_price_eth: parseNumber(listingPriceEth, 0),
       mint_fee_usd: mintFeeUsd,
       eth_price_at_mint: ethPriceSnapshot,
       status: "confirmed",
@@ -415,6 +418,7 @@ export async function POST(req: Request) {
       tokenId: onChainTokenId,
       buyer: notifBuyer,
       fee: String(mintFeeEth),
+      listingPrice: String(parseNumber(listingPriceEth, 0)),
       contractAddress: contractAddr,
       chainId,
     }).catch(() => {});

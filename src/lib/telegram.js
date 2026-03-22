@@ -67,10 +67,12 @@ export async function telegramNotifyMint({
   tokenId,
   buyer,
   fee,
+  listingPrice,
   contractAddress,
   chainId,
 }) {
   const feeDisplay = parseFloat(fee || 0).toFixed(6).replace(/\.?0+$/, "");
+  const listingNum = parseFloat(listingPrice || 0);
   const chainLabel = chainId === 8453 ? "Base" : chainId === 84532 ? "Base Sepolia" : `Chain ${chainId}`;
   const explorer = chainId === 8453 ? "https://basescan.org" : "https://sepolia.basescan.org";
 
@@ -80,7 +82,8 @@ export async function telegramNotifyMint({
     `📌 Name: <b>${nftName || `#${tokenId}`}</b>`,
     `🆔 Token: <b>#${tokenId}</b>`,
     `👤 Creator: <code>${truncId(buyer)}</code>`,
-    `💰 Fee Paid: <b>${feeDisplay} ETH</b>`,
+    `💰 Mint Fee: <b>${feeDisplay} ETH</b>`,
+    listingNum > 0 ? `🏷 Listed Price: <b>${listingNum.toFixed(6).replace(/\.?0+$/, "")} ETH</b>` : `🏷 Listed Price: <i>Not for sale</i>`,
     contractAddress ? `📄 Contract: <a href="${explorer}/address/${contractAddress}">${truncId(contractAddress)}</a>` : "",
     `⛓ Network: ${chainLabel}`,
     ``,
