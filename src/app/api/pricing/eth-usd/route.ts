@@ -2,38 +2,58 @@ import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
+/**
+ * GET /api/pricing/eth-usd
+ *
+ * Returns the current ETH/USD price.
+ * Tries CoinGecko first (no API key needed), falls back to backup.
+ *
+ * Response: { success: true, usd: 2000.50, source: "coingecko", fetchedAt: "..." }
+ */
 export async function GET() {
-  try {
-    const res = await fetch("https://api.coinbase.com/v2/exchange-rates?currency=ETH", {
-      cache: "no-store",
-    });
+  // Try multiple sources in order
+  const sources = [
+    {
+      name: "coingecko",
+      url: "https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd",
+      parse: (json: any) => json?.ethereum?.usd,
+    },
+    {
+      name: "coinbase",
+      url: "https://api.coinbase.com/v2/exchange-rates?currency=ETH",
+      parse: (json: any) => Number(json?.data?.rates?.USD),
+    },
+  ];
 
-    if (!res.ok) {
-      throw new Error(`Coinbase pricing request failed with status ${res.status}`);
+  for (const src of sources) {
+    try {
+      const res = await fetch(src.url, {
+        cache: "no-store",
+        signal: AbortSignal.timeout(5000),
+      });
+
+      if (!res.ok) continue;
+
+      const json = await res.json();
+      const price = src.parse(json);
+      const usd = Number(price);
+
+      if (!Number.isFinite(usd) || usd <= 0) continue;
+
+      return NextResponse.json({
+        success: true,
+        usd,
+        source: src.name,
+        fetchedAt: new Date().toISOString(),
+      });
+    } catch {
+      // try next source
+      continue;
     }
-
-    const json = await res.json();
-    const usdRate = json?.data?.rates?.USD;
-
-    if (!usdRate) {
-      throw new Error("USD rate missing from pricing response");
-    }
-
-    const ethUsd = Number(usdRate);
-
-    if (!Number.isFinite(ethUsd) || ethUsd <= 0) {
-      throw new Error("Invalid ETH/USD rate");
-    }
-
-    return NextResponse.json({
-      ethUsd,
-      source: "coinbase",
-      fetchedAt: new Date().toISOString(),
-    });
-  } catch (err) {
-    return NextResponse.json(
-      { error: err.message || "Failed to fetch ETH/USD price" },
-      { status: 500 }
-    );
   }
+
+  return NextResponse.json(
+    { success: false, error: "All price sources failed" },
+    { status: 502 }
+  );
 }

@@ -1,25 +1,10 @@
 // src/lib/telegram.js — Send messages to Telegram group via Bot API
-//
-// ENV VARS:
-//   TELEGRAM_BOT_TOKEN  — from @BotFather
-//   TELEGRAM_CHAT_ID    — group/channel chat ID (use @userinfobot or getUpdates)
-//
-// SETUP:
-//   1. Talk to @BotFather on Telegram, create a bot, copy the token
-//   2. Add the bot to your group/channel
-//   3. Get chat ID: curl https://api.telegram.org/bot<TOKEN>/getUpdates
-//      Look for "chat":{"id":-100xxxxx} in the response
-//   4. Set env vars TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
 const CHAT_ID = process.env.TELEGRAM_CHAT_ID || "";
 
 /**
  * Send a message to the Telegram group
- * @param {string} text - Message text (supports HTML)
- * @param {object} [opts]
- * @param {string} [opts.parse_mode] - 'HTML' | 'MarkdownV2'
- * @param {boolean} [opts.disable_preview] - Disable link previews
  */
 export async function sendTelegramMessage(text, opts = {}) {
   if (!BOT_TOKEN || !CHAT_ID) {
@@ -53,7 +38,7 @@ export async function sendTelegramMessage(text, opts = {}) {
   }
 }
 
-/** Truncate wallet/email for display */
+/** Truncate wallet for display */
 function truncId(str) {
   if (!str || str.length < 10) return str || "???";
   if (str.includes("@")) return str;
@@ -61,7 +46,21 @@ function truncId(str) {
 }
 
 /**
- * Notify group about a new NFT creation (on-chain mint via AuroraCreator)
+ * New NFT created (on-chain mint via AuroraCreator)
+ *
+ * Example:
+ * ────────────────────────────────
+ * 🎨 New NFT Minted!
+ *
+ * 📌 Name: Cosmic Dreamer #1
+ * 🆔 Token: #7
+ * 👤 Creator: 0x7B2e...4f1A
+ * 💰 Fee Paid: 0.005 ETH
+ * 📄 Contract: 0x50dd...Fda75
+ * ⛓ Network: Base
+ *
+ * ✅ Minted on-chain successfully
+ * ────────────────────────────────
  */
 export async function telegramNotifyMint({
   nftName,
@@ -72,20 +71,20 @@ export async function telegramNotifyMint({
   chainId,
 }) {
   const feeDisplay = parseFloat(fee || 0).toFixed(6).replace(/\.?0+$/, "");
-  const chainLabel = chainId === 8453 ? "Base" : chainId === 1 ? "Ethereum" : "Base Sepolia";
-  const explorerBase = chainId === 8453 ? "https://basescan.org" : "https://sepolia.basescan.org";
+  const chainLabel = chainId === 8453 ? "Base" : chainId === 84532 ? "Base Sepolia" : `Chain ${chainId}`;
+  const explorer = chainId === 8453 ? "https://basescan.org" : "https://sepolia.basescan.org";
 
   const msg = [
-    `🎨 <b>New NFT Created!</b>`,
+    `🎨 <b>New NFT Minted!</b>`,
     ``,
     `📌 Name: <b>${nftName || `#${tokenId}`}</b>`,
-    `🆔 Token ID: <b>#${tokenId}</b>`,
+    `🆔 Token: <b>#${tokenId}</b>`,
     `👤 Creator: <code>${truncId(buyer)}</code>`,
-    `💰 Mint Fee: <b>${feeDisplay} ETH</b>`,
-    contractAddress ? `📄 Contract: <a href="${explorerBase}/address/${contractAddress}">${truncId(contractAddress)}</a>` : "",
-    `⛓ Chain: ${chainLabel}`,
+    `💰 Fee Paid: <b>${feeDisplay} ETH</b>`,
+    contractAddress ? `📄 Contract: <a href="${explorer}/address/${contractAddress}">${truncId(contractAddress)}</a>` : "",
+    `⛓ Network: ${chainLabel}`,
     ``,
-    `✅ Fee sent to treasury on-chain`,
+    `✅ Minted on-chain successfully`,
   ]
     .filter(Boolean)
     .join("\n");
@@ -94,7 +93,20 @@ export async function telegramNotifyMint({
 }
 
 /**
- * Notify group about a new NFT purchase (ETH sent to admin wallet)
+ * NFT purchased (app-only, ETH sent to treasury)
+ *
+ * Example:
+ * ────────────────────────────────
+ * 🛒 New NFT Purchased!
+ *
+ * 📌 NFT: Celestial Fragment #1000
+ * 👤 Buyer: 0xC9d3...2e7F
+ * 💰 Amount Paid: 0.002 ETH
+ * ⛓ Network: Base
+ * 🔗 Tx: 0xa1b2...f3e4
+ *
+ * ✅ Purchase confirmed
+ * ────────────────────────────────
  */
 export async function telegramNotifyBuy({
   nftName,
@@ -108,24 +120,19 @@ export async function telegramNotifyBuy({
   txHash,
 }) {
   const totalDisplay = parseFloat(totalPrice || 0).toFixed(6).replace(/\.?0+$/, "");
-  const priceDisplay = parseFloat(nftPrice || 0).toFixed(6).replace(/\.?0+$/, "");
-  const feeDisplay = parseFloat(buyFee || 0).toFixed(6).replace(/\.?0+$/, "");
-  const chainLabel = chainId === 8453 ? "Base" : chainId === 1 ? "Ethereum" : "Base Sepolia";
-  const explorerBase = chainId === 8453 ? "https://basescan.org" : "https://sepolia.basescan.org";
+  const chainLabel = chainId === 8453 ? "Base" : chainId === 84532 ? "Base Sepolia" : `Chain ${chainId}`;
+  const explorer = chainId === 8453 ? "https://basescan.org" : "https://sepolia.basescan.org";
 
   const msg = [
-    `🛒 <b>New NFT Purchase!</b>`,
+    `🛒 <b>New NFT Purchased!</b>`,
     ``,
     `📌 NFT: <b>${nftName || `Token #${tokenId}`}</b>`,
     `👤 Buyer: <code>${truncId(buyer)}</code>`,
-    `💵 Price: <b>${priceDisplay} ETH</b>`,
-    `💳 Buy Fee: <b>${feeDisplay} ETH</b>`,
-    `💰 Total Paid: <b>${totalDisplay} ETH</b>`,
-    contractAddress ? `📄 Contract: <code>${truncId(contractAddress)}</code>` : "",
-    `⛓ Chain: ${chainLabel}`,
-    txHash ? `🔗 Tx: <a href="${explorerBase}/tx/${txHash}">${truncId(txHash)}</a>` : "",
+    `💰 Amount Paid: <b>${totalDisplay} ETH</b>`,
+    `⛓ Network: ${chainLabel}`,
+    txHash ? `🔗 Tx: <a href="${explorer}/tx/${txHash}">${truncId(txHash)}</a>` : "",
     ``,
-    `✅ ETH sent to admin wallet`,
+    `✅ Purchase confirmed`,
   ]
     .filter(Boolean)
     .join("\n");
@@ -134,7 +141,17 @@ export async function telegramNotifyBuy({
 }
 
 /**
- * Notify group about a new user signup
+ * New user signed up
+ *
+ * Example:
+ * ────────────────────────────────
+ * 👤 New User Joined!
+ *
+ * Name: John
+ * Username: johndoe
+ * Email: john@example.com
+ * Wallet: 0x7B2e...4f1A
+ * ────────────────────────────────
  */
 export async function telegramNotifyNewUser({
   firstName,
@@ -157,7 +174,16 @@ export async function telegramNotifyNewUser({
 }
 
 /**
- * Notify group about a wallet connection
+ * Wallet connected
+ *
+ * Example:
+ * ────────────────────────────────
+ * 🔗 Wallet Connected!
+ *
+ * User: johndoe
+ * Wallet: 0x7B2e...4f1A
+ * Type: MetaMask
+ * ────────────────────────────────
  */
 export async function telegramNotifyWalletConnect({
   firstName,
@@ -170,10 +196,9 @@ export async function telegramNotifyWalletConnect({
     `🔗 <b>Wallet Connected!</b>`,
     ``,
     `User: <b>${firstName || username || "—"}</b>`,
-    `Username: <b>${username || "—"}</b>`,
     `Wallet: <code>${truncId(walletAddress)}</code>`,
     `Type: ${walletType || "Unknown"}`,
-    `Reconnect: ${reconnectMode ? "Yes" : "No"}`,
+    reconnectMode ? `Reconnect: Yes` : "",
   ]
     .filter(Boolean)
     .join("\n");
