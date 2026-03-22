@@ -177,7 +177,7 @@ export default function ConnectWalletPage() {
         onSuccess: () => {
           setConnectingId(null);
           const walletId = connector.id;
-          router.push(`/welcome?wallet=${walletId}${reconnectMode ? '&mode=reconnect' : ''}`);
+          router.push(`/profile`);
         },
         onError: (err) => {
           setConnectingId(null);
