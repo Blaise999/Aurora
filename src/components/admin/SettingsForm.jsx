@@ -396,7 +396,37 @@ export default function SettingsForm() {
   };
 
   const handleSaveCreateMintUsd = async () => {
-    await saveSetting("create_mint_fee_usd");
+    setSaving("create_mint_fee_usd");
+
+    try {
+      // 1. Save USD reference
+      await fetch("/api/admin/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key: "create_mint_fee_usd", value: settings.create_mint_fee_usd, adminWallet: address || null }),
+      });
+
+      // 2. Convert USD → ETH at current rate and lock the ETH price
+      const usdVal = parseFloat(String(settings.create_mint_fee_usd || "0"));
+      if (ethPrice && ethPrice > 0 && usdVal > 0) {
+        const ethVal = (usdVal / ethPrice).toFixed(8).replace(/\.?0+$/, "");
+
+        await fetch("/api/admin/settings", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ key: "mint_price_eth", value: ethVal, adminWallet: address || null }),
+        });
+
+        updateField("mint_price_eth", ethVal);
+      }
+
+      setSaved("create_mint_fee_usd");
+      setTimeout(() => setSaved(null), 2000);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setSaving(null);
+    }
   };
 
   const handleSetOnChainFee = () => {
@@ -555,18 +585,17 @@ export default function SettingsForm() {
               <Sparkles size={14} className="text-accent-violet" />
             </div>
             <div>
-              <h4 className="text-sm font-semibold text-text">Create / Mint Price (USD)</h4>
+              <h4 className="text-sm font-semibold text-text">Create / Mint Price</h4>
               <p className="text-[11px] text-muted">
-                Set your mint price in USD. The Create page auto-converts this to ETH at the live rate.
-                No wallet needed — just save and it takes effect immediately.
-                If the resulting ETH is below the on-chain contract fee, the contract fee is used as the floor.
-                If it's above, the extra goes to your admin wallet automatically.
+                Set your price in USD. When you click Save, the current ETH equivalent is
+                locked as the mint price. It stays fixed until you save again — no fluctuation.
+                If the locked price is below the on-chain contract fee, the contract fee is used instead.
               </p>
             </div>
           </div>
 
           <Input
-            label="Create Mint Fee (USD)"
+            label="Mint Price (USD)"
             value={settings.create_mint_fee_usd}
             onChange={(e) => updateField("create_mint_fee_usd", e.target.value)}
             placeholder="5"
@@ -577,46 +606,41 @@ export default function SettingsForm() {
 
           <div className="rounded-xl bg-surface2/40 p-3">
             <div className="mb-2 flex items-center justify-between">
-              <p className="text-[11px] text-muted">Live conversion preview:</p>
+              <p className="text-[11px] text-muted">Preview — will be locked on save:</p>
               <button
                 onClick={loadEthPrice}
                 className="inline-flex items-center gap-1 text-[11px] text-accent hover:underline"
                 disabled={ethPriceLoading}
               >
                 {ethPriceLoading ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />}
-                Refresh price
+                Refresh rate
               </button>
             </div>
 
             <div className="space-y-2">
               <div className="flex justify-between text-sm">
-                <span className="text-muted">Target USD Fee</span>
+                <span className="text-muted">You set</span>
                 <span className="font-mono text-text">
                   {formatUsd(settings.create_mint_fee_usd) || `$${settings.create_mint_fee_usd || "0"}`}
                 </span>
               </div>
 
               <div className="flex justify-between text-sm">
-                <span className="text-muted">ETH To Set On-Chain</span>
-                <span className="font-mono text-accent">{liveCreateMintEth || "—"} ETH</span>
+                <span className="text-muted">ETH rate</span>
+                <span className="font-mono text-xs">{ethPrice ? `1 ETH = ${formatUsd(ethPrice)}` : "Loading..."}</span>
               </div>
 
               <div className="flex justify-between text-sm">
-                <span className="text-muted">Price Source</span>
-                <span className="font-mono text-xs">{ethPriceSource || "—"}</span>
+                <span className="text-muted">ETH to lock</span>
+                <span className="font-mono font-semibold text-accent">{liveCreateMintEth || "—"} ETH</span>
               </div>
 
-              <div className="flex justify-between text-sm">
-                <span className="text-muted">1 ETH</span>
-                <span className="font-mono text-xs">{ethPrice ? formatUsd(ethPrice) : "—"}</span>
-              </div>
-
-              <div className="flex justify-between text-sm">
-                <span className="text-muted">Last Updated</span>
-                <span className="font-mono text-[10px] text-muted-dim">
-                  {ethPriceUpdatedAt ? new Date(ethPriceUpdatedAt).toLocaleTimeString() : "—"}
-                </span>
-              </div>
+              {settings.mint_price_eth && (
+                <div className="flex justify-between text-sm border-t border-border-light pt-2">
+                  <span className="text-muted">Currently locked</span>
+                  <span className="font-mono text-success">{settings.mint_price_eth} ETH</span>
+                </div>
+              )}
             </div>
 
             {ethPriceError && (
@@ -628,25 +652,29 @@ export default function SettingsForm() {
 
           <div className="flex flex-wrap gap-3">
             <Button
-              variant="secondary"
+              variant="primary"
               size="md"
               onClick={handleSaveCreateMintUsd}
-              disabled={saving === "create_mint_fee_usd"}
+              disabled={saving === "create_mint_fee_usd" || !ethPrice}
             >
               {saving === "create_mint_fee_usd" ? (
                 <>
                   <Loader2 size={14} className="animate-spin" />
-                  Saving...
+                  Locking price...
                 </>
               ) : (
                 <>
                   <Save size={14} />
-                  Save USD Fee
+                  Save & Lock ETH Price
                 </>
               )}
             </Button>
 
-            {saved === "create_mint_fee_usd" && <Badge color="success">USD fee saved</Badge>}
+            {saved === "create_mint_fee_usd" && (
+              <Badge color="success">
+                Locked at {settings.mint_price_eth || liveCreateMintEth} ETH
+              </Badge>
+            )}
           </div>
         </div>
       </Card>
