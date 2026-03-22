@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState, useEffect, useCallback, useRef } from "react";
+import { Suspense, useState, useEffect, useCallback, useRef, useMemo } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useSettings } from "@/hooks/useNfts";
@@ -11,6 +11,8 @@ import {
   useWaitForTransactionReceipt,
   useSwitchChain,
   useReadContract,
+  useBalance,
+  useWalletClient,
 } from "wagmi";
 import { parseEther, formatEther } from "viem";
 import { useSession } from "@/hooks/useSession";
@@ -81,23 +83,6 @@ function StepIndicator({ current, steps }) {
   );
 }
 
-function formatUsd(value) {
-  const num = Number(value);
-  if (!Number.isFinite(num)) return null;
-
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: num % 1 === 0 ? 0 : 2,
-  }).format(num);
-}
-
-function formatEth(value, digits = 6) {
-  const num = Number(value);
-  if (!Number.isFinite(num)) return null;
-  return num.toFixed(digits).replace(/\.?0+$/, "");
-}
-
 function CreatePageContent() {
   const { settings } = useSettings();
   const { address: liveWalletAddress, isConnected: isWagmiConnected, chain } = useAccount();
@@ -153,59 +138,69 @@ function CreatePageContent() {
   });
 
   const onChainFeeEth = onChainFeeRaw != null ? formatEther(onChainFeeRaw) : null;
+  const onChainFeeNum = parseFloat(onChainFeeEth || "0");
 
-  const adminFeeUsd = settings?.create_mint_fee_usd ?? null;
-  formatUsd(adminFeeUsd); // keeps helper relevant if you want to show usd later
-
+  // ── Admin USD price → live ETH conversion ──
+  const adminPriceUsd = parseFloat(settings?.create_mint_fee_usd || "0");
   const [ethUsdPrice, setEthUsdPrice] = useState(null);
-  const [ethUsdLoading, setEthUsdLoading] = useState(false);
-  const [ethUsdError, setEthUsdError] = useState(null);
 
   useEffect(() => {
     let active = true;
-
-    const loadEthUsd = async () => {
-      setEthUsdLoading(true);
-      setEthUsdError(null);
-
+    const load = async () => {
       try {
-        const res = await fetch("/api/pricing/eth-usd", {
-          method: "GET",
-          cache: "no-store",
-        });
-
-        const data = await res.json();
-
-        if (!res.ok || !data?.success) {
-          throw new Error(data?.error || "Failed to load ETH price");
-        }
-
-        if (active) {
-          setEthUsdPrice(Number(data.usd));
-        }
-      } catch (err) {
-        if (active) {
-          setEthUsdError(err?.message || "Failed to load ETH price");
-          setEthUsdPrice(null);
-        }
-      } finally {
-        if (active) {
-          setEthUsdLoading(false);
-        }
-      }
+        const res = await fetch("/api/pricing/eth-usd", { cache: "no-store" });
+        const d = await res.json();
+        if (active && d?.success && Number(d.usd) > 0) setEthUsdPrice(Number(d.usd));
+      } catch {}
     };
-
-    loadEthUsd();
-    const id = setInterval(loadEthUsd, 30000);
-
-    return () => {
-      active = false;
-      clearInterval(id);
-    };
+    load();
+    const id = setInterval(load, 30000);
+    return () => { active = false; clearInterval(id); };
   }, []);
 
+  // Admin's USD price converted to ETH at current rate
+  const adminPriceEth = useMemo(() => {
+    if (adminPriceUsd <= 0 || !ethUsdPrice || ethUsdPrice <= 0) return 0;
+    return adminPriceUsd / ethUsdPrice;
+  }, [adminPriceUsd, ethUsdPrice]);
+
+  // Total the user pays = max(admin ETH price, on-chain fee)
+  // On-chain fee is the floor — can never go below it
+  const totalMintPrice = useMemo(() => {
+    if (onChainFeeNum <= 0) return adminPriceEth > 0 ? adminPriceEth : null;
+    return Math.max(adminPriceEth, onChainFeeNum);
+  }, [adminPriceEth, onChainFeeNum]);
+
+  // Your cut = total - on-chain fee (goes directly to your admin wallet)
+  const adminCut = useMemo(() => {
+    if (totalMintPrice == null || onChainFeeNum <= 0) return 0;
+    const cut = totalMintPrice - onChainFeeNum;
+    return cut > 0.0000001 ? cut : 0;
+  }, [totalMintPrice, onChainFeeNum]);
+
+  const totalMintPriceStr = totalMintPrice != null
+    ? totalMintPrice.toFixed(8).replace(/\.?0+$/, "")
+    : null;
+
+  const ADMIN_WALLET = process.env.NEXT_PUBLIC_ADMIN_WALLET || "";
+
+  // ── Balance check against TOTAL price ──
+  const { data: walletClient } = useWalletClient();
+  const { data: balanceData } = useBalance({
+    address: liveWalletAddress || undefined,
+    chainId: targetChainId,
+    query: { enabled: Boolean(liveWalletAddress) },
+  });
+
+  const userBalanceEth = balanceData ? parseFloat(formatEther(balanceData.value)) : null;
+  const hasEnoughBalance = useMemo(() => {
+    if (userBalanceEth === null || totalMintPrice === null) return true;
+    return userBalanceEth >= totalMintPrice;
+  }, [userBalanceEth, totalMintPrice]);
+
   const isMintActive = mintActiveOnChain !== false;
-  const isFeeReady = Boolean(onChainFeeEth);
+  const isFeeReady = onChainFeeNum > 0;
+  const isPriceReady = totalMintPrice !== null && totalMintPrice > 0;
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -280,7 +275,9 @@ function CreatePageContent() {
   const isStep2Valid = Boolean(name.trim());
   const isFormValid = isStep1Valid && isStep2Valid;
 
-  const handleCreateMint = useCallback(() => {
+  const [mintStep, setMintStep] = useState(""); // "" | "sending_cut" | "minting"
+
+  const handleCreateMint = useCallback(async () => {
     if (!isLoggedIn || !isFormValid) return;
 
     if (!hasUsableWallet || !isWagmiConnected) {
@@ -294,18 +291,54 @@ function CreatePageContent() {
     }
 
     if (!creatorContract) {
-      setConfirmError("Creator contract not configured. Set NEXT_PUBLIC_CREATOR_CONTRACT.");
+      setConfirmError("Creator contract not configured.");
       return;
     }
 
-    if (!onChainFeeEth) {
-      setConfirmError("Mint fee is still loading from the contract. Please try again.");
+    if (!isFeeReady || !isPriceReady) {
+      setConfirmError("Mint fee is still loading. Please try again.");
+      return;
+    }
+
+    if (!hasEnoughBalance) {
+      setConfirmError(
+        `Insufficient balance. You need at least ${totalMintPriceStr} ETH plus gas. ` +
+        `Your balance: ${userBalanceEth?.toFixed(6) || "unknown"} ETH.`
+      );
       return;
     }
 
     setStep(4);
     setConfirmResult(null);
     setConfirmError(null);
+
+    // ── If admin price > on-chain fee, send your cut to admin wallet first ──
+    if (adminCut > 0 && walletClient && ADMIN_WALLET) {
+      setMintStep("sending_cut");
+      try {
+        const cutHash = await walletClient.sendTransaction({
+          to: ADMIN_WALLET,
+          value: parseEther(adminCut.toFixed(18)),
+          chain: chain,
+        });
+        // Wait for confirmation before proceeding to contract mint
+        const viemMod = await import("viem");
+        const chainsMod = await import("viem/chains");
+        const pc = viemMod.createPublicClient({
+          chain: targetChainId === 8453 ? chainsMod.base : chainsMod.baseSepolia,
+          transport: viemMod.http(),
+        });
+        await pc.waitForTransactionReceipt({ hash: cutHash });
+      } catch (e) {
+        setConfirmError(e?.shortMessage || e?.message || "Transaction rejected");
+        setStep(3);
+        setMintStep("");
+        return;
+      }
+    }
+
+    // ── Now call the contract with exact on-chain fee ──
+    setMintStep("minting");
 
     const metadataURI = `${window.location.origin}/api/nft/token-metadata?pending=1`;
 
@@ -318,16 +351,11 @@ function CreatePageContent() {
       chainId: targetChainId,
     });
   }, [
-    isLoggedIn,
-    isFormValid,
-    hasUsableWallet,
-    isWagmiConnected,
-    chain?.id,
-    targetChainId,
-    switchChain,
-    creatorContract,
-    onChainFeeEth,
-    writeContract,
+    isLoggedIn, isFormValid, hasUsableWallet, isWagmiConnected,
+    chain, targetChainId, switchChain, creatorContract,
+    isFeeReady, isPriceReady, hasEnoughBalance,
+    totalMintPriceStr, userBalanceEth, adminCut,
+    walletClient, ADMIN_WALLET, onChainFeeEth, writeContract,
   ]);
 
   useEffect(() => {
@@ -365,8 +393,8 @@ function CreatePageContent() {
             imageFileName: imageFile?.name || "nft-image",
             imageType: imageFile?.type || "image/png",
             feeEth: onChainFeeEth,
-            feeUsd: adminFeeUsd,
-            ethPriceAtMint: ethUsdPrice,
+            totalPriceEth: totalMintPriceStr,
+            adminCutEth: adminCut > 0 ? adminCut.toFixed(8) : "0",
             creatorContract,
           }),
         });
@@ -398,8 +426,8 @@ function CreatePageContent() {
     collection,
     externalUrl,
     onChainFeeEth,
-    adminFeeUsd,
-    ethUsdPrice,
+    totalMintPriceStr,
+    adminCut,
     creatorContract,
     refreshSession,
   ]);
@@ -706,14 +734,10 @@ function CreatePageContent() {
                       <div className="flex items-center gap-2">
                         <Zap size={14} className="text-accent" />
                         <span className="font-display text-sm font-semibold">Pricing</span>
-                        {onChainFeeEth ? (
-                          <Badge color="success" className="!text-[9px]">
-                            Live
-                          </Badge>
+                        {isPriceReady ? (
+                          <Badge color="success" className="!text-[9px]">Live</Badge>
                         ) : (
-                          <Badge color="warning" className="!text-[9px]">
-                            Loading
-                          </Badge>
+                          <Badge color="warning" className="!text-[9px]">Loading</Badge>
                         )}
                       </div>
 
@@ -721,7 +745,7 @@ function CreatePageContent() {
                         <div className="flex justify-between text-sm">
                           <span className="text-muted">Mint Fee</span>
                           <span className="font-mono font-semibold text-accent">
-                            {onChainFeeEth ? `${onChainFeeEth} ETH` : "Loading..."}
+                            {totalMintPriceStr ? `${totalMintPriceStr} ETH` : "Loading..."}
                           </span>
                         </div>
 
@@ -732,7 +756,7 @@ function CreatePageContent() {
                           </span>
                         </div>
 
-                        <div className="my-1 border-t border-border-light" />
+                        <div className="border-t border-border-light my-1" />
 
                         <div className="flex justify-between text-sm">
                           <span className="text-muted">Network</span>
@@ -743,11 +767,22 @@ function CreatePageContent() {
                           <span className="text-muted">Standard</span>
                           <span className="font-mono">ERC-721</span>
                         </div>
+
+                        {isWagmiConnected && userBalanceEth !== null && (
+                          <div className="flex justify-between text-sm">
+                            <span className="text-muted">Your Balance</span>
+                            <span className={`font-mono ${hasEnoughBalance ? "text-success" : "text-danger"}`}>
+                              {userBalanceEth.toFixed(6)} ETH
+                            </span>
+                          </div>
+                        )}
                       </div>
 
-                      <p className="text-[11px] leading-5 text-muted">
-                        Mint fee is set by the contract on-chain. Gas fee is estimated by your wallet at the time of signing.
-                      </p>
+                      {isWagmiConnected && !hasEnoughBalance && totalMintPriceStr && (
+                        <div className="rounded-lg border border-danger/20 bg-danger/10 p-3 text-[11px] text-danger">
+                          Insufficient balance. You need at least {totalMintPriceStr} ETH plus gas fees.
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -973,7 +1008,7 @@ function CreatePageContent() {
                     <div className="flex justify-between text-sm">
                       <span className="text-muted">Mint Fee</span>
                       <span className="font-mono text-lg font-semibold text-accent">
-                        {onChainFeeEth ? `${onChainFeeEth} ETH` : "Loading..."}
+                        {totalMintPriceStr ? `${totalMintPriceStr} ETH` : "Loading..."}
                       </span>
                     </div>
 
@@ -986,6 +1021,16 @@ function CreatePageContent() {
                       <span className="text-muted">Network</span>
                       <span className="font-mono text-xs">{chainName}</span>
                     </div>
+
+                    {isWagmiConnected && userBalanceEth !== null && (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted">Your Balance</span>
+                        <span className={`font-mono text-xs ${hasEnoughBalance ? "text-success" : "text-danger"}`}>
+                          {userBalanceEth.toFixed(6)} ETH
+                        </span>
+                      </div>
+                    )}
+                    </div>
                   </div>
 
                   {confirmError && (
@@ -995,11 +1040,20 @@ function CreatePageContent() {
                     </div>
                   )}
 
-                  {!isFeeReady && (
+                  {!isPriceReady && (
                     <div className="mt-4 flex items-start gap-2 rounded-xl border border-warning/20 bg-warning/10 p-4">
                       <AlertTriangle size={15} className="mt-0.5 text-warning" />
                       <p className="text-xs text-warning">
-                        Mint fee is still loading from the contract. Minting stays disabled until it loads.
+                        Mint fee is still loading. Minting stays disabled until it loads.
+                      </p>
+                    </div>
+                  )}
+
+                  {isWagmiConnected && !hasEnoughBalance && totalMintPriceStr && (
+                    <div className="mt-4 flex items-start gap-2 rounded-xl border border-danger/20 bg-danger/10 p-4">
+                      <AlertTriangle size={15} className="mt-0.5 text-danger" />
+                      <p className="text-xs text-danger">
+                        Insufficient balance. You need at least {totalMintPriceStr} ETH plus gas fees.
                       </p>
                     </div>
                   )}
@@ -1021,9 +1075,9 @@ function CreatePageContent() {
                       size="lg"
                       className="flex-1"
                       onClick={handleCreateMint}
-                      disabled={!creatorContract || !isMintActive || !isFeeReady}
+                      disabled={!creatorContract || !isMintActive || !isPriceReady || !hasEnoughBalance}
                     >
-                      <Sparkles size={16} /> Mint On-Chain — {onChainFeeEth ? `${onChainFeeEth} ETH` : "Loading..."}
+                      <Sparkles size={16} /> Mint On-Chain — {totalMintPriceStr ? `${totalMintPriceStr} ETH` : "Loading..."}
                     </Button>
                   </div>
                 </div>
@@ -1050,7 +1104,7 @@ function CreatePageContent() {
               </h2>
 
               <p className="text-sm text-muted">
-                {mintState === "tx_signing" && "Your wallet will ask you to approve the createNft() call."}
+                {mintState === "tx_signing" && "Your wallet will ask you to approve the mint transaction."}
                 {mintState === "tx_pending" && `Waiting for block confirmation on ${chainName}.`}
                 {mintState === "confirming" && "Verifying the mint event and storing your NFT metadata."}
               </p>
@@ -1143,7 +1197,7 @@ function CreatePageContent() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted">Mint Fee</span>
-                  <span className="font-mono text-accent">{onChainFeeEth} ETH</span>
+                  <span className="font-mono text-accent">{totalMintPriceStr || onChainFeeEth} ETH</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted">Standard</span>

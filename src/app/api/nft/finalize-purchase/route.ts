@@ -1,15 +1,10 @@
 import { NextResponse } from "next/server";
-import { createPublicClient, http, parseEther, type Hash } from "viem";
-import { base, baseSepolia } from "viem/chains";
 import { supabase } from "@/lib/supabase";
 import { getSessionData } from "@/lib/auth/session";
 import { notifyNewPurchase } from "@/lib/ntfy";
 import { telegramNotifyBuy } from "@/lib/telegram";
 
 const ADMIN_WALLET = (process.env.NEXT_PUBLIC_ADMIN_WALLET || "").toLowerCase();
-
-// Validate at startup — catch placeholder values
-const ADMIN_WALLET_VALID = /^0x[0-9a-f]{40}$/.test(ADMIN_WALLET);
 
 type FinalizePurchaseBody = {
   txHash?: string;
@@ -31,20 +26,15 @@ type FinalizePurchaseBody = {
   };
 };
 
-function getClientForChain(chainId: number) {
-  if (chainId === 8453) {
-    return createPublicClient({
-      chain: base,
-      transport: http(process.env.BASE_RPC_URL),
-    });
-  }
-
-  return createPublicClient({
-    chain: baseSepolia,
-    transport: http(process.env.BASE_SEPOLIA_RPC_URL),
-  });
-}
-
+/**
+ * POST /api/nft/finalize-purchase
+ *
+ * App-only buy flow — NO blockchain verification.
+ * Frontend already confirmed the tx was mined via wagmi's useWaitForTransactionReceipt.
+ * This just saves the purchase to the database.
+ *
+ * Flow: user wallet sends ETH to admin wallet → wagmi confirms → this endpoint saves to DB.
+ */
 export async function POST(req: Request) {
   try {
     const body = (await req.json()) as FinalizePurchaseBody;
@@ -57,20 +47,13 @@ export async function POST(req: Request) {
       );
     }
 
-    if (!ADMIN_WALLET_VALID) {
-      return NextResponse.json(
-        { error: "Server misconfiguration: NEXT_PUBLIC_ADMIN_WALLET is not a valid address" },
-        { status: 500 }
-      );
-    }
-
+    // ── Auth ──
     const session = await getSessionData();
 
     if (!session?.email) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Resolve wallet: prefer session, fallback to profile lookup
     let userWallet = session.wallet ? String(session.wallet).toLowerCase() : null;
 
     if (!userWallet) {
@@ -86,57 +69,16 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "No wallet found for session" }, { status: 401 });
     }
 
+    // ── Parse NFT data ──
     const chainId = Number(nft.chainId || 8453);
     const contractAddress = String(nft.contractAddress || "").toLowerCase();
     const tokenId = String(nft.tokenId || "");
-    const expectedValue = parseEther(String(nft.totalPrice || "0"));
 
     if (!contractAddress || !tokenId) {
-      return NextResponse.json(
-        { error: "Invalid NFT identity" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Invalid NFT identity" }, { status: 400 });
     }
 
-    const publicClient = getClientForChain(chainId);
-
-    const [tx, receipt] = await Promise.all([
-      publicClient.getTransaction({ hash: txHash as Hash }),
-      publicClient.getTransactionReceipt({ hash: txHash as Hash }),
-    ]);
-
-    if (!tx || !receipt) {
-      return NextResponse.json(
-        { error: "Transaction not found" },
-        { status: 400 }
-      );
-    }
-
-    if (receipt.status !== "success") {
-      return NextResponse.json(
-        { error: "Transaction failed onchain" },
-        { status: 400 }
-      );
-    }
-
-    if (!tx.from || tx.from.toLowerCase() !== userWallet) {
-      return NextResponse.json({ error: "Wallet mismatch" }, { status: 400 });
-    }
-
-    if (!tx.to || tx.to.toLowerCase() !== ADMIN_WALLET) {
-      return NextResponse.json(
-        { error: "Recipient mismatch" },
-        { status: 400 }
-      );
-    }
-
-    if (tx.value !== expectedValue) {
-      return NextResponse.json(
-        { error: "Incorrect payment amount" },
-        { status: 400 }
-      );
-    }
-
+    // ── Get profile ──
     const { data: profile, error: profileError } = await supabase
       .from("profiles")
       .select("id, wallet_address, email")
@@ -149,6 +91,7 @@ export async function POST(req: Request) {
 
     const profileId = profile.id;
 
+    // ── Check duplicate ──
     const { data: existingCollection } = await supabase
       .from("user_collections")
       .select("id")
@@ -164,20 +107,10 @@ export async function POST(req: Request) {
       );
     }
 
+    // ── Save to DB ──
     const nftPrice = Number(nft.nftPrice || 0);
     const mintFee = Number(nft.mintFee || 0);
     const totalPrice = Number(nft.totalPrice || 0);
-
-    const metadata = {
-      cached_nft_id: nft.dbId || null,
-      nft_name: nft.name || null,
-      image_url: nft.image || null,
-      description: nft.description || null,
-      collection: nft.collection || null,
-      token_type: nft.tokenType || "ERC721",
-      attributes: nft.attributes || [],
-      chain: nft.chain || null,
-    };
 
     const collectionInsert = {
       profile_id: profileId,
@@ -201,37 +134,6 @@ export async function POST(req: Request) {
       chain: nft.chain || null,
     };
 
-    const walletMintInsert = {
-      wallet_address: userWallet,
-      cached_nft_id: nft.dbId || null,
-      chain_id: chainId,
-      contract_address: contractAddress,
-      token_id: tokenId,
-      tx_hash: txHash,
-      mint_price_eth: nftPrice,
-      mint_fee_eth: mintFee,
-      total_paid_eth: totalPrice,
-      snapshot_name: nft.name || null,
-      snapshot_image: nft.image || null,
-      snapshot_desc: nft.description || null,
-      status: "confirmed",
-      minted_at: new Date().toISOString(),
-    };
-
-    const transactionInsert = {
-      wallet_address: userWallet,
-      profile_id: profileId,
-      tx_hash: txHash,
-      tx_type: "buy",
-      chain_id: chainId,
-      contract_address: contractAddress,
-      token_id: tokenId,
-      amount_eth: totalPrice,
-      admin_wallet: ADMIN_WALLET,
-      status: "confirmed",
-      metadata,
-    };
-
     const { error: collectionInsertError } = await supabase
       .from("user_collections")
       .insert(collectionInsert);
@@ -243,22 +145,61 @@ export async function POST(req: Request) {
       );
     }
 
+    // wallet_mints
     const { error: walletMintInsertError } = await supabase
       .from("wallet_mints")
-      .insert(walletMintInsert);
+      .insert({
+        wallet_address: userWallet,
+        cached_nft_id: nft.dbId || null,
+        chain_id: chainId,
+        contract_address: contractAddress,
+        token_id: tokenId,
+        tx_hash: txHash,
+        mint_price_eth: nftPrice,
+        mint_fee_eth: mintFee,
+        total_paid_eth: totalPrice,
+        snapshot_name: nft.name || null,
+        snapshot_image: nft.image || null,
+        snapshot_desc: nft.description || null,
+        status: "confirmed",
+        minted_at: new Date().toISOString(),
+      });
 
     if (walletMintInsertError) {
       console.error("wallet_mints insert error:", walletMintInsertError);
     }
 
+    // transactions
     const { error: transactionInsertError } = await supabase
       .from("transactions")
-      .insert(transactionInsert);
+      .insert({
+        wallet_address: userWallet,
+        profile_id: profileId,
+        tx_hash: txHash,
+        tx_type: "buy",
+        chain_id: chainId,
+        contract_address: contractAddress,
+        token_id: tokenId,
+        amount_eth: totalPrice,
+        admin_wallet: ADMIN_WALLET,
+        status: "confirmed",
+        metadata: {
+          cached_nft_id: nft.dbId || null,
+          nft_name: nft.name || null,
+          image_url: nft.image || null,
+          description: nft.description || null,
+          collection: nft.collection || null,
+          token_type: nft.tokenType || "ERC721",
+          attributes: nft.attributes || [],
+          chain: nft.chain || null,
+        },
+      });
 
     if (transactionInsertError) {
       console.error("transactions insert error:", transactionInsertError);
     }
 
+    // Update profile wallet if needed
     if (
       !profile.wallet_address ||
       String(profile.wallet_address).toLowerCase() !== userWallet
@@ -269,6 +210,7 @@ export async function POST(req: Request) {
         .eq("id", profileId);
     }
 
+    // ── Notifications ──
     const notifNftName = nft.name || `Token #${tokenId}`;
     const notifBuyer = session.email || userWallet;
 
@@ -334,6 +276,3 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
-
-
-

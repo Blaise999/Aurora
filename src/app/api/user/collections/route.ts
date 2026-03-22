@@ -7,7 +7,6 @@ export const runtime = "nodejs";
  * Returns all NFTs in the logged-in user's collection.
  * Also supports ?profileId=X for admin usage.
  */
-
 export async function GET(req: Request) {
   try {
     const { getSessionData } = await import("@/lib/auth/session");
@@ -237,7 +236,6 @@ export async function GET(req: Request) {
       profileId,
       wallet: resolvedWallet,
     });
-
   } catch (e: any) {
     console.error("user/collections error:", e);
     return NextResponse.json(

@@ -139,6 +139,7 @@ export default function SettingsForm() {
     mint_window_hours: "72",
     treasury_wallet: "",
     buy_fee: "0.002",
+    mint_price_eth: "0.005",
     create_mint_fee_usd: "5",
     ntfy_topic: "aurora-nft-admin",
     contract_address: "",
@@ -381,6 +382,7 @@ export default function SettingsForm() {
       "mint_window_hours",
       "treasury_wallet",
       "buy_fee",
+      "mint_price_eth",
       "create_mint_fee_usd",
       "ntfy_topic",
       "contract_address",
@@ -553,9 +555,12 @@ export default function SettingsForm() {
               <Sparkles size={14} className="text-accent-violet" />
             </div>
             <div>
-              <h4 className="text-sm font-semibold text-text">Create / Mint Fee (USD Target)</h4>
+              <h4 className="text-sm font-semibold text-text">Create / Mint Price (USD)</h4>
               <p className="text-[11px] text-muted">
-                Save your desired mint price in USD, then push the converted ETH fee to the contract.
+                Set your mint price in USD. The Create page auto-converts this to ETH at the live rate.
+                No wallet needed — just save and it takes effect immediately.
+                If the resulting ETH is below the on-chain contract fee, the contract fee is used as the floor.
+                If it's above, the extra goes to your admin wallet automatically.
               </p>
             </div>
           </div>

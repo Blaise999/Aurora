@@ -65,6 +65,7 @@ function MintPageContent() {
     confirmResult,
     confirmError,
     resetBuy,
+    userBalanceEth,
   } = useBuy();
 
   const targetChainId = getChainId();
@@ -96,6 +97,10 @@ function MintPageContent() {
     selectedNft?.mintPrice || selectedNft?.price || selectedNft?.nft_price_eth || "0"
   );
   const totalPrice = (parseFloat(nftPrice) + parseFloat(mintFee)).toFixed(6);
+  const totalPriceNum = parseFloat(totalPrice);
+  const hasEnoughBalance = userBalanceEth !== null
+    ? userBalanceEth >= totalPriceNum
+    : true; // don't block if we can't check yet
 
   const [imgZoomed, setImgZoomed] = useState(false);
   const [favorited, setFavorited] = useState(false);
@@ -624,7 +629,23 @@ function MintPageContent() {
                         {chainName}
                       </span>
                     </div>
+                    {isWagmiConnected && userBalanceEth !== null && (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted">Your Balance</span>
+                        <span className={`font-mono ${hasEnoughBalance ? "text-success" : "text-danger"}`}>
+                          {userBalanceEth.toFixed(6)} ETH
+                        </span>
+                      </div>
+                    )}
                   </div>
+
+                  {isWagmiConnected && !hasEnoughBalance && (
+                    <div className="flex items-start gap-2 rounded-xl border border-danger/20 bg-danger/10 p-3 mt-2">
+                      <span className="text-xs text-danger">
+                        Insufficient balance. You need at least {totalPrice} ETH plus gas fees.
+                      </span>
+                    </div>
+                  )}
 
                   {state === "needs_login" && (
                     <div className="space-y-4">
@@ -747,7 +768,7 @@ function MintPageContent() {
                           size="lg"
                           className="w-full"
                           onClick={handleMint}
-                          disabled={!profileId || checkingOwned || alreadyOwned}
+                          disabled={!profileId || checkingOwned || alreadyOwned || (isWagmiConnected && !hasEnoughBalance)}
                         >
                           {mintButtonLabel}
                         </Button>

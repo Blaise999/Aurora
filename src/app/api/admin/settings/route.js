@@ -59,6 +59,7 @@ export async function POST(req) {
     // Whitelist of allowed settings keys
     const allowed = [
       'minting_fee',
+      'mint_price_eth',
       'sale_active',
       'max_per_wallet',
       'mint_window_hours',

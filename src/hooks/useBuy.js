@@ -3,10 +3,11 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   useAccount,
+  useBalance,
   useSendTransaction,
   useWaitForTransactionReceipt,
 } from "wagmi";
-import { parseEther } from "viem";
+import { parseEther, formatEther } from "viem";
 
 const ADMIN_WALLET = process.env.NEXT_PUBLIC_ADMIN_WALLET;
 
@@ -16,12 +17,23 @@ const ADMIN_WALLET_VALID =
   /^0x[0-9a-fA-F]{40}$/.test(ADMIN_WALLET);
 
 export function useBuy() {
-  const { address } = useAccount();
+  const { address, chain } = useAccount();
 
   const [pendingNftData, setPendingNftData] = useState(null);
   const [confirmResult, setConfirmResult] = useState(null);
   const [confirmError, setConfirmError] = useState(null);
   const [confirming, setConfirming] = useState(false);
+
+  // ── Balance check ──
+  const { data: balanceData } = useBalance({
+    address: address || undefined,
+    chainId: chain?.id,
+    query: { enabled: Boolean(address) },
+  });
+
+  const userBalanceEth = balanceData
+    ? parseFloat(formatEther(balanceData.value))
+    : null;
 
   const {
     sendTransaction,
@@ -53,6 +65,20 @@ export function useBuy() {
         return;
       }
 
+      const totalNum = parseFloat(String(nftData.totalPrice));
+      if (!Number.isFinite(totalNum) || totalNum <= 0) {
+        setConfirmError("Invalid price");
+        return;
+      }
+
+      // ── Balance check ──
+      if (userBalanceEth !== null && userBalanceEth < totalNum) {
+        setConfirmError(
+          `Insufficient balance. You need ${totalNum.toFixed(6)} ETH but only have ${userBalanceEth.toFixed(6)} ETH.`
+        );
+        return;
+      }
+
       setPendingNftData(nftData);
       setConfirmResult(null);
       setConfirmError(null);
@@ -62,7 +88,7 @@ export function useBuy() {
         value: parseEther(String(nftData.totalPrice)),
       });
     },
-    [sendTransaction]
+    [sendTransaction, userBalanceEth]
   );
 
   useEffect(() => {
@@ -126,5 +152,6 @@ export function useBuy() {
     confirmError,
     resetBuy,
     address,
+    userBalanceEth,
   };
 }
