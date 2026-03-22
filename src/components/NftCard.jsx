@@ -32,7 +32,7 @@ const NFTCard = memo(function NFTCard({ nft, index = 0 }) {
             <NFTMedia src={img} alt={nft.name} />
           </div>
           <div className={`absolute inset-0 bg-gradient-to-t from-bg/80 via-transparent to-transparent transition-opacity duration-300 flex items-end p-4 ${hov ? 'opacity-100' : 'opacity-0'}`}>
-            <span className="text-xs text-accent font-mono">Buy Now →</span>
+            <span className="text-xs text-accent font-mono">Mint Now →</span>
           </div>
           <div className="absolute top-3 left-3">
             <Badge color="default" className="!bg-black/50 backdrop-blur-md !border-white/10 !text-[10px]">{nft.chain || 'Base'}</Badge>

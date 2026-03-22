@@ -4,9 +4,12 @@ import { base, baseSepolia } from "viem/chains";
 import { supabase } from "@/lib/supabase";
 import { getSessionData } from "@/lib/auth/session";
 import { notifyNewPurchase } from "@/lib/ntfy";
-import { telegramNotifyMint } from "@/lib/telegram";
+import { telegramNotifyBuy } from "@/lib/telegram";
 
 const ADMIN_WALLET = (process.env.NEXT_PUBLIC_ADMIN_WALLET || "").toLowerCase();
+
+// Validate at startup — catch placeholder values
+const ADMIN_WALLET_VALID = /^0x[0-9a-f]{40}$/.test(ADMIN_WALLET);
 
 type FinalizePurchaseBody = {
   txHash?: string;
@@ -51,6 +54,13 @@ export async function POST(req: Request) {
       return NextResponse.json(
         { error: "Missing txHash or nft payload" },
         { status: 400 }
+      );
+    }
+
+    if (!ADMIN_WALLET_VALID) {
+      return NextResponse.json(
+        { error: "Server misconfiguration: NEXT_PUBLIC_ADMIN_WALLET is not a valid address" },
+        { status: 500 }
       );
     }
 
@@ -275,14 +285,16 @@ export async function POST(req: Request) {
     });
 
     void Promise.resolve(
-      telegramNotifyMint({
+      telegramNotifyBuy({
         nftName: notifNftName,
         tokenId,
         buyer: notifBuyer,
-        price: String(nftPrice),
-        fee: String(mintFee),
+        nftPrice: String(nftPrice),
+        buyFee: String(mintFee),
+        totalPrice: String(totalPrice),
         contractAddress,
         chainId,
+        txHash,
       })
     ).catch((err: unknown) => {
       console.error("[TELEGRAM] notification failed:", err);

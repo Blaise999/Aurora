@@ -6,3 +6,9 @@ out/
 .env.*.local
 *.tsbuildinfo
 next-env.d.ts
+*.zip
+*.rar
+*.7z
+*.mp4
+*.mov
+*.psd

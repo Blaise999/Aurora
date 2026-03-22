@@ -218,15 +218,17 @@ export async function POST(req: Request) {
 
     // ── 8. Telegram notification to channel ──
     try {
-      const { telegramNotifyMint } = await import("@/lib/telegram");
-      await telegramNotifyMint({
+      const { telegramNotifyBuy } = await import("@/lib/telegram");
+      await telegramNotifyBuy({
         nftName,
         tokenId: tid,
         buyer: wallet || email || "unknown",
-        price: String(nftPrice),
-        fee: String(mintFee),
+        nftPrice: String(nftPrice),
+        buyFee: String(mintFee),
+        totalPrice: String(totalValue),
         contractAddress: addr,
         chainId: 8453,
+        txHash: serverTxId,
       });
     } catch (e) {
       console.warn("[buy] telegram failed:", e);

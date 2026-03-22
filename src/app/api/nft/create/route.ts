@@ -414,7 +414,6 @@ export async function POST(req: Request) {
       nftName: name,
       tokenId: onChainTokenId,
       buyer: notifBuyer,
-      price: "0",
       fee: String(mintFeeEth),
       contractAddress: contractAddr,
       chainId,

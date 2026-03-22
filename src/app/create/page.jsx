@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { Suspense, useState, useEffect, useCallback, useRef } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useSettings } from "@/hooks/useNfts";
@@ -42,7 +42,6 @@ import {
   PenLine,
   Eye,
   AlertTriangle,
-  DollarSign,
 } from "lucide-react";
 import WalletConnectModal from "@/components/WalletConnectModal";
 
@@ -156,8 +155,7 @@ function CreatePageContent() {
   const onChainFeeEth = onChainFeeRaw != null ? formatEther(onChainFeeRaw) : null;
 
   const adminFeeUsd = settings?.create_mint_fee_usd ?? null;
-  const adminFeeUsdNumber = Number(adminFeeUsd);
-  const displayFeeUsd = adminFeeUsd ? formatUsd(adminFeeUsd) : null;
+  formatUsd(adminFeeUsd); // keeps helper relevant if you want to show usd later
 
   const [ethUsdPrice, setEthUsdPrice] = useState(null);
   const [ethUsdLoading, setEthUsdLoading] = useState(false);
@@ -205,47 +203,6 @@ function CreatePageContent() {
       clearInterval(id);
     };
   }, []);
-
-  const usdTargetEth = useMemo(() => {
-    if (!Number.isFinite(adminFeeUsdNumber) || adminFeeUsdNumber <= 0) return null;
-    if (!Number.isFinite(ethUsdPrice) || ethUsdPrice <= 0) return null;
-    return adminFeeUsdNumber / ethUsdPrice;
-  }, [adminFeeUsdNumber, ethUsdPrice]);
-
-  const onChainFeeUsd = useMemo(() => {
-    const feeEthNum = Number(onChainFeeEth);
-    if (!Number.isFinite(feeEthNum) || feeEthNum <= 0) return null;
-    if (!Number.isFinite(ethUsdPrice) || ethUsdPrice <= 0) return null;
-    return feeEthNum * ethUsdPrice;
-  }, [onChainFeeEth, ethUsdPrice]);
-
-  const driftUsd = useMemo(() => {
-    if (!Number.isFinite(adminFeeUsdNumber) || adminFeeUsdNumber <= 0) return null;
-    if (!Number.isFinite(onChainFeeUsd) || onChainFeeUsd <= 0) return null;
-    return onChainFeeUsd - adminFeeUsdNumber;
-  }, [adminFeeUsdNumber, onChainFeeUsd]);
-
-  const driftPercent = useMemo(() => {
-    if (!Number.isFinite(adminFeeUsdNumber) || adminFeeUsdNumber <= 0) return null;
-    if (!Number.isFinite(driftUsd)) return null;
-    return (driftUsd / adminFeeUsdNumber) * 100;
-  }, [adminFeeUsdNumber, driftUsd]);
-
-  const driftTone = useMemo(() => {
-    if (!Number.isFinite(driftPercent)) return "neutral";
-    const abs = Math.abs(driftPercent);
-    if (abs <= 3) return "success";
-    if (abs <= 10) return "warning";
-    return "danger";
-  }, [driftPercent]);
-
-  const driftLabel = useMemo(() => {
-    if (!Number.isFinite(driftPercent)) return "No live compare";
-    const abs = Math.abs(driftPercent).toFixed(1);
-    if (driftPercent === 0) return "Perfectly matched";
-    if (driftPercent > 0) return `${abs}% above target`;
-    return `${abs}% below target`;
-  }, [driftPercent]);
 
   const isMintActive = mintActiveOnChain !== false;
   const isFeeReady = Boolean(onChainFeeEth);
@@ -748,10 +705,10 @@ function CreatePageContent() {
                     <div className="glass-card rounded-card mt-4 space-y-3 p-4">
                       <div className="flex items-center gap-2">
                         <Zap size={14} className="text-accent" />
-                        <span className="font-display text-sm font-semibold">Mint Fee</span>
+                        <span className="font-display text-sm font-semibold">Pricing</span>
                         {onChainFeeEth ? (
                           <Badge color="success" className="!text-[9px]">
-                            On-Chain
+                            Live
                           </Badge>
                         ) : (
                           <Badge color="warning" className="!text-[9px]">
@@ -762,37 +719,20 @@ function CreatePageContent() {
 
                       <div className="space-y-2 rounded-lg bg-surface2/40 p-3">
                         <div className="flex justify-between text-sm">
-                          <span className="text-muted">Admin Target</span>
-                          <span className="font-mono">{displayFeeUsd || "—"}</span>
-                        </div>
-
-                        <div className="flex justify-between text-sm">
-                          <span className="text-muted">Live ETH Equivalent</span>
-                          <span className="font-mono font-medium text-accent">
-                            {usdTargetEth ? `${formatEth(usdTargetEth)} ETH` : "—"}
+                          <span className="text-muted">Mint Fee</span>
+                          <span className="font-mono font-semibold text-accent">
+                            {onChainFeeEth ? `${onChainFeeEth} ETH` : "Loading..."}
                           </span>
                         </div>
 
                         <div className="flex justify-between text-sm">
-                          <span className="text-muted">Actual On-Chain Fee</span>
-                          <span className="font-mono font-medium text-accent">
-                            {onChainFeeEth ? `${onChainFeeEth} ETH` : "—"}
+                          <span className="text-muted">Gas Fee</span>
+                          <span className="font-mono text-muted-dim">
+                            Estimated by wallet
                           </span>
                         </div>
 
-                        <div className="flex justify-between text-sm">
-                          <span className="text-muted">On-Chain USD</span>
-                          <span className="font-mono">
-                            {onChainFeeUsd ? formatUsd(onChainFeeUsd) : "—"}
-                          </span>
-                        </div>
-
-                        <div className="flex justify-between text-sm">
-                          <span className="text-muted">ETH/USD</span>
-                          <span className="font-mono">
-                            {ethUsdPrice ? formatUsd(ethUsdPrice) : ethUsdLoading ? "Loading..." : "—"}
-                          </span>
-                        </div>
+                        <div className="my-1 border-t border-border-light" />
 
                         <div className="flex justify-between text-sm">
                           <span className="text-muted">Network</span>
@@ -805,31 +745,9 @@ function CreatePageContent() {
                         </div>
                       </div>
 
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="text-[11px] leading-5 text-muted">
-                          Admin sets a USD target. This page converts it live to ETH, but users still pay the real on-chain contract fee.
-                        </p>
-                        <Badge
-                          color={
-                            driftTone === "success"
-                              ? "success"
-                              : driftTone === "warning"
-                              ? "warning"
-                              : driftTone === "danger"
-                              ? "danger"
-                              : "default"
-                          }
-                          className="shrink-0"
-                        >
-                          {driftLabel}
-                        </Badge>
-                      </div>
-
-                      {ethUsdError && (
-                        <div className="rounded-lg border border-warning/20 bg-warning/10 p-3 text-[11px] text-warning">
-                          Failed to load live ETH/USD price: {ethUsdError}
-                        </div>
-                      )}
+                      <p className="text-[11px] leading-5 text-muted">
+                        Mint fee is set by the contract on-chain. Gas fee is estimated by your wallet at the time of signing.
+                      </p>
                     </div>
                   </div>
 
@@ -1053,29 +971,20 @@ function CreatePageContent() {
                     </div>
 
                     <div className="flex justify-between text-sm">
-                      <span className="text-muted">Admin Target</span>
-                      <span className="font-mono text-xs">{displayFeeUsd || "—"}</span>
-                    </div>
-
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted">Live ETH Equivalent</span>
-                      <span className="font-mono text-xs">
-                        {usdTargetEth ? `${formatEth(usdTargetEth)} ETH` : "—"}
+                      <span className="text-muted">Mint Fee</span>
+                      <span className="font-mono text-lg font-semibold text-accent">
+                        {onChainFeeEth ? `${onChainFeeEth} ETH` : "Loading..."}
                       </span>
                     </div>
 
                     <div className="flex justify-between text-sm">
-                      <span className="text-muted">ETH/USD</span>
-                      <span className="font-mono text-xs">
-                        {ethUsdPrice ? formatUsd(ethUsdPrice) : "—"}
-                      </span>
+                      <span className="text-muted">Gas Fee</span>
+                      <span className="font-mono text-xs text-muted-dim">Estimated by wallet</span>
                     </div>
 
                     <div className="flex justify-between border-t border-border-light pt-2 text-sm">
-                      <span className="font-medium">Actual Mint Fee</span>
-                      <span className="font-mono text-lg font-semibold text-accent">
-                        {onChainFeeEth ? `${onChainFeeEth} ETH` : "—"}
-                      </span>
+                      <span className="text-muted">Network</span>
+                      <span className="font-mono text-xs">{chainName}</span>
                     </div>
                   </div>
 
@@ -1233,17 +1142,7 @@ function CreatePageContent() {
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted">Pricing Target</span>
-                  <span className="font-mono">{displayFeeUsd || "—"}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted">Live ETH Equivalent</span>
-                  <span className="font-mono">
-                    {usdTargetEth ? `${formatEth(usdTargetEth)} ETH` : "—"}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted">Fee Paid</span>
+                  <span className="text-muted">Mint Fee</span>
                   <span className="font-mono text-accent">{onChainFeeEth} ETH</span>
                 </div>
                 <div className="flex justify-between">

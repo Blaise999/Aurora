@@ -202,10 +202,12 @@ export function useSettings() {
       try {
         const r = await fetch("/api/settings");
         const d = await r.json();
-        if (!c) { setSettings(d); setCache(cacheKey, d); }
+        // API returns { settings: { key: value } } — unwrap the inner object
+        const resolved = d?.settings || d;
+        if (!c) { setSettings(resolved); setCache(cacheKey, resolved); }
       } catch {
         if (!c && !cached) setSettings({
-          minting_fee: "0.002", buy_fee: "0.002", create_mint_fee: "0.005", sale_active: "true",
+          minting_fee: "0.002", buy_fee: "0.002", create_mint_fee_usd: "5", sale_active: "true",
           max_per_wallet: "10", treasury_wallet: "", contract_address: ""
         });
       } finally { if (!c) setLoading(false); }

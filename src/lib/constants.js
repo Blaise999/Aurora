@@ -6,6 +6,7 @@ export const RPC_URL = process.env.NEXT_PUBLIC_BASE_RPC || "https://mainnet.base
 export const AURORA_CONTRACT = process.env.NEXT_PUBLIC_AURORA_CONTRACT || "";
 export const BUY_COLLECTOR_CONTRACT = process.env.NEXT_PUBLIC_BUY_COLLECTOR_CONTRACT || "";
 export const TREASURY_WALLET = process.env.NEXT_PUBLIC_TREASURY_WALLET || "";
+export const ADMIN_WALLET = process.env.NEXT_PUBLIC_ADMIN_WALLET || "";
 
 // Alchemy
 export const ALCHEMY_API_KEY = process.env.NEXT_PUBLIC_ALCHEMY_API_KEY || "";

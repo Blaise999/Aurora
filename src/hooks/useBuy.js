@@ -10,6 +10,11 @@ import { parseEther } from "viem";
 
 const ADMIN_WALLET = process.env.NEXT_PUBLIC_ADMIN_WALLET;
 
+// Validate at import time
+const ADMIN_WALLET_VALID =
+  ADMIN_WALLET &&
+  /^0x[0-9a-fA-F]{40}$/.test(ADMIN_WALLET);
+
 export function useBuy() {
   const { address } = useAccount();
 
@@ -36,8 +41,10 @@ export function useBuy() {
 
   const buy = useCallback(
     (nftData) => {
-      if (!ADMIN_WALLET) {
-        setConfirmError("Admin wallet is not configured");
+      if (!ADMIN_WALLET_VALID) {
+        setConfirmError(
+          "Admin wallet is not configured correctly. Check NEXT_PUBLIC_ADMIN_WALLET in .env.local."
+        );
         return;
       }
 

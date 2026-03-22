@@ -87,11 +87,13 @@ function MintPageContent() {
   const isWrongChain =
     isWagmiConnected && chain?.id !== targetChainId;
 
+  // Buy fee = platform fee charged on every purchase (from admin settings)
   const mintFee = String(
-    selectedNft?.mintFee || settings?.buy_fee || settings?.minting_fee || "0.002"
+    selectedNft?.mintFee || settings?.buy_fee || "0.002"
   );
+  // NFT price = the item's own price (from nft_pricing / cached_nfts DB, NOT from settings)
   const nftPrice = String(
-    selectedNft?.mintPrice || settings?.buy_fee || settings?.minting_fee || "0.002"
+    selectedNft?.mintPrice || selectedNft?.price || selectedNft?.nft_price_eth || "0"
   );
   const totalPrice = (parseFloat(nftPrice) + parseFloat(mintFee)).toFixed(6);
 
@@ -605,24 +607,18 @@ function MintPageContent() {
 
                   <div className="bg-surface2/40 rounded-xl p-4 space-y-3">
                     <div className="flex justify-between text-sm">
-                      <span className="text-muted">NFT Price</span>
-                      <span className="text-text font-mono font-medium">
-                        {nftPrice} ETH
-                      </span>
-                    </div>
-                    <div className="flex justify-between text-sm">
                       <span className="text-muted">Buy Fee</span>
-                      <span className="text-text font-mono font-medium">
-                        {mintFee} ETH
-                      </span>
-                    </div>
-                    <div className="flex justify-between text-sm pt-2 border-t border-border-light">
-                      <span className="text-text font-medium">Total</span>
                       <span className="text-lg font-mono font-semibold text-accent">
                         {totalPrice} ETH
                       </span>
                     </div>
                     <div className="flex justify-between text-sm">
+                      <span className="text-muted">Gas Fee</span>
+                      <span className="text-text font-mono text-muted-dim">
+                        Estimated by wallet
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-sm pt-2 border-t border-border-light">
                       <span className="text-muted">Network</span>
                       <span className="text-text font-mono">
                         {chainName}

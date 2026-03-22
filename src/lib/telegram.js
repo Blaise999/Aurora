@@ -61,33 +61,71 @@ function truncId(str) {
 }
 
 /**
- * Notify group about a new mint/purchase
+ * Notify group about a new NFT creation (on-chain mint via AuroraCreator)
  */
 export async function telegramNotifyMint({
   nftName,
   tokenId,
   buyer,
-  price,
   fee,
   contractAddress,
   chainId,
 }) {
-  const total = (parseFloat(price || 0) + parseFloat(fee || 0)).toFixed(4);
+  const feeDisplay = parseFloat(fee || 0).toFixed(6).replace(/\.?0+$/, "");
+  const chainLabel = chainId === 8453 ? "Base" : chainId === 1 ? "Ethereum" : "Base Sepolia";
+  const explorerBase = chainId === 8453 ? "https://basescan.org" : "https://sepolia.basescan.org";
 
   const msg = [
-    `🎨 <b>New Mint!</b>`,
+    `🎨 <b>New NFT Created!</b>`,
     ``,
-    `NFT: <b>${nftName || `#${tokenId}`}</b>`,
-    `Buyer: <code>${truncId(buyer)}</code>`,
-    `Amount: <b>${total} ETH</b>`,
-    contractAddress ? `Contract: <code>${truncId(contractAddress)}</code>` : "",
-    `Chain: ${
-      chainId === 8453
-        ? "Base"
-        : chainId === 1
-          ? "Ethereum"
-          : "Base Sepolia"
-    }`,
+    `📌 Name: <b>${nftName || `#${tokenId}`}</b>`,
+    `🆔 Token ID: <b>#${tokenId}</b>`,
+    `👤 Creator: <code>${truncId(buyer)}</code>`,
+    `💰 Mint Fee: <b>${feeDisplay} ETH</b>`,
+    contractAddress ? `📄 Contract: <a href="${explorerBase}/address/${contractAddress}">${truncId(contractAddress)}</a>` : "",
+    `⛓ Chain: ${chainLabel}`,
+    ``,
+    `✅ Fee sent to treasury on-chain`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  return sendTelegramMessage(msg);
+}
+
+/**
+ * Notify group about a new NFT purchase (ETH sent to admin wallet)
+ */
+export async function telegramNotifyBuy({
+  nftName,
+  tokenId,
+  buyer,
+  nftPrice,
+  buyFee,
+  totalPrice,
+  contractAddress,
+  chainId,
+  txHash,
+}) {
+  const totalDisplay = parseFloat(totalPrice || 0).toFixed(6).replace(/\.?0+$/, "");
+  const priceDisplay = parseFloat(nftPrice || 0).toFixed(6).replace(/\.?0+$/, "");
+  const feeDisplay = parseFloat(buyFee || 0).toFixed(6).replace(/\.?0+$/, "");
+  const chainLabel = chainId === 8453 ? "Base" : chainId === 1 ? "Ethereum" : "Base Sepolia";
+  const explorerBase = chainId === 8453 ? "https://basescan.org" : "https://sepolia.basescan.org";
+
+  const msg = [
+    `🛒 <b>New NFT Purchase!</b>`,
+    ``,
+    `📌 NFT: <b>${nftName || `Token #${tokenId}`}</b>`,
+    `👤 Buyer: <code>${truncId(buyer)}</code>`,
+    `💵 Price: <b>${priceDisplay} ETH</b>`,
+    `💳 Buy Fee: <b>${feeDisplay} ETH</b>`,
+    `💰 Total Paid: <b>${totalDisplay} ETH</b>`,
+    contractAddress ? `📄 Contract: <code>${truncId(contractAddress)}</code>` : "",
+    `⛓ Chain: ${chainLabel}`,
+    txHash ? `🔗 Tx: <a href="${explorerBase}/tx/${txHash}">${truncId(txHash)}</a>` : "",
+    ``,
+    `✅ ETH sent to admin wallet`,
   ]
     .filter(Boolean)
     .join("\n");
