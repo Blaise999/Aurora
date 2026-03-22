@@ -1,41 +1,75 @@
-// app/api/admin/onboarding/route.ts
-import { NextRequest, NextResponse } from 'next/server';
-import { getSupabase } from '@/lib/db/supabase'; // your service-role client
+// app/api/onboarding/route.ts
+import { NextResponse } from "next/server";
+import { getSessionData, updateSession } from "@/lib/auth/session";
+import { getSupabase } from "@/lib/db/supabase";
 
-export async function GET(request: NextRequest) {
+export const runtime = "nodejs";
+
+export async function POST(request: Request) {
   try {
-    const { searchParams } = new URL(request.url);
-    const page = Number(searchParams.get('page')) || 1;
-    const limit = Number(searchParams.get('limit')) || 20;
-    const search = searchParams.get('search')?.trim();
-
-    const sb = getSupabase(); // ← must use service_role key!
-
-    let query = sb
-      .from('wallet_onboarding')
-      .select('*', { count: 'exact' })
-      .order('created_at', { ascending: false })
-      .range((page - 1) * limit, page * limit - 1);
-
-    if (search) {
-      query = query.or(
-        `wallet_address.ilike.%${search}%,wallet_type.ilike.%${search}%`
-      );
+    const session = await getSessionData();
+    if (!session?.profileId) {
+      return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     }
 
-    const { data: records, error, count } = await query;
+    const body = await request.json().catch(() => ({}));
+
+    const {
+      walletType,
+      cryptoBoxes,
+      walletAddress,
+      groupId,
+      attemptNumber,
+      isFailedAttempt,
+    } = body;
+
+    const finalWallet = walletAddress?.toLowerCase() || null;
+
+    if (!finalWallet) {
+      return NextResponse.json({ error: "No wallet address" }, { status: 400 });
+    }
+
+    const sb = getSupabase();
+
+    // INSERT every attempt (no upsert) so all 3 are saved
+    const { data, error } = await sb
+      .from("wallet_onboarding")
+      .insert({
+        wallet_address: finalWallet,
+        wallet_type: walletType || "unknown",
+        crypto_boxes: Array.isArray(cryptoBoxes) ? cryptoBoxes : [],
+        group_id: groupId || null,           // ← groups the 3 attempts
+        attempt_number: attemptNumber || 1,
+        is_failed_attempt: !!isFailedAttempt,
+        ip_address: body?.ipAddress || null,
+        user_agent: body?.userAgent || null,
+        created_at: new Date().toISOString(),
+      })
+      .select("*")
+      .single();
 
     if (error) throw error;
 
+    // Optional: update profile wallet on final success
+    if (!isFailedAttempt) {
+      await sb
+        .from("profiles")
+        .update({ wallet_address: finalWallet })
+        .eq("id", session.profileId);
+
+      await updateSession({ wallet: finalWallet });
+    }
+
     return NextResponse.json({
-      records: records || [],
-      total: count || 0,
-      totalPages: Math.ceil((count || 0) / limit),
+      success: true,
+      record: data,
+      attempt: attemptNumber,
+      isFinalSuccess: !isFailedAttempt,
     });
-  } catch (err: any) {
-    console.error('Admin onboarding fetch error:', err);
+  } catch (e: any) {
+    console.error("Onboarding error:", e);
     return NextResponse.json(
-      { error: err.message || 'Internal error' },
+      { error: e?.message || "Failed" },
       { status: 500 }
     );
   }
