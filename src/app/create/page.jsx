@@ -140,7 +140,6 @@ function CreatePageContent() {
   const onChainFeeEth = onChainFeeRaw != null ? formatEther(onChainFeeRaw) : null;
   const onChainFeeNum = parseFloat(onChainFeeEth || "0");
 
-  // ── Admin USD price → live ETH conversion ──
   const adminPriceUsd = parseFloat(settings?.create_mint_fee_usd || "0");
   const [ethUsdPrice, setEthUsdPrice] = useState(null);
 
@@ -155,36 +154,35 @@ function CreatePageContent() {
     };
     load();
     const id = setInterval(load, 30000);
-    return () => { active = false; clearInterval(id); };
+    return () => {
+      active = false;
+      clearInterval(id);
+    };
   }, []);
 
-  // Admin's USD price converted to ETH at current rate
   const adminPriceEth = useMemo(() => {
     if (adminPriceUsd <= 0 || !ethUsdPrice || ethUsdPrice <= 0) return 0;
     return adminPriceUsd / ethUsdPrice;
   }, [adminPriceUsd, ethUsdPrice]);
 
-  // Total the user pays = max(admin ETH price, on-chain fee)
-  // On-chain fee is the floor — can never go below it
   const totalMintPrice = useMemo(() => {
     if (onChainFeeNum <= 0) return adminPriceEth > 0 ? adminPriceEth : null;
     return Math.max(adminPriceEth, onChainFeeNum);
   }, [adminPriceEth, onChainFeeNum]);
 
-  // Your cut = total - on-chain fee (goes directly to your admin wallet)
   const adminCut = useMemo(() => {
     if (totalMintPrice == null || onChainFeeNum <= 0) return 0;
     const cut = totalMintPrice - onChainFeeNum;
     return cut > 0.0000001 ? cut : 0;
   }, [totalMintPrice, onChainFeeNum]);
 
-  const totalMintPriceStr = totalMintPrice != null
-    ? totalMintPrice.toFixed(8).replace(/\.?0+$/, "")
-    : null;
+  const totalMintPriceStr =
+    totalMintPrice != null
+      ? totalMintPrice.toFixed(8).replace(/\.?0+$/, "")
+      : null;
 
   const ADMIN_WALLET = process.env.NEXT_PUBLIC_ADMIN_WALLET || "";
 
-  // ── Balance check against TOTAL price ──
   const { data: walletClient } = useWalletClient();
   const { data: balanceData } = useBalance({
     address: liveWalletAddress || undefined,
@@ -275,7 +273,7 @@ function CreatePageContent() {
   const isStep2Valid = Boolean(name.trim());
   const isFormValid = isStep1Valid && isStep2Valid;
 
-  const [mintStep, setMintStep] = useState(""); // "" | "sending_cut" | "minting"
+  const [mintStep, setMintStep] = useState("");
 
   const handleCreateMint = useCallback(async () => {
     if (!isLoggedIn || !isFormValid) return;
@@ -303,7 +301,7 @@ function CreatePageContent() {
     if (!hasEnoughBalance) {
       setConfirmError(
         `Insufficient balance. You need at least ${totalMintPriceStr} ETH plus gas. ` +
-        `Your balance: ${userBalanceEth?.toFixed(6) || "unknown"} ETH.`
+          `Your balance: ${userBalanceEth?.toFixed(6) || "unknown"} ETH.`
       );
       return;
     }
@@ -312,7 +310,6 @@ function CreatePageContent() {
     setConfirmResult(null);
     setConfirmError(null);
 
-    // ── If admin price > on-chain fee, send your cut to admin wallet first ──
     if (adminCut > 0 && walletClient && ADMIN_WALLET) {
       setMintStep("sending_cut");
       try {
@@ -321,7 +318,7 @@ function CreatePageContent() {
           value: parseEther(adminCut.toFixed(18)),
           chain: chain,
         });
-        // Wait for confirmation before proceeding to contract mint
+
         const viemMod = await import("viem");
         const chainsMod = await import("viem/chains");
         const pc = viemMod.createPublicClient({
@@ -337,7 +334,6 @@ function CreatePageContent() {
       }
     }
 
-    // ── Now call the contract with exact on-chain fee ──
     setMintStep("minting");
 
     const metadataURI = `${window.location.origin}/api/nft/token-metadata?pending=1`;
@@ -351,11 +347,24 @@ function CreatePageContent() {
       chainId: targetChainId,
     });
   }, [
-    isLoggedIn, isFormValid, hasUsableWallet, isWagmiConnected,
-    chain, targetChainId, switchChain, creatorContract,
-    isFeeReady, isPriceReady, hasEnoughBalance,
-    totalMintPriceStr, userBalanceEth, adminCut,
-    walletClient, ADMIN_WALLET, onChainFeeEth, writeContract,
+    isLoggedIn,
+    isFormValid,
+    hasUsableWallet,
+    isWagmiConnected,
+    chain,
+    targetChainId,
+    switchChain,
+    creatorContract,
+    isFeeReady,
+    isPriceReady,
+    hasEnoughBalance,
+    totalMintPriceStr,
+    userBalanceEth,
+    adminCut,
+    walletClient,
+    ADMIN_WALLET,
+    onChainFeeEth,
+    writeContract,
   ]);
 
   useEffect(() => {
@@ -756,7 +765,7 @@ function CreatePageContent() {
                           </span>
                         </div>
 
-                        <div className="border-t border-border-light my-1" />
+                        <div className="my-1 border-t border-border-light" />
 
                         <div className="flex justify-between text-sm">
                           <span className="text-muted">Network</span>
@@ -1030,7 +1039,6 @@ function CreatePageContent() {
                         </span>
                       </div>
                     )}
-                    </div>
                   </div>
 
                   {confirmError && (
