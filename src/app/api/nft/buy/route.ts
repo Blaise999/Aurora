@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSupabase } from "@/lib/db/supabase";
-import { sendNtfyNotification } from "@/lib/ntfy";
+import { notifyPurchase, sendPushover } from "@/lib/pushover";
 
 export const runtime = "nodejs";
 
@@ -198,22 +198,16 @@ export async function POST(req: Request) {
       console.warn("[buy] admin_notifications insert failed:", e);
     }
 
-    // ── 7. ntfy push to admin phone ──
+    // ── 7. Pushover notification ──
     try {
-      await sendNtfyNotification({
-        title: "New NFT Mint!",
-        message: [
-          `NFT: ${nftName}`,
-          `Buyer: ${wallet || email}`,
-          `Total: ${totalValue} ETH`,
-          `Collection: ${collection || "—"}`,
-        ].join("\n"),
-        priority: "high",
-        tags: ["money_with_wings", "tada"],
-        click: "/admin",
+      await notifyPurchase({
+        nftName,
+        buyer: wallet || email || "unknown",
+        totalPrice: String(totalValue),
+        txHash: serverTxId,
       });
     } catch (e) {
-      console.warn("[buy] ntfy failed:", e);
+      console.warn("[buy] pushover failed:", e);
     }
 
     // ── 8. Telegram notification to channel ──
@@ -247,12 +241,10 @@ export async function POST(req: Request) {
 
     // Try to notify admin of the failure
     try {
-      await sendNtfyNotification({
-        title: "Mint Failed!",
+      await sendPushover({
+        title: "❌ Purchase Failed",
         message: `Error: ${e?.message || "Unknown"}`,
-        priority: "high",
-        tags: ["warning"],
-        click: "/admin",
+        priority: 1,
       });
     } catch {}
 

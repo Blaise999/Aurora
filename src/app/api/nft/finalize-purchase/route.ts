@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 import { getSessionData } from "@/lib/auth/session";
-import { notifyNewPurchase } from "@/lib/ntfy";
+import { notifyPurchase } from "@/lib/pushover";
 import { telegramNotifyBuy } from "@/lib/telegram";
 
 const ADMIN_WALLET = (process.env.NEXT_PUBLIC_ADMIN_WALLET || "").toLowerCase();
@@ -215,15 +215,14 @@ export async function POST(req: Request) {
     const notifBuyer = session.email || userWallet;
 
     void Promise.resolve(
-      notifyNewPurchase({
+      notifyPurchase({
         nftName: notifNftName,
         buyer: notifBuyer,
-        price: String(nftPrice),
-        fee: String(mintFee),
+        totalPrice: String(totalPrice),
         txHash,
       })
     ).catch((err: unknown) => {
-      console.error("[NTFY] notification failed:", err);
+      console.error("[PUSHOVER] notification failed:", err);
     });
 
     void Promise.resolve(

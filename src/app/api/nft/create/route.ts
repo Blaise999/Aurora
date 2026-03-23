@@ -3,7 +3,7 @@ import { createPublicClient, http, decodeEventLog, type Hash } from "viem";
 import { base, baseSepolia } from "viem/chains";
 import { supabase } from "@/lib/supabase";
 import { getSessionData } from "@/lib/auth/session";
-import { notifyNewPurchase } from "@/lib/ntfy";
+import { notifyMint } from "@/lib/pushover";
 import { telegramNotifyMint } from "@/lib/telegram";
 
 export const runtime = "nodejs";
@@ -405,12 +405,12 @@ export async function POST(req: Request) {
     // 8. Notifications
     const notifBuyer = email || userWallet;
 
-    void notifyNewPurchase({
+    void notifyMint({
       nftName: name,
-      buyer: notifBuyer,
-      price: "0",
+      tokenId: onChainTokenId,
+      creator: notifBuyer,
       fee: String(mintFeeEth),
-      txHash,
+      contractAddress: contractAddr,
     }).catch(() => {});
 
     void telegramNotifyMint({

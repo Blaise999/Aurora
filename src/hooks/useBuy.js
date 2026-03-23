@@ -71,7 +71,6 @@ export function useBuy() {
         return;
       }
 
-      // ── Balance check ──
       if (userBalanceEth !== null && userBalanceEth < totalNum) {
         setConfirmError(
           `Insufficient balance. You need ${totalNum.toFixed(6)} ETH but only have ${userBalanceEth.toFixed(6)} ETH.`

@@ -207,7 +207,7 @@ export function useSettings() {
         if (!c) { setSettings(resolved); setCache(cacheKey, resolved); }
       } catch {
         if (!c && !cached) setSettings({
-          minting_fee: "0.002", buy_fee: "0.002", mint_price_eth: "0.005", create_mint_fee_usd: "5", sale_active: "true",
+          minting_fee: "0.002", buy_fee: "0.002", mint_price_eth: "", create_mint_fee_usd: "", sale_active: "true",
           max_per_wallet: "10", treasury_wallet: "", contract_address: ""
         });
       } finally { if (!c) setLoading(false); }

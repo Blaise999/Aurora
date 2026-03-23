@@ -3,7 +3,7 @@ import HeroCarousel from "@/components/hero/HeroCarousel";
 
 // ── Above-the-fold: loaded eagerly ──
 import LiveStats from "@/components/home/LiveStats";
-import BreakingNewsTicker from "@/components/home/BreakingNewsTicker";
+const BreakingNewsTicker = dynamic(() => import("@/components/home/BreakingNewsTicker"), { ssr: false });
 
 // ── Below-the-fold: lazy-loaded to reduce initial JS bundle ──
 const TrendingNftBar = dynamic(() => import("@/components/nft/TrendingNftBar"), { ssr: true });

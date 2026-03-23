@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getSupabase } from '@/lib/db/supabase';
-import { notifyNewVisitor } from '@/lib/ntfy';
+import { notifyVisitor } from '@/lib/pushover';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -103,25 +103,25 @@ export async function POST(req) {
       console.error('[visitor/track] admin_notifications insert failed:', adminNotifError);
     }
 
-    let ntfyResult = null;
+    let pushResult = null;
 
     try {
-      ntfyResult = await notifyNewVisitor({
+      pushResult = await notifyVisitor({
         ip,
         city: geo.city,
         country: geo.country,
         page: page_path || '/',
       });
 
-      console.log('[visitor/track] ntfy result:', ntfyResult);
+      console.log('[visitor/track] pushover result:', pushResult);
     } catch (notifyErr) {
-      console.error('[visitor/track] notifyNewVisitor crashed:', notifyErr);
+      console.error('[visitor/track] notifyVisitor crashed:', notifyErr);
     }
 
     return NextResponse.json({
       ok: true,
       visitor: data,
-      ntfy: ntfyResult, // keep temporarily for debugging
+      pushover: pushResult, // keep temporarily for debugging
     });
   } catch (err) {
     console.error('[visitor/track] fatal:', err);

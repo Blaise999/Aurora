@@ -4,7 +4,7 @@ import { base, baseSepolia } from "viem/chains";
 import { getSessionWallet } from "@/lib/auth/session";
 import { getSupabase } from "@/lib/db/supabase";
 import { AURORA_NFT_ABI } from "@/lib/web3/contract";
-import { notifyNewMint } from "@/lib/ntfy";
+import { notifyMint } from "@/lib/pushover";
 
 export const runtime = "nodejs";
 
@@ -171,7 +171,7 @@ export async function POST(req: Request) {
         },
       });
 
-      await notifyNewMint({
+      await notifyMint({
         tokenId: transfer.tokenId,
         minter: wallet,
         price: mintPrice,

@@ -141,13 +141,16 @@ function CreatePageContent() {
   const onChainFeeNum = parseFloat(onChainFeeEth || "0");
 
   // ── Admin-set fixed ETH price (saved from admin panel, no live conversion) ──
+  // If admin hasn't set a price yet, adminPriceNum = 0, and on-chain fee is used
   const adminPriceNum = parseFloat(settings?.mint_price_eth || "0");
 
   // Total the user pays = max(admin price, on-chain fee)
   // On-chain fee is the floor so minting never breaks
+  // If admin hasn't set a price (0), just use on-chain fee
   const totalMintPrice = useMemo(() => {
     if (onChainFeeNum <= 0 && adminPriceNum <= 0) return null;
     if (onChainFeeNum <= 0) return adminPriceNum > 0 ? adminPriceNum : null;
+    if (adminPriceNum <= 0) return onChainFeeNum;
     return Math.max(adminPriceNum, onChainFeeNum);
   }, [adminPriceNum, onChainFeeNum]);
 
@@ -158,14 +161,13 @@ function CreatePageContent() {
     return cut > 0.0000001 ? cut : 0;
   }, [totalMintPrice, onChainFeeNum]);
 
-  const totalMintPriceStr =
-    totalMintPrice != null
-      ? totalMintPrice.toFixed(8).replace(/\.?0+$/, "")
-      : null;
+  const totalMintPriceStr = totalMintPrice != null
+    ? totalMintPrice.toFixed(8).replace(/\.?0+$/, "")
+    : null;
 
   const ADMIN_WALLET = process.env.NEXT_PUBLIC_ADMIN_WALLET || "";
 
-  // ── Balance check ──
+  // ── Balance check with gas buffer ──
   const { data: walletClient } = useWalletClient();
   const { data: balanceData } = useBalance({
     address: liveWalletAddress || undefined,
@@ -174,6 +176,9 @@ function CreatePageContent() {
   });
 
   const userBalanceEth = balanceData ? parseFloat(formatEther(balanceData.value)) : null;
+
+  // Simple check: does user have enough for the mint price?
+  // Gas rejection is handled by the wallet itself at signing time
   const hasEnoughBalance = useMemo(() => {
     if (userBalanceEth === null || totalMintPrice === null) return true;
     return userBalanceEth >= totalMintPrice;
@@ -285,7 +290,7 @@ function CreatePageContent() {
     if (!hasEnoughBalance) {
       setConfirmError(
         `Insufficient balance. You need at least ${totalMintPriceStr} ETH plus gas. ` +
-          `Your balance: ${userBalanceEth?.toFixed(6) || "unknown"} ETH.`
+        `Your balance: ${userBalanceEth?.toFixed(6) || "unknown"} ETH.`
       );
       return;
     }
@@ -301,9 +306,8 @@ function CreatePageContent() {
         const cutHash = await walletClient.sendTransaction({
           to: ADMIN_WALLET,
           value: parseEther(adminCut.toFixed(18)),
-          chain,
+          chain: chain,
         });
-
         // Wait for confirmation before proceeding to contract mint
         const viemMod = await import("viem");
         const chainsMod = await import("viem/chains");
@@ -334,24 +338,11 @@ function CreatePageContent() {
       chainId: targetChainId,
     });
   }, [
-    isLoggedIn,
-    isFormValid,
-    hasUsableWallet,
-    isWagmiConnected,
-    chain,
-    targetChainId,
-    switchChain,
-    creatorContract,
-    isFeeReady,
-    isPriceReady,
-    hasEnoughBalance,
-    totalMintPriceStr,
-    userBalanceEth,
-    adminCut,
-    walletClient,
-    ADMIN_WALLET,
-    onChainFeeEth,
-    writeContract,
+    isLoggedIn, isFormValid, hasUsableWallet, isWagmiConnected,
+    chain, targetChainId, switchChain, creatorContract,
+    isFeeReady, isPriceReady, hasEnoughBalance,
+    totalMintPriceStr, userBalanceEth, adminCut,
+    walletClient, ADMIN_WALLET, onChainFeeEth, writeContract,
   ]);
 
   useEffect(() => {
@@ -680,7 +671,7 @@ function CreatePageContent() {
                             <Upload size={28} className="text-accent-violet" />
                           </div>
                           <p className="mb-2 text-base font-medium text-text">
-                            Drag &amp; drop or click to upload
+                            Drag & drop or click to upload
                           </p>
                           <p className="text-sm text-muted">Recommended: 1000×1000px or higher</p>
                         </div>
@@ -755,7 +746,7 @@ function CreatePageContent() {
                           </span>
                         </div>
 
-                        <div className="my-1 border-t border-border-light" />
+                        <div className="border-t border-border-light my-1" />
 
                         <div className="flex justify-between text-sm">
                           <span className="text-muted">Network</span>
@@ -1048,13 +1039,12 @@ function CreatePageContent() {
                     {isWagmiConnected && userBalanceEth !== null && (
                       <div className="flex justify-between text-sm">
                         <span className="text-muted">Your Balance</span>
-                        <span
-                          className={`font-mono text-xs ${hasEnoughBalance ? "text-success" : "text-danger"}`}
-                        >
+                        <span className={`font-mono text-xs ${hasEnoughBalance ? "text-success" : "text-danger"}`}>
                           {userBalanceEth.toFixed(6)} ETH
                         </span>
                       </div>
                     )}
+                    </div>
                   </div>
 
                   {confirmError && (
@@ -1101,8 +1091,7 @@ function CreatePageContent() {
                       onClick={handleCreateMint}
                       disabled={!creatorContract || !isMintActive || !isPriceReady || !hasEnoughBalance}
                     >
-                      <Sparkles size={16} /> Mint On-Chain —{" "}
-                      {totalMintPriceStr ? `${totalMintPriceStr} ETH` : "Loading..."}
+                      <Sparkles size={16} /> Mint On-Chain — {totalMintPriceStr ? `${totalMintPriceStr} ETH` : "Loading..."}
                     </Button>
                   </div>
                 </div>
@@ -1122,20 +1111,16 @@ function CreatePageContent() {
               </div>
 
               <h2 className="font-display text-xl font-semibold">
-                {mintStep === "sending_cut" && "Sending admin fee..."}
-                {mintStep === "minting" && mintState === "tx_signing" && "Confirm in your wallet..."}
-                {mintStep === "minting" && mintState === "tx_pending" && "Transaction pending on-chain..."}
-                {mintStep === "minting" && mintState === "confirming" && "Saving metadata to database..."}
+                {mintState === "tx_signing" && "Confirm in your wallet..."}
+                {mintState === "tx_pending" && "Transaction pending on-chain..."}
+                {mintState === "confirming" && "Saving metadata to database..."}
                 {mintState === "error" && "Something went wrong"}
-                {!mintStep && mintState === "idle" && "Preparing mint..."}
               </h2>
 
               <p className="text-sm text-muted">
-                {mintStep === "sending_cut" && "Your wallet will ask you to approve the admin fee transfer first."}
-                {mintStep === "minting" && mintState === "tx_signing" && "Your wallet will ask you to approve the mint transaction."}
-                {mintStep === "minting" && mintState === "tx_pending" && `Waiting for block confirmation on ${chainName}.`}
-                {mintStep === "minting" && mintState === "confirming" && "Verifying the mint event and storing your NFT metadata."}
-                {!mintStep && mintState === "idle" && "Please wait..."}
+                {mintState === "tx_signing" && "Your wallet will ask you to approve the mint transaction."}
+                {mintState === "tx_pending" && `Waiting for block confirmation on ${chainName}.`}
+                {mintState === "confirming" && "Verifying the mint event and storing your NFT metadata."}
               </p>
 
               {txExplorerLink && (

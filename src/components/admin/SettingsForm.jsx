@@ -141,7 +141,6 @@ export default function SettingsForm() {
     buy_fee: "0.002",
     mint_price_eth: "0.005",
     create_mint_fee_usd: "5",
-    ntfy_topic: "aurora-nft-admin",
     contract_address: "",
   });
 
@@ -149,7 +148,7 @@ export default function SettingsForm() {
   const [saving, setSaving] = useState(null);
   const [saved, setSaved] = useState(null);
   const [showConfirm, setShowConfirm] = useState(false);
-  const [ntfyTestResult, setNtfyTestResult] = useState(null);
+  const [pushTestResult, setPushTestResult] = useState(null);
   const [showWalletModal, setShowWalletModal] = useState(false);
 
   const [ethPrice, setEthPrice] = useState(null);
@@ -384,7 +383,6 @@ export default function SettingsForm() {
       "buy_fee",
       "mint_price_eth",
       "create_mint_fee_usd",
-      "ntfy_topic",
       "contract_address",
     ];
 
@@ -481,17 +479,17 @@ export default function SettingsForm() {
     });
   };
 
-  const testNtfy = async () => {
-    setNtfyTestResult("sending");
+  const testPushover = async () => {
+    setPushTestResult("sending");
 
     try {
       const res = await fetch("/api/admin/notifications/test", { method: "POST" });
-      setNtfyTestResult(res.ok ? "success" : "failed");
+      setPushTestResult(res.ok ? "success" : "failed");
     } catch {
-      setNtfyTestResult("failed");
+      setPushTestResult("failed");
     }
 
-    setTimeout(() => setNtfyTestResult(null), 3000);
+    setTimeout(() => setPushTestResult(null), 3000);
   };
 
   const updateField = (key, value) => {
@@ -933,26 +931,19 @@ export default function SettingsForm() {
             <Bell size={18} className="text-warning" />
           </div>
           <div>
-            <h3 className="font-display font-semibold text-text">Ntfy Notifications</h3>
-            <p className="text-xs text-muted">Push notifications to your phone via ntfy.sh</p>
+            <h3 className="font-display font-semibold text-text">Push Notifications</h3>
+            <p className="text-xs text-muted">Pushover notifications to your phone</p>
           </div>
         </div>
-
-        <Input
-          label="Ntfy Topic"
-          value={settings.ntfy_topic}
-          onChange={(e) => updateField("ntfy_topic", e.target.value)}
-          placeholder="aurora-nft-admin"
-        />
 
         <div className="flex items-center gap-3">
           <Button
             variant="secondary"
             size="sm"
-            onClick={testNtfy}
-            disabled={ntfyTestResult === "sending"}
+            onClick={testPushover}
+            disabled={pushTestResult === "sending"}
           >
-            {ntfyTestResult === "sending" ? (
+            {pushTestResult === "sending" ? (
               <Loader2 size={14} className="animate-spin" />
             ) : (
               <Bell size={14} />
@@ -960,9 +951,9 @@ export default function SettingsForm() {
             Test Notification
           </Button>
 
-          {ntfyTestResult === "success" && <Badge color="success">Sent! Check your phone</Badge>}
-          {ntfyTestResult === "failed" && <Badge color="danger">Failed</Badge>}
-          <span className="text-xs text-muted">Subscribe to this topic in the ntfy app</span>
+          {pushTestResult === "success" && <Badge color="success">Sent! Check your phone</Badge>}
+          {pushTestResult === "failed" && <Badge color="danger">Failed — check Pushover keys in env</Badge>}
+          <span className="text-xs text-muted">Set PUSHOVER_USER_KEY and PUSHOVER_APP_TOKEN in .env</span>
         </div>
       </Card>
 
@@ -1049,8 +1040,8 @@ export default function SettingsForm() {
               </div>
 
               <div className="flex justify-between">
-                <span className="text-muted">Ntfy Topic</span>
-                <span className="font-mono text-xs text-text">{settings.ntfy_topic}</span>
+                <span className="text-muted">Locked Mint Price</span>
+                <span className="font-mono text-xs text-text">{settings.mint_price_eth || "—"} ETH</span>
               </div>
             </div>
 

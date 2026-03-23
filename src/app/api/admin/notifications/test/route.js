@@ -1,25 +1,16 @@
-import { NextResponse } from 'next/server';
-import { sendNtfyNotification } from '@/lib/ntfy';
+import { sendPushover } from '@/lib/pushover';
 
-/**
- * GET /api/admin/notifications/test
- * Sends a test push notification via ntfy. Use to verify your setup works.
- */
-export async function GET() {
-  const delivered = await sendNtfyNotification({
+export async function POST() {
+  const result = await sendPushover({
     title: '🔔 Test Notification',
-    message: 'AuroraNft ntfy integration is working!',
-    priority: 'default',
-    tags: ['white_check_mark', 'bell'],
-    click: '/admin',
+    message: 'AuroraNFT push notification is working!',
+    priority: 0,
   });
 
-  return NextResponse.json({
-    ok: delivered,
-    topic: process.env.NTFY_TOPIC || 'aurora-nft-admin',
-    server: process.env.NTFY_SERVER || 'https://ntfy.sh',
-    message: delivered
-      ? 'Test notification sent! Check your ntfy app.'
-      : 'Failed to send. Check your NTFY_SERVER and NTFY_TOPIC env vars.',
+  return Response.json({
+    ...result,
+    message: result.delivered
+      ? 'Test notification sent! Check your phone.'
+      : 'Failed to send — check PUSHOVER_USER_KEY and PUSHOVER_APP_TOKEN.',
   });
 }

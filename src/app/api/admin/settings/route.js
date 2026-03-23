@@ -63,7 +63,6 @@ export async function POST(req) {
       'sale_active',
       'max_per_wallet',
       'mint_window_hours',
-      'ntfy_topic',
       'treasury_wallet',
       'buy_fee',
       'create_mint_fee_usd',

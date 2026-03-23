@@ -4,8 +4,6 @@ import { injected, walletConnect, coinbaseWallet, safe } from "wagmi/connectors"
 
 const wcProjectId = process.env.NEXT_PUBLIC_WC_PROJECT_ID || "";
 const chainId = parseInt(process.env.NEXT_PUBLIC_CHAIN_ID || "8453", 10);
-
-// Put the active chain first so wagmi defaults to it
 const chains = chainId === 8453 ? [base, baseSepolia] : [baseSepolia, base];
 
 // Build connectors array

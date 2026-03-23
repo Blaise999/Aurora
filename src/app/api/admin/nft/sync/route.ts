@@ -261,18 +261,12 @@ export async function POST(request: Request) {
       metadata: { batchId, totalInserted, seedsUsed: seeds.length, errorCount: errors.length },
     });
 
-    /* 8) Send ntfy push notification */
+    /* 8) Push notification */
     try {
-      const { sendNtfyNotification } = await import("@/lib/ntfy");
-      await sendNtfyNotification({
-        title: "NFT Cache Synced",
-        message: `${totalInserted} NFTs cached from ${seeds.length} seeds. ${errors.length} errors.`,
-        priority: "default",
-        tags: ["package", "white_check_mark"],
-        click: "/admin",
-      });
+      const { notifySync } = await import("@/lib/pushover");
+      await notifySync({ totalInserted, errorCount: errors.length });
     } catch {
-      /* ntfy is non-blocking */
+      /* non-blocking */
     }
 
     return NextResponse.json({

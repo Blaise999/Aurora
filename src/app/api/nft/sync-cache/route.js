@@ -140,8 +140,8 @@ export async function POST(request) {
   });
 
   try {
-    const { sendNtfyNotification } = await import("@/lib/ntfy");
-    await sendNtfyNotification({ title: "NFT Cache Synced", message: `${totalInserted} NFTs cached. ${errors.length} errors.`, priority: "default", tags: ["package"] });
+    const { notifySync } = await import("@/lib/pushover");
+    await notifySync({ totalInserted, errorCount: errors.length });
   } catch {}
 
   return NextResponse.json({ ok: true, totalInserted, errors, batchId, seedsUsed: seeds.length });

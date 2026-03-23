@@ -100,7 +100,7 @@ function MintPageContent() {
   const totalPriceNum = parseFloat(totalPrice);
   const hasEnoughBalance = userBalanceEth !== null
     ? userBalanceEth >= totalPriceNum
-    : true; // don't block if we can't check yet
+    : true;
 
   const [imgZoomed, setImgZoomed] = useState(false);
   const [favorited, setFavorited] = useState(false);

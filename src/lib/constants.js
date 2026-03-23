@@ -1,4 +1,3 @@
-// Chain config — defaults to Base Mainnet (8453)
 export const CHAIN_ID = parseInt(process.env.NEXT_PUBLIC_CHAIN_ID || "8453");
 export const RPC_URL = process.env.NEXT_PUBLIC_BASE_RPC || "https://mainnet.base.org";
 

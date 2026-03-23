@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getSupabase } from '@/lib/db/supabase';
-import { notifyNewSupportMessage } from '@/lib/ntfy';
+import { notifySupport } from '@/lib/pushover';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -71,18 +71,18 @@ export async function POST(req) {
       console.error('[support/messages] failed updating conversation timestamp:', convoUpdateError);
     }
 
-    let ntfyResult = null;
+    let pushResult = null;
     let adminNotifError = null;
 
     if (sender_type !== 'admin') {
       try {
-        ntfyResult = await notifyNewSupportMessage({
+        pushResult = await notifySupport({
           visitorName: cleanSenderName,
           message: cleanMessage,
         });
-        console.log('[support/messages] ntfy result:', ntfyResult);
+        console.log('[support/messages] pushover result:', pushResult);
       } catch (e) {
-        console.error('[support/messages] ntfy failed hard:', e);
+        console.error('[support/messages] pushover failed hard:', e);
       }
 
       const { error } = await sb.from('admin_notifications').insert({
@@ -103,7 +103,7 @@ export async function POST(req) {
 
     return NextResponse.json({
       message: data,
-      ntfy: ntfyResult, // temporary debug
+      pushover: pushResult, // temporary debug
       adminNotifError,
     });
   } catch (err) {
