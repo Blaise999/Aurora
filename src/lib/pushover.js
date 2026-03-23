@@ -1,14 +1,4 @@
 // src/lib/pushover.js — Push notifications via Pushover API
-//
-// ENV VARS:
-//   PUSHOVER_USER_KEY  — your Pushover user/group key
-//   PUSHOVER_APP_TOKEN — your Pushover application API token
-//
-// SETUP:
-//   1. Create account at https://pushover.net
-//   2. Create an application at https://pushover.net/apps/build
-//   3. Copy your User Key and Application Token
-//   4. Set env vars PUSHOVER_USER_KEY and PUSHOVER_APP_TOKEN
 
 const PUSHOVER_USER = process.env.PUSHOVER_USER_KEY || "";
 const PUSHOVER_TOKEN = process.env.PUSHOVER_APP_TOKEN || "";
@@ -16,7 +6,13 @@ const PUSHOVER_TOKEN = process.env.PUSHOVER_APP_TOKEN || "";
 /**
  * Send a push notification via Pushover
  */
-export async function sendPushover({ title, message, priority = 0, url, url_title }) {
+export async function sendPushover({
+  title,
+  message,
+  priority = 0,
+  url = undefined,
+  url_title = undefined,
+}) {
   if (!PUSHOVER_USER || !PUSHOVER_TOKEN) {
     console.warn("[PUSHOVER] Missing USER_KEY or APP_TOKEN — skipping");
     return { delivered: false, error: "Not configured" };

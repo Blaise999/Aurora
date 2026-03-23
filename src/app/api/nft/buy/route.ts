@@ -8,33 +8,9 @@ export const runtime = "nodejs";
  * POST /api/nft/buy
  *
  * Server-side mint. No blockchain involved.
- *
- * What it does:
- *   1. Verify user is logged in via session cookie
- *   2. Check they don't already own this NFT
- *   3. Save to user_collections  (user's portfolio)
- *   4. Save to wallet_mints      (mint ledger)
- *   5. Save to transactions      (admin accounting)
- *   6. Insert admin_notification  (in-app notification for admin dashboard)
- *   7. Push ntfy notification     (admin phone)
- *   8. Send telegram message      (admin channel)
- *   9. Return success + tokenId to frontend
- *
- * Body: {
- *   nftId?,          // cached_nfts.id if known
- *   tokenId,         // the NFT token ID string
- *   contractAddress, // the contract address
- *   name,            // display name
- *   description?,    // description
- *   imageUrl?,       // image URL for snapshot
- *   collection?,     // collection name
- *   price,           // NFT price in ETH string, e.g. "0.002"
- *   fee,             // mint fee in ETH string, e.g. "0.001"
- * }
  */
 export async function POST(req: Request) {
   try {
-    // ── 1. Authenticate ──
     const { getSessionData } = await import("@/lib/auth/session");
     const session = await getSessionData();
 
@@ -46,10 +22,9 @@ export async function POST(req: Request) {
     }
 
     const profileId = session.profileId;
-    const wallet = session.wallet || session.email; // fallback to email if no wallet connected
+    const wallet = session.wallet || session.email;
     const email = session.email;
 
-    // ── Parse body ──
     const body = await req.json();
     const {
       nftId,
@@ -81,7 +56,6 @@ export async function POST(req: Request) {
 
     const sb = getSupabase();
 
-    // ── 2. Check if user already owns this NFT ──
     const { data: existing } = await sb
       .from("user_collections")
       .select("id")
@@ -97,7 +71,6 @@ export async function POST(req: Request) {
       );
     }
 
-    // ── 3. Save to user_collections (the user's portfolio) ──
     const { error: collError } = await sb.from("user_collections").insert({
       profile_id: profileId,
       cached_nft_id: nftId ? Number(nftId) : null,
@@ -128,7 +101,6 @@ export async function POST(req: Request) {
       );
     }
 
-    // ── 4. Save to wallet_mints (mint ledger) ──
     try {
       await sb.from("wallet_mints").insert({
         wallet_address: wallet.toLowerCase(),
@@ -136,7 +108,7 @@ export async function POST(req: Request) {
         chain_id: 8453,
         contract_address: addr,
         token_id: tid,
-        tx_hash: null, // no blockchain tx
+        tx_hash: null,
         mint_price_eth: nftPrice,
         mint_fee_eth: mintFee,
         total_paid_eth: totalValue,
@@ -149,9 +121,8 @@ export async function POST(req: Request) {
       console.warn("[buy] wallet_mints insert failed (non-critical):", e);
     }
 
-    // ── 5. Save to transactions (admin accounting) ──
-    // tx_hash is NOT NULL in schema, so generate a unique server-side ID
     const serverTxId = `mint_${profileId}_${tid}_${Date.now()}`;
+
     try {
       await sb.from("transactions").insert({
         wallet_address: wallet.toLowerCase(),
@@ -177,8 +148,8 @@ export async function POST(req: Request) {
       console.warn("[buy] transactions insert failed (non-critical):", e);
     }
 
-    // ── 6. Admin notification in DB ──
     const notifBody = `${nftName} minted by ${wallet || email} for ${totalValue} ETH`;
+
     try {
       await sb.from("admin_notifications").insert({
         type: "mint",
@@ -198,7 +169,6 @@ export async function POST(req: Request) {
       console.warn("[buy] admin_notifications insert failed:", e);
     }
 
-    // ── 7. Pushover notification ──
     try {
       await notifyPurchase({
         nftName,
@@ -210,7 +180,6 @@ export async function POST(req: Request) {
       console.warn("[buy] pushover failed:", e);
     }
 
-    // ── 8. Telegram notification to channel ──
     try {
       const { telegramNotifyBuy } = await import("@/lib/telegram");
       await telegramNotifyBuy({
@@ -228,7 +197,6 @@ export async function POST(req: Request) {
       console.warn("[buy] telegram failed:", e);
     }
 
-    // ── 9. Return success ──
     return NextResponse.json({
       ok: true,
       success: true,
@@ -239,7 +207,6 @@ export async function POST(req: Request) {
   } catch (e: any) {
     console.error("[/api/nft/buy] Unhandled error:", e);
 
-    // Try to notify admin of the failure
     try {
       await sendPushover({
         title: "❌ Purchase Failed",
