@@ -768,7 +768,7 @@ function MintPageContent() {
                           size="lg"
                           className="w-full"
                           onClick={handleMint}
-                          disabled={!profileId || checkingOwned || alreadyOwned || (isWagmiConnected && !hasEnoughBalance)}
+                          disabled={!profileId || checkingOwned || alreadyOwned}
                         >
                           {mintButtonLabel}
                         </Button>

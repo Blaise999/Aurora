@@ -140,13 +140,9 @@ function CreatePageContent() {
   const onChainFeeEth = onChainFeeRaw != null ? formatEther(onChainFeeRaw) : null;
   const onChainFeeNum = parseFloat(onChainFeeEth || "0");
 
-  // ── Admin-set fixed ETH price (saved from admin panel, no live conversion) ──
-  // If admin hasn't set a price yet, adminPriceNum = 0, and on-chain fee is used
-  const adminPriceNum = parseFloat(settings?.mint_price_eth || "0");
+  const adminPriceRaw = settings?.mint_price_eth;
+  const adminPriceNum = adminPriceRaw ? parseFloat(adminPriceRaw) : 0;
 
-  // Total the user pays = max(admin price, on-chain fee)
-  // On-chain fee is the floor so minting never breaks
-  // If admin hasn't set a price (0), just use on-chain fee
   const totalMintPrice = useMemo(() => {
     if (onChainFeeNum <= 0 && adminPriceNum <= 0) return null;
     if (onChainFeeNum <= 0) return adminPriceNum > 0 ? adminPriceNum : null;
@@ -154,35 +150,55 @@ function CreatePageContent() {
     return Math.max(adminPriceNum, onChainFeeNum);
   }, [adminPriceNum, onChainFeeNum]);
 
-  // Your cut = total minus on-chain fee (goes to admin wallet)
   const adminCut = useMemo(() => {
     if (totalMintPrice == null || onChainFeeNum <= 0) return 0;
     const cut = totalMintPrice - onChainFeeNum;
     return cut > 0.0000001 ? cut : 0;
   }, [totalMintPrice, onChainFeeNum]);
 
-  const totalMintPriceStr = totalMintPrice != null
-    ? totalMintPrice.toFixed(8).replace(/\.?0+$/, "")
-    : null;
+  const totalMintPriceStr =
+    totalMintPrice != null
+      ? totalMintPrice.toFixed(8).replace(/\.?0+$/, "")
+      : null;
 
   const ADMIN_WALLET = process.env.NEXT_PUBLIC_ADMIN_WALLET || "";
 
-  // ── Balance check with gas buffer ──
   const { data: walletClient } = useWalletClient();
   const { data: balanceData } = useBalance({
     address: liveWalletAddress || undefined,
-    chainId: targetChainId,
     query: { enabled: Boolean(liveWalletAddress) },
   });
 
   const userBalanceEth = balanceData ? parseFloat(formatEther(balanceData.value)) : null;
 
-  // Simple check: does user have enough for the mint price?
-  // Gas rejection is handled by the wallet itself at signing time
   const hasEnoughBalance = useMemo(() => {
-    if (userBalanceEth === null || totalMintPrice === null) return true;
-    return userBalanceEth >= totalMintPrice;
-  }, [userBalanceEth, totalMintPrice]);
+    if (userBalanceEth === null || totalMintPrice === null || totalMintPrice <= 0) return true;
+    const result = userBalanceEth >= totalMintPrice;
+
+    if (!result) {
+      console.warn("[BALANCE CHECK FAILED]", {
+        userBalanceEth,
+        totalMintPrice,
+        onChainFeeNum,
+        adminPriceNum,
+        adminPriceRaw,
+        balanceChainId: balanceData?.chainId || chain?.id,
+        targetChainId,
+        connectedChainId: chain?.id,
+      });
+    }
+
+    return result;
+  }, [
+    userBalanceEth,
+    totalMintPrice,
+    onChainFeeNum,
+    adminPriceNum,
+    adminPriceRaw,
+    balanceData,
+    chain,
+    targetChainId,
+  ]);
 
   const isMintActive = mintActiveOnChain !== false;
   const isFeeReady = onChainFeeNum > 0;
@@ -262,7 +278,7 @@ function CreatePageContent() {
   const isStep2Valid = Boolean(name.trim());
   const isFormValid = isStep1Valid && isStep2Valid;
 
-  const [mintStep, setMintStep] = useState(""); // "" | "sending_cut" | "minting"
+  const [mintStep, setMintStep] = useState("");
 
   const handleCreateMint = useCallback(async () => {
     if (!isLoggedIn || !isFormValid) return;
@@ -287,34 +303,26 @@ function CreatePageContent() {
       return;
     }
 
-    if (!hasEnoughBalance) {
-      setConfirmError(
-        `Insufficient balance. You need at least ${totalMintPriceStr} ETH plus gas. ` +
-        `Your balance: ${userBalanceEth?.toFixed(6) || "unknown"} ETH.`
-      );
-      return;
-    }
-
     setStep(4);
     setConfirmResult(null);
     setConfirmError(null);
 
-    // ── If admin price > on-chain fee, send your cut to admin wallet first ──
     if (adminCut > 0 && walletClient && ADMIN_WALLET) {
       setMintStep("sending_cut");
       try {
         const cutHash = await walletClient.sendTransaction({
           to: ADMIN_WALLET,
           value: parseEther(adminCut.toFixed(18)),
-          chain: chain,
+          chain,
         });
-        // Wait for confirmation before proceeding to contract mint
+
         const viemMod = await import("viem");
         const chainsMod = await import("viem/chains");
         const pc = viemMod.createPublicClient({
           chain: targetChainId === 8453 ? chainsMod.base : chainsMod.baseSepolia,
           transport: viemMod.http(),
         });
+
         await pc.waitForTransactionReceipt({ hash: cutHash });
       } catch (e) {
         setConfirmError(e?.shortMessage || e?.message || "Transaction rejected");
@@ -324,7 +332,6 @@ function CreatePageContent() {
       }
     }
 
-    // ── Now call the contract with exact on-chain fee ──
     setMintStep("minting");
 
     const metadataURI = `${window.location.origin}/api/nft/token-metadata?pending=1`;
@@ -338,11 +345,21 @@ function CreatePageContent() {
       chainId: targetChainId,
     });
   }, [
-    isLoggedIn, isFormValid, hasUsableWallet, isWagmiConnected,
-    chain, targetChainId, switchChain, creatorContract,
-    isFeeReady, isPriceReady, hasEnoughBalance,
-    totalMintPriceStr, userBalanceEth, adminCut,
-    walletClient, ADMIN_WALLET, onChainFeeEth, writeContract,
+    isLoggedIn,
+    isFormValid,
+    hasUsableWallet,
+    isWagmiConnected,
+    chain,
+    targetChainId,
+    switchChain,
+    creatorContract,
+    isFeeReady,
+    isPriceReady,
+    adminCut,
+    walletClient,
+    ADMIN_WALLET,
+    onChainFeeEth,
+    writeContract,
   ]);
 
   useEffect(() => {
@@ -441,6 +458,7 @@ function CreatePageContent() {
     setAttributes([{ trait_type: "", value: "" }]);
     setImageFile(null);
     setImagePreview(null);
+    setMintStep("");
   };
 
   const txExplorerLink = txHash ? `${explorerUrl}/tx/${txHash}` : null;
@@ -639,6 +657,7 @@ function CreatePageContent() {
                           <Image src={imagePreview} alt="Preview" fill className="object-contain" />
                         </div>
                         <button
+                          type="button"
                           onClick={() => {
                             setImageFile(null);
                             setImagePreview(null);
@@ -707,6 +726,7 @@ function CreatePageContent() {
                         <div className="border-t border-border-light p-3">
                           <p className="truncate text-xs text-muted">{imageFile?.name}</p>
                           <button
+                            type="button"
                             onClick={() => {
                               setImageFile(null);
                               setImagePreview(null);
@@ -746,7 +766,7 @@ function CreatePageContent() {
                           </span>
                         </div>
 
-                        <div className="border-t border-border-light my-1" />
+                        <div className="my-1 border-t border-border-light" />
 
                         <div className="flex justify-between text-sm">
                           <span className="text-muted">Network</span>
@@ -869,6 +889,7 @@ function CreatePageContent() {
                           <div className="flex items-center justify-between">
                             <label className="block text-sm font-medium text-text">Properties</label>
                             <button
+                              type="button"
                               onClick={addAttribute}
                               className="flex items-center gap-1 text-xs text-accent transition-colors hover:text-accent/80"
                             >
@@ -895,6 +916,7 @@ function CreatePageContent() {
                                 />
                                 {attributes.length > 1 && (
                                   <button
+                                    type="button"
                                     onClick={() => removeAttribute(idx)}
                                     className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-danger/10 text-danger transition-colors hover:bg-danger/20"
                                   >
@@ -1044,7 +1066,6 @@ function CreatePageContent() {
                         </span>
                       </div>
                     )}
-                    </div>
                   </div>
 
                   {confirmError && (
@@ -1089,7 +1110,7 @@ function CreatePageContent() {
                       size="lg"
                       className="flex-1"
                       onClick={handleCreateMint}
-                      disabled={!creatorContract || !isMintActive || !isPriceReady || !hasEnoughBalance}
+                      disabled={!creatorContract || !isMintActive || !isPriceReady}
                     >
                       <Sparkles size={16} /> Mint On-Chain — {totalMintPriceStr ? `${totalMintPriceStr} ETH` : "Loading..."}
                     </Button>

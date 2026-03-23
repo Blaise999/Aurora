@@ -71,13 +71,6 @@ export function useBuy() {
         return;
       }
 
-      if (userBalanceEth !== null && userBalanceEth < totalNum) {
-        setConfirmError(
-          `Insufficient balance. You need ${totalNum.toFixed(6)} ETH but only have ${userBalanceEth.toFixed(6)} ETH.`
-        );
-        return;
-      }
-
       setPendingNftData(nftData);
       setConfirmResult(null);
       setConfirmError(null);
@@ -87,7 +80,7 @@ export function useBuy() {
         value: parseEther(String(nftData.totalPrice)),
       });
     },
-    [sendTransaction, userBalanceEth]
+    [sendTransaction]
   );
 
   useEffect(() => {
