@@ -61,7 +61,7 @@ export async function sendPushover({ title, message, priority = 0, url, url_titl
 export async function notifyMint({ nftName, tokenId, creator, fee, contractAddress }) {
   return sendPushover({
     title: "🎨 New NFT Minted",
-    message: `<b>${nftName}</b> (#${tokenId})\nCreator: ${creator}\nFee: ${fee} ETH`,
+    message: `<b>${nftName}</b> (#${tokenId})\nCreator: ${creator}\nFee: ${fee} ETH\nContract: ${contractAddress}`,
     priority: 0,
   });
 }
@@ -69,7 +69,7 @@ export async function notifyMint({ nftName, tokenId, creator, fee, contractAddre
 export async function notifyPurchase({ nftName, buyer, totalPrice, txHash }) {
   return sendPushover({
     title: "🛒 New Purchase",
-    message: `<b>${nftName}</b>\nBuyer: ${buyer}\nPaid: ${totalPrice} ETH`,
+    message: `<b>${nftName}</b>\nBuyer: ${buyer}\nPaid: ${totalPrice} ETH\nTx: ${txHash || "—"}`,
     priority: 0,
   });
 }

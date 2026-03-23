@@ -133,12 +133,14 @@ export async function POST(req: Request) {
     } catch {}
 
     for (const transfer of userTransfers) {
+      const nftName = `AuroraNft #${transfer.tokenId}`;
+
       await supabase.from("nft_metadata_cache").upsert(
         {
           chain_id: chainId,
           contract_address: contractAddress,
           token_id: transfer.tokenId,
-          name: `AuroraNft #${transfer.tokenId}`,
+          name: nftName,
           description: "AuroraNft collection piece",
           image_url: null,
           updated_at: new Date().toISOString(),
@@ -172,9 +174,11 @@ export async function POST(req: Request) {
       });
 
       await notifyMint({
+        nftName,
         tokenId: transfer.tokenId,
-        minter: wallet,
-        price: mintPrice,
+        creator: wallet,
+        fee: mintPrice,
+        contractAddress,
       });
     }
 
