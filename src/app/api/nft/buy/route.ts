@@ -46,7 +46,7 @@ export async function POST(req: Request) {
     }
 
     const profileId = session.profileId;
-    const wallet = session.wallet || session.email; // fallback to email if no wallet connected
+    const wallet = session.wallet || session.email;
     const email = session.email;
 
     // ── Parse body ──
@@ -97,7 +97,7 @@ export async function POST(req: Request) {
       );
     }
 
-    // ── 3. Save to user_collections (the user's portfolio) ──
+    // ── 3. Save to user_collections ──
     const { error: collError } = await sb.from("user_collections").insert({
       profile_id: profileId,
       cached_nft_id: nftId ? Number(nftId) : null,
@@ -128,7 +128,7 @@ export async function POST(req: Request) {
       );
     }
 
-    // ── 4. Save to wallet_mints (mint ledger) ──
+    // ── 4. Save to wallet_mints ──
     try {
       await sb.from("wallet_mints").insert({
         wallet_address: wallet.toLowerCase(),
@@ -136,7 +136,7 @@ export async function POST(req: Request) {
         chain_id: 8453,
         contract_address: addr,
         token_id: tid,
-        tx_hash: null, // no blockchain tx
+        tx_hash: null,
         mint_price_eth: nftPrice,
         mint_fee_eth: mintFee,
         total_paid_eth: totalValue,
@@ -149,8 +149,7 @@ export async function POST(req: Request) {
       console.warn("[buy] wallet_mints insert failed (non-critical):", e);
     }
 
-    // ── 5. Save to transactions (admin accounting) ──
-    // tx_hash is NOT NULL in schema, so generate a unique server-side ID
+    // ── 5. Save to transactions ──
     const serverTxId = `mint_${profileId}_${tid}_${Date.now()}`;
     try {
       await sb.from("transactions").insert({
@@ -210,7 +209,7 @@ export async function POST(req: Request) {
       console.warn("[buy] pushover failed:", e);
     }
 
-    // ── 8. Telegram notification to channel ──
+    // ── 8. Telegram notification ──
     try {
       const { telegramNotifyBuy } = await import("@/lib/telegram");
       await telegramNotifyBuy({
@@ -239,12 +238,13 @@ export async function POST(req: Request) {
   } catch (e: any) {
     console.error("[/api/nft/buy] Unhandled error:", e);
 
-    // Try to notify admin of the failure
     try {
       await sendPushover({
         title: "❌ Purchase Failed",
         message: `Error: ${e?.message || "Unknown"}`,
         priority: 1,
+        url: process.env.NEXT_PUBLIC_SITE_URL || "https://auroranft.art/admin",
+        url_title: "Open Aurora Admin",
       });
     } catch {}
 
