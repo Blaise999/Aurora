@@ -9,19 +9,25 @@ export default function FakeActivityRunner() {
   const [running, setRunning] = useState(false);
   const [sent, setSent] = useState(0);
   const [lastResult, setLastResult] = useState(null);
+  const [lastError, setLastError] = useState(null);
   const [minDelay, setMinDelay] = useState(30);  // seconds
   const [maxDelay, setMaxDelay] = useState(180);  // seconds
   const timerRef = useRef(null);
 
   const sendOne = useCallback(async () => {
     try {
+      setLastError(null);
       const res = await fetch('/api/admin/fake-activity', { method: 'POST' });
       const data = await res.json();
       if (data.ok) {
         setSent(p => p + 1);
         setLastResult(data.sent?.[0] || null);
+      } else {
+        setLastError(data.error || `HTTP ${res.status}`);
       }
-    } catch {}
+    } catch (e) {
+      setLastError(e?.message || "Network error");
+    }
   }, []);
 
   const scheduleNext = useCallback(() => {
@@ -107,6 +113,12 @@ export default function FakeActivityRunner() {
       {lastResult && (
         <div className="rounded-lg bg-surface2/40 p-3 text-xs font-mono text-muted">
           Last: {lastResult.type === 'mint' ? '🎨' : '🛒'} {lastResult.nftName} — {lastResult.wallet}
+        </div>
+      )}
+
+      {lastError && (
+        <div className="rounded-lg border border-danger/20 bg-danger/10 p-3 text-xs text-danger">
+          Error: {lastError}
         </div>
       )}
     </Card>

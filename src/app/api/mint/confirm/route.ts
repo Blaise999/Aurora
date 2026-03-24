@@ -4,7 +4,7 @@ import { base, baseSepolia } from "viem/chains";
 import { getSessionWallet } from "@/lib/auth/session";
 import { getSupabase } from "@/lib/db/supabase";
 import { AURORA_NFT_ABI } from "@/lib/web3/contract";
-import { notifyMint } from "@/lib/pushover";
+import { sendPushover } from "@/lib/pushover";
 
 export const runtime = "nodejs";
 
@@ -173,12 +173,14 @@ export async function POST(req: Request) {
         },
       });
 
-      await notifyMint({
-        nftName,
-        tokenId: transfer.tokenId,
-        creator: wallet,
-        fee: mintPrice,
-        contractAddress,
+      await sendPushover({
+        title: "🎨 New NFT Minted",
+        message:
+          `<b>${nftName}</b> (#${transfer.tokenId})\n` +
+          `Creator: ${wallet}\n` +
+          `Fee: ${mintPrice} ETH\n` +
+          `Contract: ${contractAddress}`,
+        priority: 0,
       });
     }
 

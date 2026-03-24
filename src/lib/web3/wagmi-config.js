@@ -3,8 +3,9 @@ import { base, baseSepolia } from "wagmi/chains";
 import { injected, walletConnect, coinbaseWallet, safe } from "wagmi/connectors";
 
 const wcProjectId = process.env.NEXT_PUBLIC_WC_PROJECT_ID || "";
-const chainId = parseInt(process.env.NEXT_PUBLIC_CHAIN_ID || "8453", 10);
-const chains = chainId === 8453 ? [base, baseSepolia] : [baseSepolia, base];
+
+// Base Mainnet first — contract deployed on 8453
+const chains = [base, baseSepolia];
 
 // Build connectors array
 // - injected() with shimDisconnect: false so it doesn't fight with EIP-6963

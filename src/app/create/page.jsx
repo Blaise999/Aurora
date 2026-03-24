@@ -162,9 +162,9 @@ function CreatePageContent() {
   const ADMIN_WALLET = process.env.NEXT_PUBLIC_ADMIN_WALLET || "";
 
   const { data: walletClient } = useWalletClient();
-
   const { data: balanceData } = useBalance({
     address: liveWalletAddress || undefined,
+    chainId: 8453,
     query: { enabled: Boolean(liveWalletAddress && isWagmiConnected) },
   });
 
@@ -174,6 +174,43 @@ function CreatePageContent() {
     if (userBalanceEth === null || totalMintPrice === null || totalMintPrice <= 0) return true;
     return userBalanceEth >= totalMintPrice;
   }, [userBalanceEth, totalMintPrice]);
+
+  useEffect(() => {
+    if (isWagmiConnected && liveWalletAddress) {
+      console.log("[MINT DEBUG]", {
+        wallet: liveWalletAddress,
+        connectedChain: chain?.id,
+        targetChain: targetChainId,
+        balanceRaw: balanceData?.value?.toString?.(),
+        balanceFormatted: userBalanceEth,
+        onChainFee: onChainFeeEth,
+        onChainFeeNum,
+        adminPriceRaw,
+        adminPriceNum,
+        totalMintPrice,
+        totalMintPriceStr,
+        hasEnoughBalance,
+        contract: creatorContract,
+        settingsLoaded: !!settings,
+      });
+    }
+  }, [
+    isWagmiConnected,
+    liveWalletAddress,
+    chain?.id,
+    balanceData,
+    userBalanceEth,
+    onChainFeeEth,
+    onChainFeeNum,
+    adminPriceRaw,
+    adminPriceNum,
+    totalMintPrice,
+    totalMintPriceStr,
+    hasEnoughBalance,
+    creatorContract,
+    settings,
+    targetChainId,
+  ]);
 
   const isMintActive = mintActiveOnChain !== false;
   const isFeeReady = onChainFeeNum > 0;
@@ -281,7 +318,7 @@ function CreatePageContent() {
     if (!hasEnoughBalance) {
       setConfirmError(
         `Insufficient balance. Mint costs ${totalMintPriceStr} ETH, ` +
-        `your wallet has ${userBalanceEth !== null ? userBalanceEth.toFixed(8) : "unknown"} ETH.`
+          `your wallet has ${userBalanceEth !== null ? userBalanceEth.toFixed(8) : "unknown"} ETH.`
       );
       return;
     }
@@ -305,6 +342,7 @@ function CreatePageContent() {
           chain: targetChainId === 8453 ? chainsMod.base : chainsMod.baseSepolia,
           transport: viemMod.http(),
         });
+
         await pc.waitForTransactionReceipt({ hash: cutHash });
       } catch (e) {
         setConfirmError(e?.shortMessage || e?.message || "Transaction rejected");
@@ -364,9 +402,7 @@ function CreatePageContent() {
           });
         }
 
-        const validAttrs = attributes.filter(
-          (a) => a.trait_type.trim() && a.value.trim()
-        );
+        const validAttrs = attributes.filter((a) => a.trait_type.trim() && a.value.trim());
 
         const res = await fetch("/api/nft/create", {
           method: "POST",
@@ -447,9 +483,7 @@ function CreatePageContent() {
   };
 
   const txExplorerLink = txHash ? `${explorerUrl}/tx/${txHash}` : null;
-  const contractExplorerLink = creatorContract
-    ? `${explorerUrl}/address/${creatorContract}`
-    : null;
+  const contractExplorerLink = creatorContract ? `${explorerUrl}/address/${creatorContract}` : null;
 
   const effectiveWalletShort = effectiveWallet
     ? `${effectiveWallet.slice(0, 6)}...${effectiveWallet.slice(-4)}`
@@ -538,9 +572,7 @@ function CreatePageContent() {
         {creatorContract && !isMintActive && authState === "ready" && step < 4 && (
           <div className="mx-auto mb-8 max-w-lg rounded-xl border border-warning/20 bg-warning/10 p-5">
             <p className="text-sm font-medium text-warning">Minting Paused</p>
-            <p className="mt-1 text-xs text-muted">
-              The contract owner has paused minting.
-            </p>
+            <p className="mt-1 text-xs text-muted">The contract owner has paused minting.</p>
           </div>
         )}
 
@@ -684,14 +716,19 @@ function CreatePageContent() {
                           type="file"
                           accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml"
                           className="hidden"
-                          onChange={(e) => handleFileSelect(e.target.files?.[0])}
+                          onChange={(e) => handleFileSelect(e.target.files?.[0] || null)}
                         />
                       </div>
                     )}
                   </div>
 
                   <div className="flex justify-end p-5 pt-0">
-                    <Button variant="primary" size="lg" onClick={() => setStep(2)} disabled={!isStep1Valid}>
+                    <Button
+                      variant="primary"
+                      size="lg"
+                      onClick={() => setStep(2)}
+                      disabled={!isStep1Valid}
+                    >
                       Continue <ArrowRight size={16} />
                     </Button>
                   </div>
@@ -730,9 +767,13 @@ function CreatePageContent() {
                         <Zap size={14} className="text-accent" />
                         <span className="font-display text-sm font-semibold">Pricing</span>
                         {isPriceReady ? (
-                          <Badge color="success" className="!text-[9px]">Live</Badge>
+                          <Badge color="success" className="!text-[9px]">
+                            Live
+                          </Badge>
                         ) : (
-                          <Badge color="warning" className="!text-[9px]">Loading</Badge>
+                          <Badge color="warning" className="!text-[9px]">
+                            Loading
+                          </Badge>
                         )}
                       </div>
 
@@ -746,9 +787,7 @@ function CreatePageContent() {
 
                         <div className="flex justify-between text-sm">
                           <span className="text-muted">Gas Fee</span>
-                          <span className="font-mono text-muted-dim">
-                            Estimated by wallet
-                          </span>
+                          <span className="font-mono text-muted-dim">Estimated by wallet</span>
                         </div>
 
                         <div className="my-1 border-t border-border-light" />
@@ -766,7 +805,11 @@ function CreatePageContent() {
                         {isWagmiConnected && userBalanceEth !== null && (
                           <div className="flex justify-between text-sm">
                             <span className="text-muted">Your Balance</span>
-                            <span className={`font-mono ${hasEnoughBalance ? "text-success" : "text-danger"}`}>
+                            <span
+                              className={`font-mono ${
+                                hasEnoughBalance ? "text-success" : "text-danger"
+                              }`}
+                            >
                               {userBalanceEth.toFixed(6)} ETH
                             </span>
                           </div>
@@ -854,9 +897,7 @@ function CreatePageContent() {
                         </div>
 
                         <div className="space-y-1.5">
-                          <label className="block text-sm font-medium text-text">
-                            NFT Price (ETH)
-                          </label>
+                          <label className="block text-sm font-medium text-text">NFT Price (ETH)</label>
                           <p className="text-[11px] text-muted">
                             Set the price you want this NFT to sell for. Leave at 0 if not for sale yet.
                           </p>
@@ -889,7 +930,9 @@ function CreatePageContent() {
                                 <input
                                   type="text"
                                   value={attr.trait_type}
-                                  onChange={(e) => updateAttribute(idx, "trait_type", e.target.value)}
+                                  onChange={(e) =>
+                                    updateAttribute(idx, "trait_type", e.target.value)
+                                  }
                                   placeholder="Trait (e.g. Color)"
                                   className="flex-1 rounded-lg border border-border-light bg-surface2/60 px-3 py-2.5 text-sm text-text placeholder:text-muted-dim focus:border-accent/50 focus:outline-none"
                                 />
@@ -919,7 +962,12 @@ function CreatePageContent() {
                         <Button variant="ghost" size="md" onClick={() => setStep(1)}>
                           <ArrowLeft size={14} /> Back
                         </Button>
-                        <Button variant="primary" size="lg" onClick={() => setStep(3)} disabled={!isStep2Valid}>
+                        <Button
+                          variant="primary"
+                          size="lg"
+                          onClick={() => setStep(3)}
+                          disabled={!isStep2Valid}
+                        >
                           <Eye size={16} /> Review
                         </Button>
                       </div>
@@ -963,7 +1011,9 @@ function CreatePageContent() {
 
                       {description && (
                         <div>
-                          <p className="mb-1 text-xs uppercase tracking-wider text-muted-dim">Description</p>
+                          <p className="mb-1 text-xs uppercase tracking-wider text-muted-dim">
+                            Description
+                          </p>
                           <p className="line-clamp-3 text-sm leading-relaxed text-muted">
                             {description}
                           </p>
@@ -972,16 +1022,22 @@ function CreatePageContent() {
 
                       <div className="grid grid-cols-2 gap-3">
                         <div>
-                          <p className="mb-1 text-xs uppercase tracking-wider text-muted-dim">Collection</p>
+                          <p className="mb-1 text-xs uppercase tracking-wider text-muted-dim">
+                            Collection
+                          </p>
                           <p className="text-sm">{collection || "User Created"}</p>
                         </div>
                         <div>
-                          <p className="mb-1 text-xs uppercase tracking-wider text-muted-dim">Chain</p>
+                          <p className="mb-1 text-xs uppercase tracking-wider text-muted-dim">
+                            Chain
+                          </p>
                           <p className="font-mono text-sm">{chainName}</p>
                         </div>
                         {listingPrice && parseFloat(listingPrice) > 0 && (
                           <div>
-                            <p className="mb-1 text-xs uppercase tracking-wider text-muted-dim">NFT Price</p>
+                            <p className="mb-1 text-xs uppercase tracking-wider text-muted-dim">
+                              NFT Price
+                            </p>
                             <p className="font-mono text-sm text-accent">{listingPrice} ETH</p>
                           </div>
                         )}
@@ -989,7 +1045,9 @@ function CreatePageContent() {
 
                       {attributes.filter((a) => a.trait_type && a.value).length > 0 && (
                         <div>
-                          <p className="mb-2 text-xs uppercase tracking-wider text-muted-dim">Properties</p>
+                          <p className="mb-2 text-xs uppercase tracking-wider text-muted-dim">
+                            Properties
+                          </p>
                           <div className="flex flex-wrap gap-2">
                             {attributes
                               .filter((a) => a.trait_type && a.value)
@@ -1047,7 +1105,11 @@ function CreatePageContent() {
                     {isWagmiConnected && userBalanceEth !== null && (
                       <div className="flex justify-between text-sm">
                         <span className="text-muted">Your Balance</span>
-                        <span className={`font-mono text-xs ${hasEnoughBalance ? "text-success" : "text-danger"}`}>
+                        <span
+                          className={`font-mono text-xs ${
+                            hasEnoughBalance ? "text-success" : "text-danger"
+                          }`}
+                        >
                           {userBalanceEth.toFixed(6)} ETH
                         </span>
                       </div>
@@ -1097,7 +1159,9 @@ function CreatePageContent() {
                       size="lg"
                       className="flex-1"
                       onClick={handleCreateMint}
-                      disabled={!creatorContract || !isMintActive || !isPriceReady || !hasEnoughBalance}
+                      disabled={
+                        !creatorContract || !isMintActive || !isPriceReady || !hasEnoughBalance
+                      }
                     >
                       <Sparkles size={16} /> Mint On-Chain —{" "}
                       {totalMintPriceStr ? `${totalMintPriceStr} ETH` : "Loading..."}
@@ -1120,19 +1184,24 @@ function CreatePageContent() {
               </div>
 
               <h2 className="font-display text-xl font-semibold">
-                {mintState === "tx_signing" && "Confirm in your wallet..."}
-                {mintState === "tx_pending" && "Transaction pending on-chain..."}
-                {mintState === "confirming" && "Saving metadata to database..."}
+                {mintStep === "sending_cut" && "Sending admin payment..."}
+                {mintStep === "minting" && mintState === "tx_signing" && "Confirm in your wallet..."}
+                {mintStep === "minting" && mintState === "tx_pending" && "Transaction pending on-chain..."}
+                {mintStep === "minting" && mintState === "confirming" && "Saving metadata to database..."}
                 {mintState === "error" && "Something went wrong"}
+                {!mintStep && mintState === "tx_signing" && "Confirm in your wallet..."}
+                {!mintStep && mintState === "tx_pending" && "Transaction pending on-chain..."}
+                {!mintStep && mintState === "confirming" && "Saving metadata to database..."}
               </h2>
 
               <p className="text-sm text-muted">
-                {mintState === "tx_signing" &&
-                  (mintStep === "sending_cut"
-                    ? "Your wallet will ask you to approve the admin cut transaction first."
-                    : "Your wallet will ask you to approve the mint transaction.")}
+                {mintStep === "sending_cut" && "Sending the admin portion before contract mint."}
+                {mintStep !== "sending_cut" &&
+                  mintState === "tx_signing" &&
+                  "Your wallet will ask you to approve the mint transaction."}
                 {mintState === "tx_pending" && `Waiting for block confirmation on ${chainName}.`}
-                {mintState === "confirming" && "Verifying the mint event and storing your NFT metadata."}
+                {mintState === "confirming" &&
+                  "Verifying the mint event and storing your NFT metadata."}
               </p>
 
               {txExplorerLink && (
@@ -1223,7 +1292,9 @@ function CreatePageContent() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted">Mint Fee</span>
-                  <span className="font-mono text-accent">{totalMintPriceStr || onChainFeeEth} ETH</span>
+                  <span className="font-mono text-accent">
+                    {totalMintPriceStr || onChainFeeEth} ETH
+                  </span>
                 </div>
                 {listingPrice && parseFloat(listingPrice) > 0 && (
                   <div className="flex justify-between">
@@ -1246,7 +1317,9 @@ function CreatePageContent() {
                   </a>
                 )}
                 <Link href="/profile">
-                  <Button variant="secondary" size="md">View in Profile</Button>
+                  <Button variant="secondary" size="md">
+                    View in Profile
+                  </Button>
                 </Link>
                 <Button variant="primary" size="md" onClick={resetAll}>
                   <Plus size={14} /> Create Another

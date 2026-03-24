@@ -1,5 +1,6 @@
-export const CHAIN_ID = parseInt(process.env.NEXT_PUBLIC_CHAIN_ID || "8453");
-export const RPC_URL = process.env.NEXT_PUBLIC_BASE_RPC || "https://mainnet.base.org";
+// Base Mainnet — hardcoded, contract deployed here
+export const CHAIN_ID = 8453;
+export const RPC_URL = "https://mainnet.base.org";
 
 // Contracts
 export const AURORA_CONTRACT = process.env.NEXT_PUBLIC_AURORA_CONTRACT || "";

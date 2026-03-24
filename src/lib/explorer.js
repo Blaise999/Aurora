@@ -22,7 +22,7 @@ const EXPLORERS = {
   250:      { name: 'FTMScan',          base: 'https://ftmscan.com' },
 };
 
-const DEFAULT_CHAIN_ID = parseInt(process.env.NEXT_PUBLIC_CHAIN_ID || '8453', 10);
+const DEFAULT_CHAIN_ID = 8453;
 
 /**
  * Get explorer info for a chain

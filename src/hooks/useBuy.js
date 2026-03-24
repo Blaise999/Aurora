@@ -24,9 +24,10 @@ export function useBuy() {
   const [confirmError, setConfirmError] = useState(null);
   const [confirming, setConfirming] = useState(false);
 
-  // ── Balance check — reads from connected chain, not forced ──
+  // ── Balance check — ALWAYS read from Base Mainnet (8453) ──
   const { data: balanceData } = useBalance({
     address: address || undefined,
+    chainId: 8453, // HARDCODED — we need Base balance
     query: { enabled: Boolean(address) },
   });
 

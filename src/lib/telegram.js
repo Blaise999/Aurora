@@ -8,8 +8,9 @@ const CHAT_ID = process.env.TELEGRAM_CHAT_ID || "";
  */
 export async function sendTelegramMessage(text, opts = {}) {
   if (!BOT_TOKEN || !CHAT_ID) {
-    console.warn("[TELEGRAM] Missing BOT_TOKEN or CHAT_ID — skipping");
-    return false;
+    const msg = "[TELEGRAM] Missing BOT_TOKEN or CHAT_ID — skipping";
+    console.warn(msg);
+    throw new Error(msg);
   }
 
   try {
@@ -26,15 +27,16 @@ export async function sendTelegramMessage(text, opts = {}) {
     });
 
     if (!res.ok) {
-      const err = await res.text().catch(() => "");
-      console.error("[TELEGRAM] Send failed:", res.status, err);
-      return false;
+      const errBody = await res.text().catch(() => "");
+      const errMsg = `Telegram API ${res.status}: ${errBody}`;
+      console.error("[TELEGRAM]", errMsg);
+      throw new Error(errMsg);
     }
 
     return true;
   } catch (err) {
-    console.error("[TELEGRAM] Error:", err);
-    return false;
+    console.error("[TELEGRAM] Error:", err?.message || err);
+    throw err;
   }
 }
 
