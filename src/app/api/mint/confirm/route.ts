@@ -181,6 +181,8 @@ export async function POST(req: Request) {
           `Fee: ${mintPrice} ETH\n` +
           `Contract: ${contractAddress}`,
         priority: 0,
+        url: "",
+        url_title: "",
       });
     }
 
