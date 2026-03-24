@@ -24,10 +24,9 @@ export function useBuy() {
   const [confirmError, setConfirmError] = useState(null);
   const [confirming, setConfirming] = useState(false);
 
-  // ── Balance check ──
+  // ── Balance check — reads from connected chain, not forced ──
   const { data: balanceData } = useBalance({
     address: address || undefined,
-    chainId: chain?.id,
     query: { enabled: Boolean(address) },
   });
 
@@ -71,6 +70,15 @@ export function useBuy() {
         return;
       }
 
+      // Balance check
+      if (userBalanceEth !== null && userBalanceEth < totalNum) {
+        setConfirmError(
+          `Insufficient balance. This NFT costs ${totalNum.toFixed(6)} ETH, ` +
+          `your wallet has ${userBalanceEth.toFixed(6)} ETH.`
+        );
+        return;
+      }
+
       setPendingNftData(nftData);
       setConfirmResult(null);
       setConfirmError(null);
@@ -80,7 +88,7 @@ export function useBuy() {
         value: parseEther(String(nftData.totalPrice)),
       });
     },
-    [sendTransaction]
+    [sendTransaction, userBalanceEth]
   );
 
   useEffect(() => {

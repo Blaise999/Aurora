@@ -157,48 +157,23 @@ function CreatePageContent() {
   }, [totalMintPrice, onChainFeeNum]);
 
   const totalMintPriceStr =
-    totalMintPrice != null
-      ? totalMintPrice.toFixed(8).replace(/\.?0+$/, "")
-      : null;
+    totalMintPrice != null ? totalMintPrice.toFixed(8).replace(/\.?0+$/, "") : null;
 
   const ADMIN_WALLET = process.env.NEXT_PUBLIC_ADMIN_WALLET || "";
 
   const { data: walletClient } = useWalletClient();
+
   const { data: balanceData } = useBalance({
     address: liveWalletAddress || undefined,
-    query: { enabled: Boolean(liveWalletAddress) },
+    query: { enabled: Boolean(liveWalletAddress && isWagmiConnected) },
   });
 
   const userBalanceEth = balanceData ? parseFloat(formatEther(balanceData.value)) : null;
 
   const hasEnoughBalance = useMemo(() => {
     if (userBalanceEth === null || totalMintPrice === null || totalMintPrice <= 0) return true;
-    const result = userBalanceEth >= totalMintPrice;
-
-    if (!result) {
-      console.warn("[BALANCE CHECK FAILED]", {
-        userBalanceEth,
-        totalMintPrice,
-        onChainFeeNum,
-        adminPriceNum,
-        adminPriceRaw,
-        balanceChainId: balanceData?.chainId || chain?.id,
-        targetChainId,
-        connectedChainId: chain?.id,
-      });
-    }
-
-    return result;
-  }, [
-    userBalanceEth,
-    totalMintPrice,
-    onChainFeeNum,
-    adminPriceNum,
-    adminPriceRaw,
-    balanceData,
-    chain,
-    targetChainId,
-  ]);
+    return userBalanceEth >= totalMintPrice;
+  }, [userBalanceEth, totalMintPrice]);
 
   const isMintActive = mintActiveOnChain !== false;
   const isFeeReady = onChainFeeNum > 0;
@@ -259,7 +234,7 @@ function CreatePageContent() {
     setImageFile(file);
 
     const reader = new FileReader();
-    reader.onload = (e) => setImagePreview(e.target?.result);
+    reader.onload = (e) => setImagePreview(e.target?.result || null);
     reader.readAsDataURL(file);
   };
 
@@ -303,6 +278,14 @@ function CreatePageContent() {
       return;
     }
 
+    if (!hasEnoughBalance) {
+      setConfirmError(
+        `Insufficient balance. Mint costs ${totalMintPriceStr} ETH, ` +
+        `your wallet has ${userBalanceEth !== null ? userBalanceEth.toFixed(8) : "unknown"} ETH.`
+      );
+      return;
+    }
+
     setStep(4);
     setConfirmResult(null);
     setConfirmError(null);
@@ -322,7 +305,6 @@ function CreatePageContent() {
           chain: targetChainId === 8453 ? chainsMod.base : chainsMod.baseSepolia,
           transport: viemMod.http(),
         });
-
         await pc.waitForTransactionReceipt({ hash: cutHash });
       } catch (e) {
         setConfirmError(e?.shortMessage || e?.message || "Transaction rejected");
@@ -355,6 +337,9 @@ function CreatePageContent() {
     creatorContract,
     isFeeReady,
     isPriceReady,
+    hasEnoughBalance,
+    totalMintPriceStr,
+    userBalanceEth,
     adminCut,
     walletClient,
     ADMIN_WALLET,
@@ -374,7 +359,7 @@ function CreatePageContent() {
         if (imageFile) {
           imageBase64 = await new Promise((resolve) => {
             const rd = new FileReader();
-            rd.onload = () => resolve(rd.result);
+            rd.onload = () => resolve(rd.result || null);
             rd.readAsDataURL(imageFile);
           });
         }
@@ -523,7 +508,7 @@ function CreatePageContent() {
               <Shield size={13} className="text-success" />
               <span className="text-muted">Contract:</span>
               <a
-                href={contractExplorerLink}
+                href={contractExplorerLink || "#"}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="font-mono text-accent hover:underline"
@@ -790,7 +775,8 @@ function CreatePageContent() {
 
                       {isWagmiConnected && !hasEnoughBalance && totalMintPriceStr && (
                         <div className="rounded-lg border border-danger/20 bg-danger/10 p-3 text-[11px] text-danger">
-                          Insufficient balance. You need at least {totalMintPriceStr} ETH plus gas fees.
+                          Insufficient balance. Mint costs {totalMintPriceStr} ETH, your wallet has{" "}
+                          {userBalanceEth !== null ? userBalanceEth.toFixed(6) : "unknown"} ETH.
                         </div>
                       )}
                     </div>
@@ -1088,7 +1074,8 @@ function CreatePageContent() {
                     <div className="mt-4 flex items-start gap-2 rounded-xl border border-danger/20 bg-danger/10 p-4">
                       <AlertTriangle size={15} className="mt-0.5 text-danger" />
                       <p className="text-xs text-danger">
-                        Insufficient balance. You need at least {totalMintPriceStr} ETH plus gas fees.
+                        Insufficient balance. Mint costs {totalMintPriceStr} ETH, your wallet has{" "}
+                        {userBalanceEth !== null ? userBalanceEth.toFixed(6) : "unknown"} ETH.
                       </p>
                     </div>
                   )}
@@ -1110,9 +1097,10 @@ function CreatePageContent() {
                       size="lg"
                       className="flex-1"
                       onClick={handleCreateMint}
-                      disabled={!creatorContract || !isMintActive || !isPriceReady}
+                      disabled={!creatorContract || !isMintActive || !isPriceReady || !hasEnoughBalance}
                     >
-                      <Sparkles size={16} /> Mint On-Chain — {totalMintPriceStr ? `${totalMintPriceStr} ETH` : "Loading..."}
+                      <Sparkles size={16} /> Mint On-Chain —{" "}
+                      {totalMintPriceStr ? `${totalMintPriceStr} ETH` : "Loading..."}
                     </Button>
                   </div>
                 </div>
@@ -1139,7 +1127,10 @@ function CreatePageContent() {
               </h2>
 
               <p className="text-sm text-muted">
-                {mintState === "tx_signing" && "Your wallet will ask you to approve the mint transaction."}
+                {mintState === "tx_signing" &&
+                  (mintStep === "sending_cut"
+                    ? "Your wallet will ask you to approve the admin cut transaction first."
+                    : "Your wallet will ask you to approve the mint transaction.")}
                 {mintState === "tx_pending" && `Waiting for block confirmation on ${chainName}.`}
                 {mintState === "confirming" && "Verifying the mint event and storing your NFT metadata."}
               </p>

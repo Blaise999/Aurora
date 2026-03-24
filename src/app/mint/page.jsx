@@ -642,7 +642,7 @@ function MintPageContent() {
                   {isWagmiConnected && !hasEnoughBalance && (
                     <div className="flex items-start gap-2 rounded-xl border border-danger/20 bg-danger/10 p-3 mt-2">
                       <span className="text-xs text-danger">
-                        Insufficient balance. You need at least {totalPrice} ETH plus gas fees.
+                        Insufficient balance. This NFT costs {totalPrice} ETH, your wallet has {userBalanceEth !== null ? userBalanceEth.toFixed(6) : "unknown"} ETH.
                       </span>
                     </div>
                   )}
@@ -768,7 +768,7 @@ function MintPageContent() {
                           size="lg"
                           className="w-full"
                           onClick={handleMint}
-                          disabled={!profileId || checkingOwned || alreadyOwned}
+                          disabled={!profileId || checkingOwned || alreadyOwned || (isWagmiConnected && !hasEnoughBalance)}
                         >
                           {mintButtonLabel}
                         </Button>
