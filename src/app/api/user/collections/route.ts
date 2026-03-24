@@ -3,37 +3,115 @@ import { NextResponse } from "next/server";
 export const runtime = "nodejs";
 
 /**
- * GET /api/user/collections/[id]
- * Returns one NFT assigned to the logged-in user's collection
+ * GET /api/user/collections
+ * Returns all NFTs in the logged-in user's collection.
+ * Also supports ?profileId=X for admin usage.
  */
-export async function GET(
-  _req: Request,
-  context: { params: { id: string } }
-) {
+export async function GET(req: Request) {
   try {
-    const rowId = context?.params?.id;
-
-    if (!rowId) {
-      return NextResponse.json(
-        { error: "Missing collection id" },
-        { status: 400 }
-      );
-    }
-
     const { getSessionData } = await import("@/lib/auth/session");
-    const session = await getSessionData();
-    const profileId = session?.profileId ? Number(session.profileId) : null;
-
-    if (!profileId) {
-      return NextResponse.json(
-        { error: "Unauthorized or no profile session" },
-        { status: 401 }
-      );
-    }
-
     const { getSupabase } = await import("@/lib/db/supabase");
     const sb = getSupabase();
 
+    const url = new URL(req.url);
+    const adminProfileId = url.searchParams.get("profileId");
+
+    let profileId: number | null = null;
+    let resolvedWallet: string | null = null;
+
+    if (adminProfileId) {
+      const { cookies } = await import("next/headers");
+      const { jwtVerify } = await import("jose");
+      const cookieStore = await cookies();
+      const adminToken = cookieStore.get("admin_session")?.value;
+
+      if (adminToken) {
+        try {
+          const secret = new TextEncoder().encode(
+            process.env.SESSION_SECRET ||
+              process.env.ADMIN_SECRET ||
+              "aurora-admin-fallback-secret-change-me"
+          );
+          const { payload } = await jwtVerify(adminToken, secret);
+
+          if (payload.role === "admin") {
+            profileId = Number(adminProfileId);
+          }
+        } catch (err) {
+          console.error("admin session verify failed:", err);
+        }
+      }
+    }
+
+    if (!profileId) {
+      const session = await getSessionData();
+
+      if (!session) {
+        return NextResponse.json(
+          { error: "Unauthorized", nfts: [] },
+          { status: 401 }
+        );
+      }
+
+      resolvedWallet = session.wallet
+        ? String(session.wallet).toLowerCase()
+        : null;
+
+      if (session.profileId) {
+        profileId = Number(session.profileId);
+      }
+
+      if (!profileId && session.email) {
+        const { data: profileByEmail, error: emailLookupError } = await sb
+          .from("profiles")
+          .select("id, wallet_address")
+          .eq("email", session.email)
+          .maybeSingle();
+
+        if (emailLookupError) {
+          console.error("profiles email lookup error:", emailLookupError);
+        }
+
+        if (profileByEmail?.id) {
+          profileId = Number(profileByEmail.id);
+          resolvedWallet =
+            resolvedWallet ||
+            (profileByEmail.wallet_address
+              ? String(profileByEmail.wallet_address).toLowerCase()
+              : null);
+        }
+      }
+
+      if (!profileId && resolvedWallet) {
+        const { data: profileByWallet, error: walletLookupError } = await sb
+          .from("profiles")
+          .select("id, wallet_address")
+          .ilike("wallet_address", resolvedWallet)
+          .maybeSingle();
+
+        if (walletLookupError) {
+          console.error("profiles wallet lookup error:", walletLookupError);
+        }
+
+        if (profileByWallet?.id) {
+          profileId = Number(profileByWallet.id);
+          resolvedWallet =
+            resolvedWallet ||
+            (profileByWallet.wallet_address
+              ? String(profileByWallet.wallet_address).toLowerCase()
+              : null);
+        }
+      }
+    }
+
+    if (!profileId) {
+      return NextResponse.json(
+        { error: "Profile not found", nfts: [] },
+        { status: 404 }
+      );
+    }
+
+    // ── 1. Fetch user_collections ──
     const { data, error } = await sb
       .from("user_collections")
       .select(`
@@ -56,93 +134,112 @@ export async function GET(
         image_url,
         nft_name,
         token_type,
-        chain,
-        cached_nfts:cached_nft_id (
-          id,
-          name,
-          description,
-          image_url,
-          collection_name,
-          token_type,
-          attributes,
-          nft_pricing (mint_price_eth, mint_fee_eth, is_featured, is_listed)
-        )
+        chain
       `)
-      .eq("id", Number(rowId))
       .eq("profile_id", profileId)
-      .single();
+      .order("assigned_at", { ascending: false });
 
-    if (error || !data) {
+    if (error) {
+      console.error("user_collections query error:", error);
       return NextResponse.json(
-        { error: error?.message || "NFT not found" },
-        { status: 404 }
+        { error: error.message, nfts: [] },
+        { status: 500 }
       );
     }
 
-    const item = data as any;
-    const cn = item.cached_nfts as any;
-    const pricing = Array.isArray(cn?.nft_pricing)
-      ? (cn.nft_pricing[0] ?? {})
-      : (cn?.nft_pricing ?? {});
+    // ── 2. Fetch pricing from nft_pricing for all cached_nft_ids ──
+    // The user_collections table often has NULL prices (admin-assigned NFTs),
+    // but the nft_pricing table holds the actual mint_price_eth & mint_fee_eth.
+    const cachedIds = (data || [])
+      .map((r: any) => r.cached_nft_id)
+      .filter(Boolean);
 
-    const nft = {
-      id: item.id,
-      profile_id: item.profile_id,
-      cached_nft_id: item.cached_nft_id,
+    let pricingMap: Record<number, { mint_price_eth: number; mint_fee_eth: number }> = {};
 
-      chain_id: item.chain_id,
-      contract_address: item.contract_address,
-      token_id: item.token_id,
-      assigned_at: item.assigned_at,
-      assigned_by: item.assigned_by,
+    if (cachedIds.length > 0) {
+      const { data: pricingRows, error: pricingErr } = await sb
+        .from("nft_pricing")
+        .select("cached_nft_id, mint_price_eth, mint_fee_eth")
+        .in("cached_nft_id", cachedIds);
 
-      nft_price_eth: item.nft_price_eth ?? pricing?.mint_price_eth ?? null,
-      mint_fee_eth: item.mint_fee_eth ?? pricing?.mint_fee_eth ?? null,
-      total_value_eth:
-        item.total_value_eth ??
-        (
-          Number(item.nft_price_eth ?? pricing?.mint_price_eth ?? 0) +
-          Number(item.mint_fee_eth ?? pricing?.mint_fee_eth ?? 0)
-        ),
+      if (pricingErr) {
+        console.error("nft_pricing lookup error:", pricingErr);
+      } else if (pricingRows) {
+        for (const row of pricingRows) {
+          pricingMap[row.cached_nft_id] = {
+            mint_price_eth: parseFloat(row.mint_price_eth || 0),
+            mint_fee_eth: parseFloat(row.mint_fee_eth || 0),
+          };
+        }
+      }
+    }
 
-      pricing_source: item.pricing_source ?? "collection",
+    // ── 3. Merge prices: user_collections prices → nft_pricing fallback ──
+    const nfts = (data || []).map((item: any) => {
+      const pricing = item.cached_nft_id ? pricingMap[item.cached_nft_id] : null;
 
-      attributes: item.attributes ?? cn?.attributes ?? [],
-      collection: item.collection ?? cn?.collection_name ?? "Collection",
-      description: item.description ?? cn?.description ?? "",
-      name: item.name ?? cn?.name ?? `#${item.token_id}`,
-      image_url: item.image_url ?? cn?.image_url ?? "",
-      nft_name: item.nft_name ?? cn?.name ?? `#${item.token_id}`,
-      token_type: item.token_type ?? cn?.token_type ?? "ERC-721",
-      chain:
-        item.chain ??
-        (item.chain_id === 8453
-          ? "Base"
-          : item.chain_id === 1
-            ? "Ethereum"
+      // Resolve price: prefer user_collections, fallback to nft_pricing
+      const nftPrice = parseFloat(item.nft_price_eth || 0) > 0
+        ? parseFloat(item.nft_price_eth)
+        : pricing?.mint_price_eth || 0;
+
+      const mintFee = parseFloat(item.mint_fee_eth || 0) > 0
+        ? parseFloat(item.mint_fee_eth)
+        : pricing?.mint_fee_eth || 0;
+
+      const totalValue = parseFloat(item.total_value_eth || 0) > 0
+        ? parseFloat(item.total_value_eth)
+        : (nftPrice + mintFee) > 0
+        ? nftPrice + mintFee
+        : 0;
+
+      return {
+        id: item.id,
+        profile_id: item.profile_id,
+        cached_nft_id: item.cached_nft_id,
+        chain_id: item.chain_id,
+        contract_address: item.contract_address,
+        token_id: item.token_id,
+        assigned_at: item.assigned_at,
+        assigned_by: item.assigned_by,
+        nft_price_eth: nftPrice,
+        mint_fee_eth: mintFee,
+        total_value_eth: totalValue,
+        pricing_source: item.pricing_source || (pricing ? "nft_pricing" : null),
+        attributes: item.attributes || [],
+        collection: item.collection || "Collection",
+        description: item.description || "",
+        name: item.name || item.nft_name || `#${item.token_id}`,
+        image_url: item.image_url || "",
+        nft_name: item.nft_name || item.name || `#${item.token_id}`,
+        token_type: item.token_type || "ERC-721",
+        chain:
+          item.chain ||
+          (item.chain_id === 8453
+            ? "Base"
             : item.chain_id === 84532
-              ? "Base Sepolia"
-              : `Chain ${item.chain_id}`),
+            ? "Base Sepolia"
+            : `Chain ${item.chain_id}`),
 
-      // old aliases
-      contractAddress: item.contract_address,
-      tokenId: item.token_id,
-      chainId: item.chain_id,
-      image: item.image_url ?? cn?.image_url ?? "",
-      assignedAt: item.assigned_at,
-      assignedBy: item.assigned_by,
-      mintPrice: item.nft_price_eth ?? pricing?.mint_price_eth ?? "0.002",
-      mintFee: item.mint_fee_eth ?? pricing?.mint_fee_eth ?? "0.001",
-      source: "collection",
+        // aliases for frontend compatibility
+        contractAddress: item.contract_address,
+        tokenId: item.token_id,
+        chainId: item.chain_id,
+        image: item.image_url || "",
+        collection_name: item.collection || "",
+      };
+    });
 
-      route_id: item.id,
-      composite_id: `${item.contract_address}_${item.token_id}`,
-    };
-
-    return NextResponse.json({ nft });
+    return NextResponse.json({
+      nfts,
+      count: nfts.length,
+      profileId,
+      wallet: resolvedWallet,
+    });
   } catch (e: any) {
+    console.error("user/collections error:", e);
     return NextResponse.json(
-      { error: e?.message || "Failed to fetch NFT" },
+      { error: e?.message || "Failed", nfts: [] },
       { status: 500 }
     );
   }

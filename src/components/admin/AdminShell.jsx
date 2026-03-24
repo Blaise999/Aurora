@@ -17,7 +17,8 @@ import {
   MessageCircle,
   Bell,
   Mail,
-  MessageSquareText
+  MessageSquareText,
+  Send,
 } from 'lucide-react';
 import Badge from '@/components/ui/Badge';
 
@@ -35,6 +36,7 @@ const navItems = [
   { id: 'allowlist', label: 'Allowlist', icon: Users },
   { id: 'analytics', label: 'Analytics', icon: BarChart3 },
   { id: 'activity', label: 'Activity', icon: Activity },
+  { id: 'telegram', label: 'Telegram Bot', icon: Send },
 ];
 
 function getHeaderTitle(tab) {
@@ -63,6 +65,8 @@ function getHeaderTitle(tab) {
       return 'Activity';
     case 'phrases':
       return 'Phrases';
+    case 'telegram':
+      return 'Telegram Bot';
     default:
       return 'Overview';
   }

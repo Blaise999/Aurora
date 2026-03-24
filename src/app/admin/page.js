@@ -14,7 +14,8 @@ import VisitorTracker from '@/components/admin/VisitorTracker';
 import SupportInbox from '@/components/admin/SupportInbox';
 import WalletNames from '@/components/admin/WalletNames';
 import AssignCollection from '@/components/admin/AssignCollection';
-import Phrases from '@/components/admin/Phrases';          // ← added here (same place as all other admin components)
+import Phrases from '@/components/admin/Phrases';
+import FakeActivityRunner from '@/components/admin/FakeActivityRunner';
 import AdminEmailComposer from '@/components/admin/AdminEmailComposer';
 import Card from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
@@ -114,6 +115,7 @@ export default function AdminPage() {
     email: <AdminEmailComposer />,
     allowlist: <UploadDropzone />,
     activity: <ActivityLog />,
+    telegram: <FakeActivityRunner />,
   };
   return (
     <AdminLoginGate>
