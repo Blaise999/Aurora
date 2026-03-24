@@ -289,6 +289,7 @@ export async function POST(req: Request) {
     const parsedFeeEth = parseNumber(feeEth, 0);
     const parsedFeeUsd = parseNumber(feeUsd, 0);
     const parsedEthPriceAtMint = parseNumber(ethPriceAtMint, 0);
+    const parsedListingPriceEth = parseNumber(listingPriceEth, 0);
 
     const mintFeeEth =
       onChainFeePaidEth !== null ? onChainFeePaidEth : parsedFeeEth;
@@ -329,7 +330,7 @@ export async function POST(req: Request) {
           : `Chain ${chainId}`,
       tx_hash: txHash,
       mint_fee_eth: mintFeeEth,
-      listing_price_eth: parseNumber(listingPriceEth, 0),
+      listing_price_eth: parsedListingPriceEth,
       mint_fee_usd: mintFeeUsd,
       eth_price_at_mint: ethPriceSnapshot,
       status: "confirmed",
@@ -395,6 +396,7 @@ export async function POST(req: Request) {
           mint_fee_usd: mintFeeUsd,
           mint_fee_eth: mintFeeEth,
           eth_price_at_mint: ethPriceSnapshot,
+          listing_price_eth: parsedListingPriceEth,
         },
       });
 
@@ -410,6 +412,8 @@ export async function POST(req: Request) {
       tokenId: onChainTokenId,
       creator: notifBuyer,
       fee: String(mintFeeEth),
+      mintPrice: "0",
+      price: String(parsedListingPriceEth),
       contractAddress: contractAddr,
     }).catch(() => {});
 
@@ -418,7 +422,7 @@ export async function POST(req: Request) {
       tokenId: onChainTokenId,
       buyer: notifBuyer,
       fee: String(mintFeeEth),
-      listingPrice: String(parseNumber(listingPriceEth, 0)),
+      listingPrice: String(parsedListingPriceEth),
       contractAddress: contractAddr,
       chainId,
     }).catch(() => {});
@@ -437,6 +441,7 @@ export async function POST(req: Request) {
           mint_fee_usd: mintFeeUsd,
           mint_fee_eth: mintFeeEth,
           eth_price_at_mint: ethPriceSnapshot,
+          listing_price_eth: parsedListingPriceEth,
         },
       });
     } catch {
@@ -455,6 +460,7 @@ export async function POST(req: Request) {
       mintFeeUsd,
       mintFeeEth,
       ethPriceAtMint: ethPriceSnapshot,
+      listingPriceEth: parsedListingPriceEth,
     });
   } catch (error: unknown) {
     const message =
