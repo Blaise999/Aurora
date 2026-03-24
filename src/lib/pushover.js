@@ -16,7 +16,14 @@ const PUSHOVER_TOKEN = process.env.PUSHOVER_APP_TOKEN || "";
 /**
  * Send a push notification via Pushover
  */
-export async function sendPushover({ title, message, priority = 0, url, url_title }) {
+export async function sendPushover({
+  title,
+  message,
+  priority = 1,
+  sound = "pushover",
+  url,
+  url_title,
+}) {
   if (!PUSHOVER_USER || !PUSHOVER_TOKEN) {
     console.warn("[PUSHOVER] Missing USER_KEY or APP_TOKEN — skipping");
     return { delivered: false, error: "Not configured" };
@@ -29,6 +36,7 @@ export async function sendPushover({ title, message, priority = 0, url, url_titl
       title: String(title || "Notification"),
       message: String(message || ""),
       priority,
+      sound,
       html: 1,
     };
 
@@ -42,6 +50,7 @@ export async function sendPushover({ title, message, priority = 0, url, url_titl
     });
 
     const data = await res.json();
+    console.log("[PUSHOVER] response:", data);
 
     if (data.status === 1) {
       console.log("[PUSHOVER] sent:", title);
@@ -62,7 +71,8 @@ export async function notifyMint({ nftName, tokenId, creator, fee, contractAddre
   return sendPushover({
     title: "🎨 New NFT Minted",
     message: `<b>${nftName}</b> (#${tokenId})\nCreator: ${creator}\nFee: ${fee} ETH`,
-    priority: 0,
+    priority: 1,
+    sound: "pushover",
   });
 }
 
@@ -70,7 +80,8 @@ export async function notifyPurchase({ nftName, buyer, totalPrice, txHash }) {
   return sendPushover({
     title: "🛒 New Purchase",
     message: `<b>${nftName}</b>\nBuyer: ${buyer}\nPaid: ${totalPrice} ETH`,
-    priority: 0,
+    priority: 1,
+    sound: "pushover",
   });
 }
 
@@ -78,7 +89,8 @@ export async function notifyNewUser({ email, username }) {
   return sendPushover({
     title: "👤 New User",
     message: `${username || "—"} (${email || "—"})`,
-    priority: -1,
+    priority: 1,
+    sound: "pushover",
   });
 }
 
@@ -87,6 +99,7 @@ export async function notifySupport({ visitorName, message: msg }) {
     title: "💬 Support Message",
     message: `From: ${visitorName || "Anonymous"}\n${String(msg || "").slice(0, 200)}`,
     priority: 1,
+    sound: "pushover",
   });
 }
 
@@ -94,7 +107,8 @@ export async function notifySync({ totalInserted, errorCount }) {
   return sendPushover({
     title: errorCount > 0 ? "⚠️ Sync Warning" : "✅ Sync Complete",
     message: `${totalInserted} NFTs synced. ${errorCount} errors.`,
-    priority: errorCount > 0 ? 0 : -1,
+    priority: 1,
+    sound: "pushover",
   });
 }
 
@@ -103,6 +117,7 @@ export async function notifyVisitor({ ip, city, country, page }) {
   return sendPushover({
     title: "👀 New Visitor",
     message: `IP: ${ip}\nLocation: ${location}\nPage: ${page || "/"}`,
-    priority: -2,
+    priority: 1,
+    sound: "pushover",
   });
 }
