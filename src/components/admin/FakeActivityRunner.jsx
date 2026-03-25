@@ -23,6 +23,7 @@ export default function FakeActivityRunner() {
         setSent(p => p + 1);
         setLastResult(data.sent?.[0] || null);
       } else {
+        
         setLastError(data.error || `HTTP ${res.status}`);
       }
     } catch (e) {
