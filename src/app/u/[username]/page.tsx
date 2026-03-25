@@ -150,8 +150,12 @@ function NftCard({ nft, type = "minted" }) {
           )}
 
           <div className="absolute left-4 top-4 flex items-center gap-2">
-            <span className="rounded-full border border-cyan-400/25 bg-cyan-400/10 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-cyan-200 backdrop-blur-sm">
-              {type === "minted" ? "Minted" : "Collected"}
+            <span className={`rounded-full border px-3 py-1 text-[11px] font-medium uppercase tracking-[0.18em] backdrop-blur-sm ${
+              type === "minted"
+                ? "border-fuchsia-400/25 bg-fuchsia-400/10 text-fuchsia-200"
+                : "border-cyan-400/25 bg-cyan-400/10 text-cyan-200"
+            }`}>
+              {type === "minted" ? "Created ✦" : "Collected"}
             </span>
 
             {nft.chain ? (
@@ -352,7 +356,7 @@ export default async function PublicProfilePage({ params }) {
               </div>
 
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 lg:w-[420px]">
-                <StatPill icon={Sparkles} label="Minted" value={minted.length} />
+                <StatPill icon={Sparkles} label="Created" value={minted.length} />
                 <StatPill icon={Layers3} label="Collected" value={collected.length} />
                 <StatPill icon={Trophy} label="Showcase" value={totalShowcase} />
               </div>
@@ -363,14 +367,14 @@ export default async function PublicProfilePage({ params }) {
         <section className="mt-12">
           <SectionHeader
             eyebrow="Creator Vault"
-            title="Minted NFTs"
+            title="Created NFTs"
             count={minted.length}
-            subtitle="Original works this profile has minted on Aurora."
+            subtitle="Original works this creator brought to life on Aurora."
           />
 
           {minted.length === 0 ? (
             <EmptyState
-              title="No minted NFTs yet"
+              title="No created NFTs yet"
               text="Once this user starts minting, their drops will show up here in a much cleaner collector-style grid."
             />
           ) : (

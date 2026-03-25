@@ -1,5 +1,11 @@
 import { NextResponse } from "next/server";
-import { createPublicClient, http, decodeEventLog, type Hash } from "viem";
+import {
+  createPublicClient,
+  http,
+  decodeEventLog,
+  type Address,
+  type Hash,
+} from "viem";
 import { base, baseSepolia } from "viem/chains";
 import { supabase } from "@/lib/supabase";
 import { getSessionData } from "@/lib/auth/session";
@@ -26,7 +32,7 @@ const CREATED_EVENT_ABI = [
 ] as const;
 
 type LogWithTopics = {
-  address: `0x${string}`;
+  address: Address;
   data: `0x${string}`;
   topics: readonly `0x${string}`[];
 };
@@ -66,9 +72,43 @@ function getClientForChain(chainId: number) {
   });
 }
 
+type AppPublicClient = ReturnType<typeof getClientForChain>;
+
 function parseNumber(value: unknown, fallback = 0): number {
   const parsed = Number.parseFloat(String(value ?? ""));
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+/** Retry getTransactionReceipt with exponential backoff */
+async function getReceiptWithRetry(
+  publicClient: AppPublicClient,
+  txHash: Hash,
+  maxAttempts = 10,
+  initialDelayMs = 2000
+) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const receipt = await publicClient.getTransactionReceipt({
+        hash: txHash,
+      });
+      if (receipt) return receipt;
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      const isNotFound =
+        message.includes("could not be found") ||
+        message.includes("not found") ||
+        message.includes("not yet been processed");
+
+      if (!isNotFound || attempt === maxAttempts) {
+        throw err;
+      }
+    }
+
+    const delay = initialDelayMs * Math.pow(1.5, attempt - 1);
+    await new Promise((r) => setTimeout(r, delay));
+  }
+
+  return null;
 }
 
 /**
@@ -79,7 +119,6 @@ function parseNumber(value: unknown, fallback = 0): number {
  */
 export async function POST(req: Request) {
   try {
-    // 1. Auth
     const session = await getSessionData();
 
     if (!session?.email || !session?.profileId) {
@@ -115,7 +154,6 @@ export async function POST(req: Request) {
       );
     }
 
-    // 2. Parse body
     const body = await req.json();
     const {
       txHash,
@@ -152,16 +190,14 @@ export async function POST(req: Request) {
       );
     }
 
+    const normalizedTxHash = txHash as Hash;
+
     const contractAddr = (
       clientContract || CREATOR_CONTRACT || ""
     ).toLowerCase();
 
-    const chainId = parseInt(
-      process.env.NEXT_PUBLIC_CHAIN_ID || "8453",
-      10
-    );
+    const chainId = parseInt(process.env.NEXT_PUBLIC_CHAIN_ID || "8453", 10);
 
-    // 3. Check duplicate
     const { data: existingTx } = await supabase
       .from("transactions")
       .select("id")
@@ -175,16 +211,15 @@ export async function POST(req: Request) {
       );
     }
 
-    // 4. Verify on-chain tx and extract Created event
     const publicClient = getClientForChain(chainId);
-
-    const receipt = await publicClient.getTransactionReceipt({
-      hash: txHash as Hash,
-    });
+    const receipt = await getReceiptWithRetry(publicClient, normalizedTxHash);
 
     if (!receipt) {
       return NextResponse.json(
-        { error: "Transaction not found" },
+        {
+          error:
+            "Transaction receipt not found after retries. It may still be processing — please try again in a moment.",
+        },
         { status: 400 }
       );
     }
@@ -200,7 +235,6 @@ export async function POST(req: Request) {
     let onChainCreator: string | null = null;
     let onChainFeePaidEth: number | null = null;
 
-    // Parse Created event from logs
     for (const rawLog of receipt.logs) {
       if (!hasTopics(rawLog)) continue;
 
@@ -247,7 +281,6 @@ export async function POST(req: Request) {
       }
     }
 
-    // Fallback: ERC721 Transfer mint event (from zero address)
     if (!onChainTokenId) {
       const TRANSFER_TOPIC =
         "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
@@ -278,7 +311,6 @@ export async function POST(req: Request) {
       );
     }
 
-    // Verify creator matches session wallet
     if (onChainCreator && onChainCreator !== userWallet) {
       return NextResponse.json(
         { error: "Wallet mismatch — tx creator does not match your session" },
@@ -308,7 +340,6 @@ export async function POST(req: Request) {
         })
       : [];
 
-    // 5. Save to user_listed
     const listedInsert = {
       profile_id: profileId,
       wallet_address: userWallet,
@@ -349,7 +380,6 @@ export async function POST(req: Request) {
       );
     }
 
-    // 6. wallet_mints
     const { error: walletMintsError } = await supabase
       .from("wallet_mints")
       .insert({
@@ -374,7 +404,6 @@ export async function POST(req: Request) {
       console.error("wallet_mints insert error:", walletMintsError);
     }
 
-    // 7. transactions
     const { error: txInsertError } = await supabase
       .from("transactions")
       .insert({
@@ -404,7 +433,6 @@ export async function POST(req: Request) {
       console.error("transactions insert error:", txInsertError);
     }
 
-    // 8. Notifications
     const notifBuyer = email || userWallet;
 
     void notifyMint({
@@ -444,9 +472,7 @@ export async function POST(req: Request) {
           listing_price_eth: parsedListingPriceEth,
         },
       });
-    } catch {
-      // ignore notification failure
-    }
+    } catch {}
 
     return NextResponse.json({
       success: true,

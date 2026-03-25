@@ -10,7 +10,7 @@ const steps = [
 
 export default function TxDrawer({
   open, onClose, currentStep = 'confirm', quantity = 1, price = '0.002',
-  txHash, explorerUrl = 'https://sepolia.basescan.org', onConfirm, isSending = false,
+  txHash, explorerUrl = 'https://basescan.org', onConfirm, isSending = false,
 }) {
   if (!open) return null;
   const stepIndex = steps.findIndex(s => s.id === currentStep);

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createPublicClient, http, parseEventLogs } from "viem";
+import { createPublicClient, http, parseEventLogs, type Hash } from "viem";
 import { base, baseSepolia } from "viem/chains";
 import { getSessionWallet } from "@/lib/auth/session";
 import { getSupabase } from "@/lib/db/supabase";
@@ -13,6 +13,21 @@ function getChain() {
   return id === 8453 ? base : baseSepolia;
 }
 
+function getPublicClient() {
+  const chain = getChain();
+  const rpcUrl =
+    chain.id === 8453
+      ? process.env.BASE_RPC_URL || chain.rpcUrls.default.http[0]
+      : process.env.BASE_SEPOLIA_RPC_URL || chain.rpcUrls.default.http[0];
+
+  return createPublicClient({
+    chain,
+    transport: http(rpcUrl),
+  });
+}
+
+type AppPublicClient = ReturnType<typeof getPublicClient>;
+
 type ParsedTransferLog = {
   args?: {
     from?: `0x${string}`;
@@ -20,6 +35,38 @@ type ParsedTransferLog = {
     tokenId?: bigint;
   };
 };
+
+/** Retry getTransactionReceipt with exponential backoff */
+async function getReceiptWithRetry(
+  client: AppPublicClient,
+  txHash: Hash,
+  maxAttempts = 10,
+  initialDelayMs = 2000
+) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const receipt = await client.getTransactionReceipt({
+        hash: txHash,
+      });
+      if (receipt) return receipt;
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      const isNotFound =
+        message.includes("could not be found") ||
+        message.includes("not found") ||
+        message.includes("not yet been processed");
+
+      if (!isNotFound || attempt === maxAttempts) {
+        throw err;
+      }
+    }
+
+    const delay = initialDelayMs * Math.pow(1.5, attempt - 1);
+    await new Promise((r) => setTimeout(r, delay));
+  }
+
+  return null;
+}
 
 export async function POST(req: Request) {
   try {
@@ -47,16 +94,19 @@ export async function POST(req: Request) {
     }
 
     const chain = getChain();
-    const rpcUrl = process.env.BASE_RPC_URL || chain.rpcUrls.default.http[0];
+    const client = getPublicClient();
 
-    const client = createPublicClient({
-      chain,
-      transport: http(rpcUrl),
-    });
+    const receipt = await getReceiptWithRetry(client, txHash as Hash);
 
-    const receipt = await client.getTransactionReceipt({
-      hash: txHash as `0x${string}`,
-    });
+    if (!receipt) {
+      return NextResponse.json(
+        {
+          error:
+            "Transaction receipt not found after retries. It may still be processing — please try again in a moment.",
+        },
+        { status: 400 }
+      );
+    }
 
     if (receipt.status !== "success") {
       return NextResponse.json(

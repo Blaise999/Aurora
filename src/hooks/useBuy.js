@@ -48,6 +48,9 @@ export function useBuy() {
     isSuccess: isConfirmedOnChain,
   } = useWaitForTransactionReceipt({
     hash: txHash,
+    confirmations: 1,
+    pollingInterval: 3_000,
+    timeout: 120_000,
     query: { enabled: Boolean(txHash) },
   });
 
@@ -101,16 +104,26 @@ export function useBuy() {
       setConfirming(true);
 
       try {
-        const res = await fetch("/api/nft/finalize-purchase", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            txHash,
-            nft: pendingNftData,
-          }),
+        const payload = JSON.stringify({
+          txHash,
+          nft: pendingNftData,
         });
 
-        const data = await res.json();
+        let res, data;
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          res = await fetch("/api/nft/finalize-purchase", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: payload,
+          });
+
+          data = await res.json();
+          if (res.ok) break;
+
+          // Retry on server errors, not client errors
+          if (res.status < 500 || attempt === 3) break;
+          await new Promise((r) => setTimeout(r, 2000 * attempt));
+        }
 
         if (!res.ok) {
           throw new Error(data.error || "Finalize failed");

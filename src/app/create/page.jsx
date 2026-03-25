@@ -244,6 +244,9 @@ function CreatePageContent() {
   const { isLoading: isWaiting, isSuccess: isConfirmedOnChain } =
     useWaitForTransactionReceipt({
       hash: txHash,
+      confirmations: 1,
+      pollingInterval: 3_000,
+      timeout: 120_000,
       query: { enabled: Boolean(txHash) },
     });
 
@@ -404,10 +407,7 @@ function CreatePageContent() {
 
         const validAttrs = attributes.filter((a) => a.trait_type.trim() && a.value.trim());
 
-        const res = await fetch("/api/nft/create", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
+        const payload = JSON.stringify({
             txHash,
             name: name.trim(),
             description: description.trim(),
@@ -422,10 +422,28 @@ function CreatePageContent() {
             adminCutEth: adminCut > 0 ? adminCut.toFixed(8) : "0",
             listingPriceEth: listingPrice ? String(listingPrice) : "0",
             creatorContract,
-          }),
         });
 
-        const data = await res.json();
+        // Retry up to 3 times with delay — the server-side also retries receipt fetching
+        let res, data;
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          res = await fetch("/api/nft/create", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: payload,
+          });
+
+          data = await res.json();
+
+          if (res.ok) break;
+
+          // If receipt not found yet, wait and retry
+          const isRetryable = (data.error || "").includes("receipt") || (data.error || "").includes("not found");
+          if (!isRetryable || attempt === 3) break;
+
+          await new Promise((r) => setTimeout(r, 3000 * attempt));
+        }
+
         if (!res.ok) throw new Error(data.error || "Create failed");
 
         setConfirmResult(data);

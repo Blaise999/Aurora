@@ -47,22 +47,82 @@ function truncId(str) {
   return `${str.slice(0, 6)}...${str.slice(-4)}`;
 }
 
+/** Fetch current ETH price in USD */
+async function getEthPriceUsd() {
+  const sources = [
+    {
+      url: "https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd",
+      parse: (json) => json?.ethereum?.usd,
+    },
+    {
+      url: "https://api.coinbase.com/v2/exchange-rates?currency=ETH",
+      parse: (json) => Number(json?.data?.rates?.USD),
+    },
+  ];
+
+  for (const src of sources) {
+    try {
+      const res = await fetch(src.url, {
+        cache: "no-store",
+        signal: AbortSignal.timeout(5000),
+      });
+      if (!res.ok) continue;
+      const json = await res.json();
+      const price = src.parse(json);
+      const usd = Number(price);
+      if (Number.isFinite(usd) && usd > 0) return usd;
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
+/** Convert USD to ETH string */
+function usdToEth(usdAmount, ethPriceUsd) {
+  if (!ethPriceUsd || ethPriceUsd <= 0) return null;
+  const eth = usdAmount / ethPriceUsd;
+  return eth.toFixed(6).replace(/\.?0+$/, "");
+}
+
+// ── Randomized admin celebration messages ──
+
+const MINT_CELEBRATIONS = [
+  "Another masterpiece hits the blockchain! 🔥",
+  "The chain just got a little more beautiful 🎨",
+  "A new creator joins the movement! 💎",
+  "Fresh art just dropped on-chain! ✨",
+  "The Aurora collection grows stronger 🌌",
+  "On-chain forever. This is the way 🚀",
+  "New NFT alert — the culture is alive! 🎭",
+  "Just witnessed a mint in real-time 👀",
+  "The creativity never stops around here! 🎯",
+  "Blockchain art at its finest 💫",
+  "Someone just immortalized their art on-chain 🏆",
+  "New art, new vibes, new era 🌊",
+];
+
+const BUY_CELEBRATIONS = [
+  "Bag secured! Another collector just copped 💰",
+  "Someone knows a good deal when they see one 🎯",
+  "The collection just found a new home! 🏠",
+  "Smart money moves right here 📈",
+  "Another NFT just changed hands! 🤝",
+  "Collector mode activated 🔥",
+  "Revenue just hit the treasury 💎",
+  "New sale just dropped — the market is moving! 📊",
+  "The people are buying — the culture is real 🌟",
+  "Someone just upgraded their collection! 🚀",
+  "That NFT was meant for them 🎨",
+  "Another happy collector! 💫",
+];
+
+function pickRandom(arr) {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
 /**
  * New NFT created (on-chain mint via AuroraCreator)
- *
- * Example:
- * ────────────────────────────────
- * 🎨 New NFT Minted!
- *
- * 📌 Name: Cosmic Dreamer #1
- * 🆔 Token: #7
- * 👤 Creator: 0x7B2e...4f1A
- * 💰 Fee Paid: 0.005 ETH
- * 📄 Contract: 0x50dd...Fda75
- * ⛓ Network: Base
- *
- * ✅ Minted on-chain successfully
- * ────────────────────────────────
  */
 export async function telegramNotifyMint({
   nftName,
@@ -78,8 +138,22 @@ export async function telegramNotifyMint({
   const chainLabel = chainId === 8453 ? "Base" : chainId === 84532 ? "Base Sepolia" : `Chain ${chainId}`;
   const explorer = chainId === 8453 ? "https://basescan.org" : "https://sepolia.basescan.org";
 
+  // Fetch ETH price and calculate $250 equivalent
+  let refLine = "";
+  try {
+    const ethPriceUsd = await getEthPriceUsd();
+    if (ethPriceUsd) {
+      const equiv = usdToEth(250, ethPriceUsd);
+      refLine = `\n💵 $250 ≈ ${equiv} ETH (@ $${ethPriceUsd.toFixed(2)}/ETH)`;
+    }
+  } catch {}
+
+  const celebration = pickRandom(MINT_CELEBRATIONS);
+
   const msg = [
     `🎨 <b>New NFT Minted!</b>`,
+    ``,
+    `<i>${celebration}</i>`,
     ``,
     `📌 Name: <b>${nftName || `#${tokenId}`}</b>`,
     `🆔 Token: <b>#${tokenId}</b>`,
@@ -88,6 +162,7 @@ export async function telegramNotifyMint({
     listingNum > 0 ? `🏷 Listed Price: <b>${listingNum.toFixed(6).replace(/\.?0+$/, "")} ETH</b>` : `🏷 Listed Price: <i>Not for sale</i>`,
     contractAddress ? `📄 Contract: <a href="${explorer}/address/${contractAddress}">${truncId(contractAddress)}</a>` : "",
     `⛓ Network: ${chainLabel}`,
+    refLine,
     ``,
     `✅ Minted on-chain successfully`,
   ]
@@ -99,19 +174,6 @@ export async function telegramNotifyMint({
 
 /**
  * NFT purchased (app-only, ETH sent to treasury)
- *
- * Example:
- * ────────────────────────────────
- * 🛒 New NFT Purchased!
- *
- * 📌 NFT: Celestial Fragment #1000
- * 👤 Buyer: 0xC9d3...2e7F
- * 💰 Amount Paid: 0.002 ETH
- * ⛓ Network: Base
- * 🔗 Tx: 0xa1b2...f3e4
- *
- * ✅ Purchase confirmed
- * ────────────────────────────────
  */
 export async function telegramNotifyBuy({
   nftName,
@@ -128,14 +190,30 @@ export async function telegramNotifyBuy({
   const chainLabel = chainId === 8453 ? "Base" : chainId === 84532 ? "Base Sepolia" : `Chain ${chainId}`;
   const explorer = chainId === 8453 ? "https://basescan.org" : "https://sepolia.basescan.org";
 
+  // Fetch ETH price and calculate $250 equivalent
+  let refLine = "";
+  try {
+    const ethPriceUsd = await getEthPriceUsd();
+    if (ethPriceUsd) {
+      const equiv = usdToEth(250, ethPriceUsd);
+      const totalUsd = (parseFloat(totalPrice || 0) * ethPriceUsd).toFixed(2);
+      refLine = `\n💵 Sale ≈ $${totalUsd} USD | $250 ≈ ${equiv} ETH (@ $${ethPriceUsd.toFixed(2)}/ETH)`;
+    }
+  } catch {}
+
+  const celebration = pickRandom(BUY_CELEBRATIONS);
+
   const msg = [
     `🛒 <b>New NFT Purchased!</b>`,
+    ``,
+    `<i>${celebration}</i>`,
     ``,
     `📌 NFT: <b>${nftName || `Token #${tokenId}`}</b>`,
     `👤 Buyer: <code>${truncId(buyer)}</code>`,
     `💰 Amount Paid: <b>${totalDisplay} ETH</b>`,
     `⛓ Network: ${chainLabel}`,
     txHash ? `🔗 Tx: <a href="${explorer}/tx/${txHash}">${truncId(txHash)}</a>` : "",
+    refLine,
     ``,
     `✅ Purchase confirmed`,
   ]
@@ -147,16 +225,6 @@ export async function telegramNotifyBuy({
 
 /**
  * New user signed up
- *
- * Example:
- * ────────────────────────────────
- * 👤 New User Joined!
- *
- * Name: John
- * Username: johndoe
- * Email: john@example.com
- * Wallet: 0x7B2e...4f1A
- * ────────────────────────────────
  */
 export async function telegramNotifyNewUser({
   firstName,
@@ -180,15 +248,6 @@ export async function telegramNotifyNewUser({
 
 /**
  * Wallet connected
- *
- * Example:
- * ────────────────────────────────
- * 🔗 Wallet Connected!
- *
- * User: johndoe
- * Wallet: 0x7B2e...4f1A
- * Type: MetaMask
- * ────────────────────────────────
  */
 export async function telegramNotifyWalletConnect({
   firstName,
