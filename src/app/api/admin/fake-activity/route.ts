@@ -16,7 +16,7 @@ const NFT_NAMES = [
 ];
 
 const TARGET_USD = 250;
-const DEFAULT_CHAIN_ID = 8453;
+const CHAIN_ID = 8453;
 
 function randomWallet() {
   const chars = "0123456789abcdef";
@@ -25,15 +25,15 @@ function randomWallet() {
   return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
 }
 
-function pick<T>(arr: T[]): T {
-  return arr[Math.floor(Math.random() * arr.length)];
+function randomTxHash() {
+  const chars = "0123456789abcdef";
+  let hash = "0x";
+  for (let i = 0; i < 64; i++) hash += chars[Math.floor(Math.random() * 16)];
+  return hash;
 }
 
-function randomTxHash() {
-  return `0x${Array.from(
-    { length: 64 },
-    () => "0123456789abcdef"[Math.floor(Math.random() * 16)]
-  ).join("")}`;
+function pick<T>(arr: T[]): T {
+  return arr[Math.floor(Math.random() * arr.length)];
 }
 
 function clampCount(value: string | null) {
@@ -42,40 +42,41 @@ function clampCount(value: string | null) {
   return Math.min(parsed, 5);
 }
 
-async function getEthUsdRate(): Promise<number> {
-  const res = await fetch("https://api.coinbase.com/v2/exchange-rates?currency=ETH", {
+async function getEthUsdFromLocalPricingRoute(req: Request): Promise<number> {
+  const url = new URL(req.url);
+  const pricingUrl = new URL("/api/pricing/eth-usd", url.origin);
+
+  const res = await fetch(pricingUrl.toString(), {
     method: "GET",
     cache: "no-store",
-    headers: {
-      Accept: "application/json",
-    },
+    signal: AbortSignal.timeout(7000),
   });
 
   if (!res.ok) {
-    throw new Error(`Failed to fetch ETH/USD rate (${res.status})`);
+    throw new Error(`Pricing route failed (${res.status})`);
   }
 
   const json = (await res.json()) as {
-    data?: { rates?: { USD?: string } };
+    success?: boolean;
+    usd?: number;
+    error?: string;
   };
 
-  const rate = Number(json?.data?.rates?.USD);
-
-  if (!Number.isFinite(rate) || rate <= 0) {
-    throw new Error("Invalid ETH/USD rate received");
+  if (!json?.success || !Number.isFinite(Number(json?.usd)) || Number(json.usd) <= 0) {
+    throw new Error(json?.error || "Invalid ETH/USD price from pricing route");
   }
 
-  return rate;
+  return Number(json.usd);
 }
 
-function usdToEthString(usd: number, ethUsdRate: number) {
-  const eth = usd / ethUsdRate;
-  return eth.toFixed(6);
+function usdToEth(usdAmount: number, ethUsd: number) {
+  return (usdAmount / ethUsd).toFixed(6);
 }
 
 /**
  * POST /api/admin/fake-activity
- * Sends random mint/buy telegram messages with enforced $250 ETH-equivalent pricing.
+ * Sends random mint/buy telegram messages.
+ * Enforces all fake mint fees and fake buy prices to equal $250 in live ETH equivalent.
  * ?count=1 (max 5)
  */
 export async function POST(req: Request) {
@@ -86,16 +87,16 @@ export async function POST(req: Request) {
     const count = clampCount(url.searchParams.get("count"));
     const contract = process.env.NEXT_PUBLIC_CREATOR_CONTRACT || "";
 
-    const ethUsdRate = await getEthUsdRate();
-    const enforcedEth = usdToEthString(TARGET_USD, ethUsdRate);
+    const ethUsd = await getEthUsdFromLocalPricingRoute(req);
+    const enforcedEth = usdToEth(TARGET_USD, ethUsd);
 
     const results: Array<{
       type: "mint" | "buy";
       nftName: string;
       wallet: string;
       tokenId: string;
-      usd: number;
       eth: string;
+      usd: number;
       txHash?: string;
     }> = [];
 
@@ -111,10 +112,10 @@ export async function POST(req: Request) {
           nftName,
           tokenId,
           buyer: wallet,
-          fee: enforcedEth,          // forced mint fee = $250 in ETH
-          listingPrice: "0",         // not part of the enforced fee rule
+          fee: enforcedEth,
+          listingPrice: "0",
           contractAddress: contract,
-          chainId: DEFAULT_CHAIN_ID,
+          chainId: CHAIN_ID,
         });
 
         results.push({
@@ -122,19 +123,19 @@ export async function POST(req: Request) {
           nftName,
           wallet,
           tokenId,
-          usd: TARGET_USD,
           eth: enforcedEth,
+          usd: TARGET_USD,
         });
       } else {
         await telegramNotifyBuy({
           nftName,
           tokenId,
           buyer: wallet,
-          nftPrice: enforcedEth,     // forced NFT purchase price = $250 in ETH
+          nftPrice: enforcedEth,
           buyFee: "0",
           totalPrice: enforcedEth,
           contractAddress: contract,
-          chainId: DEFAULT_CHAIN_ID,
+          chainId: CHAIN_ID,
           txHash,
         });
 
@@ -143,8 +144,8 @@ export async function POST(req: Request) {
           nftName,
           wallet,
           tokenId,
-          usd: TARGET_USD,
           eth: enforcedEth,
+          usd: TARGET_USD,
           txHash,
         });
       }
@@ -152,20 +153,15 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       ok: true,
-      enforced: {
-        usd: TARGET_USD,
-        eth: enforcedEth,
-        ethUsdRate,
+      pricing: {
+        usdTarget: TARGET_USD,
+        ethUsd,
+        enforcedEth,
       },
       sent: results,
     });
-  } catch (error: unknown) {
-    const message =
-      error instanceof Error ? error.message : "Failed";
-
-    return NextResponse.json(
-      { ok: false, error: message },
-      { status: 500 }
-    );
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : "Failed";
+    return NextResponse.json({ ok: false, error: message }, { status: 500 });
   }
 }
