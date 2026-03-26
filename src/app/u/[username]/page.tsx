@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
@@ -10,13 +11,12 @@ import {
   Trophy,
   Copy,
 } from "lucide-react";
-import { getServiceSupabase } from "@/lib/supabase/server";
+import { getServiceSupabase } from "@/lib/supabase";   // ← ONLY service client now
 
-export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-function normalizeIpfsUrl(url) {
+function normalizeIpfsUrl(url: string | null | undefined) {
   if (!url || typeof url !== "string") return "";
   if (url.startsWith("ipfs://ipfs/")) {
     return `https://ipfs.io/${url.replace("ipfs://", "")}`;
@@ -27,174 +27,100 @@ function normalizeIpfsUrl(url) {
   return url;
 }
 
-function normalizeUsername(username) {
-  if (!username) return "";
-  const raw = Array.isArray(username) ? username[0] : username;
-  return decodeURIComponent(String(raw)).trim().replace(/^@+/, "").toLowerCase();
-}
-
-function normalizeProfile(profile) {
-  if (!profile) return null;
-
-  return {
-    ...profile,
-    username: profile.username || "",
-    display_name:
-      profile.display_name || profile.first_name || profile.username || "Collector",
-    avatar_url: normalizeIpfsUrl(profile.avatar_url || ""),
-    wallet_address: profile.wallet_address || "",
-    bio: profile.bio || "",
-  };
-}
-
-function normalizeNft(nft) {
+function normalizeNft(nft: any) {
   return {
     ...nft,
     image_url: normalizeIpfsUrl(
-      nft?.image_url || nft?.image || nft?.preview_image || nft?.thumbnail || ""
+      nft?.image_url || nft?.image || nft?.preview_image || ""
     ),
     image: normalizeIpfsUrl(
-      nft?.image || nft?.image_url || nft?.preview_image || nft?.thumbnail || ""
+      nft?.image || nft?.image_url || nft?.preview_image || ""
     ),
     nft_name: nft?.nft_name || nft?.name || null,
     name: nft?.name || nft?.nft_name || null,
-    description: nft?.description || "",
     collection: nft?.collection || nft?.collection_name || "Aurora Collection",
     collection_name: nft?.collection_name || nft?.collection || "Aurora Collection",
-    token_id: String(nft?.token_id ?? nft?.tokenId ?? ""),
+    token_id: nft?.token_id || nft?.tokenId || "",
     contract_address: nft?.contract_address || nft?.contractAddress || "",
     token_type: nft?.token_type || nft?.tokenType || "NFT",
     external_url: nft?.external_url || nft?.externalUrl || "",
-    chain: nft?.chain || nft?.network || "",
-    attributes: Array.isArray(nft?.attributes) ? nft.attributes : [],
   };
 }
 
-async function getProfile(username) {
-  const supabase = getServiceSupabase();
-  const normalized = normalizeUsername(username);
+async function getProfile(username: string) {
+  const service = getServiceSupabase();
+  const { data, error } = await service
+    .from("public_profiles")
+    .select("*")
+    .eq("username", username)
+    .single();
 
-  if (!normalized) return null;
-
-  try {
-    const publicRes = await supabase
-      .from("public_profiles")
-      .select("*")
-      .ilike("username", normalized)
-      .limit(1)
-      .maybeSingle();
-
-    if (publicRes.data) return normalizeProfile(publicRes.data);
-
-    const privateRes = await supabase
-      .from("profiles")
-      .select("*")
-      .ilike("username", normalized)
-      .limit(1)
-      .maybeSingle();
-
-    if (privateRes.data) return normalizeProfile(privateRes.data);
-
-    return null;
-  } catch (error) {
-    console.error("getProfile crash:", error);
-    return null;
+  if (error) {
+    console.error("getProfile error:", error);
+    throw new Error(error.message || "Failed to load public profile");
   }
+
+  if (!data) return null;
+  return data;
 }
 
-async function getMinted(profileId) {
-  const supabase = getServiceSupabase();
+async function getMinted(profileId: string) {
+  const service = getServiceSupabase();
+  const { data, error } = await service
+    .from("public_user_listed")
+    .select("*")
+    .eq("profile_id", profileId)
+    .order("created_at", { ascending: false });
 
-  try {
-    const publicRes = await supabase
-      .from("public_user_listed")
-      .select("*")
-      .eq("profile_id", profileId)
-      .order("created_at", { ascending: false });
-
-    if (!publicRes.error) {
-      return (publicRes.data || []).map(normalizeNft);
-    }
-
-    console.error("public_user_listed error:", publicRes.error);
-
-    const fallbackRes = await supabase
-      .from("user_listed")
-      .select("*")
-      .eq("profile_id", profileId)
-      .order("created_at", { ascending: false });
-
-    if (fallbackRes.error) {
-      console.error("user_listed fallback error:", fallbackRes.error);
-      return [];
-    }
-
-    return (fallbackRes.data || []).map(normalizeNft);
-  } catch (error) {
-    console.error("getMinted crash:", error);
-    return [];
+  if (error) {
+    console.error("getMinted error:", error);
+    throw new Error(error.message || "Failed to load created NFTs");
   }
+
+  return (data || []).map(normalizeNft);
 }
 
-async function getCollected(profileId) {
-  const supabase = getServiceSupabase();
+async function getCollected(profileId: string) {
+  const service = getServiceSupabase();
+  const { data, error } = await service
+    .from("public_user_collections")
+    .select("*")
+    .eq("profile_id", profileId)
+    .order("assigned_at", { ascending: false });
 
-  try {
-    const publicRes = await supabase
-      .from("public_user_collections")
-      .select("*")
-      .eq("profile_id", profileId)
-      .order("assigned_at", { ascending: false });
-
-    if (!publicRes.error) {
-      return (publicRes.data || []).map(normalizeNft);
-    }
-
-    console.error("public_user_collections error:", publicRes.error);
-
-    const fallbackRes = await supabase
-      .from("user_collections")
-      .select("*")
-      .eq("profile_id", profileId)
-      .order("assigned_at", { ascending: false });
-
-    if (fallbackRes.error) {
-      console.error("user_collections fallback error:", fallbackRes.error);
-      return [];
-    }
-
-    return (fallbackRes.data || []).map(normalizeNft);
-  } catch (error) {
-    console.error("getCollected crash:", error);
-    return [];
+  if (error) {
+    console.error("getCollected error:", error);
+    throw new Error(error.message || "Failed to load collected NFTs");
   }
+
+  return (data || []).map(normalizeNft);
 }
 
-function shortWallet(address) {
+function shortWallet(address: string | null | undefined) {
   if (!address) return "";
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
 }
 
-function shortHash(hash) {
+function shortHash(hash: string | null | undefined) {
   if (!hash) return "";
   return `${hash.slice(0, 10)}...${hash.slice(-8)}`;
 }
 
-function getDisplayTitle(nft) {
+function getDisplayTitle(nft: any) {
   return nft.nft_name || nft.name || `Token #${nft.token_id || "—"}`;
 }
 
-function getCollectionName(nft) {
+function getCollectionName(nft: any) {
   return nft.collection || nft.collection_name || "Aurora Collection";
 }
 
-function getCardKey(prefix, nft, index) {
+function getCardKey(prefix: string, nft: any, index: number) {
   return `${prefix}-${nft?.id || "noid"}-${nft?.profile_id || "nop"}-${
     nft?.contract_address || "noca"
   }-${nft?.token_id || index}`;
 }
 
-function StatPill({ icon: Icon, label, value }) {
+function StatPill({ icon: Icon, label, value }: { icon: any; label: string; value: number }) {
   return (
     <div className="group relative overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 backdrop-blur-sm transition-all duration-300 hover:border-cyan-400/30 hover:bg-white/[0.05]">
       <div className="absolute inset-0 bg-gradient-to-br from-cyan-400/10 via-transparent to-fuchsia-500/10 opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
@@ -213,7 +139,7 @@ function StatPill({ icon: Icon, label, value }) {
   );
 }
 
-function EmptyState({ title, text }) {
+function EmptyState({ title, text }: { title: string; text: string }) {
   return (
     <div className="relative overflow-hidden rounded-[28px] border border-white/10 bg-zinc-950/80 p-8">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.12),transparent_30%),radial-gradient(circle_at_bottom_right,rgba(217,70,239,0.10),transparent_30%)]" />
@@ -228,7 +154,7 @@ function EmptyState({ title, text }) {
   );
 }
 
-function SectionHeader({ eyebrow, title, count, subtitle }) {
+function SectionHeader({ eyebrow, title, count, subtitle }: { eyebrow: string; title: string; count: number; subtitle?: string }) {
   return (
     <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
       <div>
@@ -251,7 +177,7 @@ function SectionHeader({ eyebrow, title, count, subtitle }) {
   );
 }
 
-function NftCard({ nft, type = "minted" }) {
+function NftCard({ nft, type = "minted" }: { nft: any; type?: "minted" | "collected" }) {
   const title = getDisplayTitle(nft);
   const collectionName = getCollectionName(nft);
   const imageUrl = nft.image_url || nft.image || "";
@@ -271,7 +197,7 @@ function NftCard({ nft, type = "minted" }) {
                 referrerPolicy="no-referrer"
                 className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
                 onError={(e) => {
-                  e.currentTarget.style.display = "none";
+                  (e.currentTarget as HTMLImageElement).style.display = "none";
                 }}
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-transparent" />
@@ -373,13 +299,12 @@ function NftCard({ nft, type = "minted" }) {
   );
 }
 
-export async function generateMetadata({ params }) {
-  const profile = await getProfile(params?.username);
+export async function generateMetadata({ params }: { params: { username: string } }) {
+  const profile = await getProfile(params.username);
 
   if (!profile) {
     return {
       title: "Profile Not Found | Aurora NFT",
-      description: "This public Aurora NFT profile could not be found.",
     };
   }
 
@@ -390,25 +315,18 @@ export async function generateMetadata({ params }) {
   };
 }
 
-export default async function PublicProfilePage({ params }) {
-  const profile = await getProfile(params?.username);
+export default async function PublicProfilePage({ params }: { params: { username: string } }) {
+  const profile = await getProfile(params.username);
 
   if (!profile) notFound();
 
-  const [mintedResult, collectedResult] = await Promise.allSettled([
+  const [minted, collected] = await Promise.all([
     getMinted(profile.id),
     getCollected(profile.id),
   ]);
 
-  const minted =
-    mintedResult.status === "fulfilled" ? mintedResult.value : [];
-  const collected =
-    collectedResult.status === "fulfilled" ? collectedResult.value : [];
-
-  const displayName =
-    profile.display_name || profile.first_name || profile.username;
+  const displayName = profile.display_name || profile.username;
   const totalShowcase = minted.length + collected.length;
-  const avatarUrl = normalizeIpfsUrl(profile.avatar_url || "");
 
   return (
     <main className="min-h-screen overflow-hidden bg-black text-white">
@@ -427,15 +345,15 @@ export default async function PublicProfilePage({ params }) {
               <div className="flex flex-col gap-6 md:flex-row md:items-center">
                 <div className="relative h-28 w-28 shrink-0 overflow-hidden rounded-[28px] border border-white/10 bg-zinc-900 shadow-[0_0_0_1px_rgba(255,255,255,0.03)] md:h-32 md:w-32">
                   <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(34,211,238,0.14),transparent_40%),radial-gradient(circle_at_bottom,rgba(217,70,239,0.12),transparent_42%)]" />
-                  {avatarUrl ? (
+                  
+                  {/* CHANGED: plain <img> instead of Next <Image> → fixes all 400 errors from unconfigured domains */}
+                  {profile.avatar_url ? (
                     <img
-                      src={avatarUrl}
+                      src={profile.avatar_url}
                       alt={displayName}
                       className="h-full w-full object-cover"
-                      loading="eager"
-                      referrerPolicy="no-referrer"
                       onError={(e) => {
-                        e.currentTarget.style.display = "none";
+                        (e.currentTarget as HTMLImageElement).style.display = "none";
                       }}
                     />
                   ) : (
