@@ -26,7 +26,11 @@ async function getProfile(username) {
     .eq("username", username)
     .maybeSingle();
 
-  if (error || !data) return null;
+  if (error || !data) {
+    console.error("getProfile error:", error);
+    return null;
+  }
+
   return data;
 }
 
@@ -86,6 +90,57 @@ function getCollectionName(nft) {
   return nft.collection || nft.collection_name || "Aurora Collection";
 }
 
+function getImageSrc(nft) {
+  return nft.image_url || nft.image || nft.image_original_url || null;
+}
+
+function getChainLabel(nft) {
+  if (nft.chain) return nft.chain;
+  if (nft.chain_name) return nft.chain_name;
+
+  const chainId = Number(nft.chain_id);
+  if (chainId === 8453) return "Base";
+  if (chainId === 84532) return "Base Sepolia";
+  if (chainId === 1) return "Ethereum";
+  if (chainId === 137) return "Polygon";
+
+  return null;
+}
+
+function getExplorerLink(nft) {
+  const address = nft.contract_address;
+  const tokenId = nft.token_id;
+  const chainId = Number(nft.chain_id);
+
+  if (!address) return null;
+
+  if (chainId === 8453) {
+    return tokenId
+      ? `https://basescan.org/token/${address}?a=${tokenId}`
+      : `https://basescan.org/address/${address}`;
+  }
+
+  if (chainId === 84532) {
+    return tokenId
+      ? `https://sepolia.basescan.org/token/${address}?a=${tokenId}`
+      : `https://sepolia.basescan.org/address/${address}`;
+  }
+
+  if (chainId === 1) {
+    return tokenId
+      ? `https://etherscan.io/token/${address}?a=${tokenId}`
+      : `https://etherscan.io/address/${address}`;
+  }
+
+  if (chainId === 137) {
+    return tokenId
+      ? `https://polygonscan.com/token/${address}?a=${tokenId}`
+      : `https://polygonscan.com/address/${address}`;
+  }
+
+  return null;
+}
+
 function StatPill({ icon: Icon, label, value }) {
   return (
     <div className="group relative overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 backdrop-blur-sm transition-all duration-300 hover:border-cyan-400/30 hover:bg-white/[0.05]">
@@ -143,9 +198,62 @@ function SectionHeader({ eyebrow, title, count, subtitle }) {
   );
 }
 
+function NftMedia({ nft, title }) {
+  const primarySrc = getImageSrc(nft);
+
+  if (!primarySrc) {
+    return (
+      <div className="flex h-full items-center justify-center bg-[radial-gradient(circle_at_center,rgba(34,211,238,0.12),transparent_35%),radial-gradient(circle_at_center,rgba(217,70,239,0.10),transparent_60%)]">
+        <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-zinc-400">
+          No Preview
+        </div>
+      </div>
+    );
+  }
+
+  const backupSrc =
+    primarySrc !== nft.image && nft.image ? nft.image : nft.image_url || "";
+
+  return (
+    <>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={primarySrc}
+        alt={title}
+        loading="lazy"
+        decoding="async"
+        referrerPolicy="no-referrer"
+        className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+        onError={(e) => {
+          const img = e.currentTarget;
+          if (backupSrc && img.src !== backupSrc) {
+            img.src = backupSrc;
+            return;
+          }
+          img.onerror = null;
+          img.style.display = "none";
+          const parent = img.parentElement;
+          if (parent && !parent.querySelector("[data-fallback='true']")) {
+            const fallback = document.createElement("div");
+            fallback.setAttribute("data-fallback", "true");
+            fallback.className =
+              "absolute inset-0 flex items-center justify-center bg-[radial-gradient(circle_at_center,rgba(34,211,238,0.12),transparent_35%),radial-gradient(circle_at_center,rgba(217,70,239,0.10),transparent_60%)]";
+            fallback.innerHTML =
+              '<div class="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-zinc-400">No Preview</div>';
+            parent.appendChild(fallback);
+          }
+        }}
+      />
+      <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-transparent" />
+    </>
+  );
+}
+
 function NftCard({ nft, type = "minted" }) {
   const title = getDisplayTitle(nft);
   const collectionName = getCollectionName(nft);
+  const chainLabel = getChainLabel(nft);
+  const explorerLink = getExplorerLink(nft);
 
   return (
     <article className="group relative overflow-hidden rounded-[28px] border border-white/10 bg-zinc-950/90 transition-all duration-300 hover:-translate-y-1 hover:border-cyan-400/30 hover:shadow-[0_0_0_1px_rgba(34,211,238,0.12),0_24px_60px_rgba(0,0,0,0.45)]">
@@ -153,23 +261,7 @@ function NftCard({ nft, type = "minted" }) {
 
       <div className="relative">
         <div className="relative aspect-[1/1] overflow-hidden border-b border-white/10 bg-black">
-          {nft.image_url ? (
-            <>
-              <Image
-                src={nft.image_url}
-                alt={title}
-                fill
-                className="object-cover transition-transform duration-500 group-hover:scale-105"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-transparent" />
-            </>
-          ) : (
-            <div className="flex h-full items-center justify-center bg-[radial-gradient(circle_at_center,rgba(34,211,238,0.12),transparent_35%),radial-gradient(circle_at_center,rgba(217,70,239,0.10),transparent_60%)]">
-              <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-zinc-400">
-                No Preview
-              </div>
-            </div>
-          )}
+          <NftMedia nft={nft} title={title} />
 
           <div className="absolute left-4 top-4 flex items-center gap-2">
             <span
@@ -182,9 +274,9 @@ function NftCard({ nft, type = "minted" }) {
               {type === "minted" ? "Created ✦" : "Collected"}
             </span>
 
-            {nft.chain ? (
+            {chainLabel ? (
               <span className="rounded-full border border-white/10 bg-black/40 px-3 py-1 text-[11px] uppercase tracking-[0.16em] text-zinc-300 backdrop-blur-sm">
-                {nft.chain}
+                {chainLabel}
               </span>
             ) : null}
           </div>
@@ -244,6 +336,18 @@ function NftCard({ nft, type = "minted" }) {
               >
                 <ExternalLink size={15} />
                 View Asset
+              </a>
+            ) : null}
+
+            {explorerLink ? (
+              <a
+                href={explorerLink}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-2.5 text-sm text-white transition hover:border-cyan-400/30 hover:bg-cyan-400/10"
+              >
+                <ExternalLink size={15} />
+                Explorer
               </a>
             ) : null}
 
@@ -312,6 +416,7 @@ export default async function PublicProfilePage({ params }) {
                       alt={displayName}
                       fill
                       className="object-cover"
+                      unoptimized
                     />
                   ) : (
                     <div className="flex h-full items-center justify-center text-3xl font-bold text-white">
@@ -370,6 +475,7 @@ export default async function PublicProfilePage({ params }) {
                       <button
                         type="button"
                         className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-medium text-white transition hover:bg-white/[0.07]"
+                        onClick={() => {}}
                       >
                         <Copy size={16} />
                         Wallet Connected

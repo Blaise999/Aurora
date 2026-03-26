@@ -1364,5 +1364,5 @@ export default function CreatePage() {
     >
       <CreatePageContent />
     </Suspense>
-  );
+  )
 }
