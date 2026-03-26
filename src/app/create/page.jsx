@@ -164,7 +164,7 @@ function CreatePageContent() {
   const { data: walletClient } = useWalletClient();
   const { data: balanceData } = useBalance({
     address: liveWalletAddress || undefined,
-    chainId: 8453,
+    chainId: targetChainId,
     query: { enabled: Boolean(liveWalletAddress && isWagmiConnected) },
   });
 
@@ -221,6 +221,7 @@ function CreatePageContent() {
   const [collection, setCollection] = useState("");
   const [externalUrl, setExternalUrl] = useState("");
   const [listingPrice, setListingPrice] = useState("");
+  const [royaltyPercent, setRoyaltyPercent] = useState("");
   const [attributes, setAttributes] = useState([{ trait_type: "", value: "" }]);
   const [imageFile, setImageFile] = useState(null);
   const [imagePreview, setImagePreview] = useState(null);
@@ -250,6 +251,12 @@ function CreatePageContent() {
       query: { enabled: Boolean(txHash) },
     });
 
+  const royaltyNum = useMemo(() => {
+    const parsed = parseFloat(String(royaltyPercent || "0"));
+    if (!Number.isFinite(parsed)) return 0;
+    return Math.min(100, Math.max(0, parsed));
+  }, [royaltyPercent]);
+
   const handleFileSelect = (file) => {
     if (!file) return;
 
@@ -266,8 +273,8 @@ function CreatePageContent() {
       return;
     }
 
-    if (file.size > 10 * 1024 * 1024) {
-      alert("File must be under 10MB");
+    if (file.size > 4 * 1024 * 1024) {
+      alert("File must be under 4MB when saving directly in the database");
       return;
     }
 
@@ -329,9 +336,11 @@ function CreatePageContent() {
     setStep(4);
     setConfirmResult(null);
     setConfirmError(null);
+    setConfirming(false);
 
     if (adminCut > 0 && walletClient && ADMIN_WALLET) {
       setMintStep("sending_cut");
+
       try {
         const cutHash = await walletClient.sendTransaction({
           to: ADMIN_WALLET,
@@ -395,56 +404,58 @@ function CreatePageContent() {
       setConfirming(true);
 
       try {
-        let imageBase64 = null;
-
-        if (imageFile) {
-          imageBase64 = await new Promise((resolve) => {
-            const rd = new FileReader();
-            rd.onload = () => resolve(rd.result || null);
-            rd.readAsDataURL(imageFile);
-          });
-        }
-
         const validAttrs = attributes.filter((a) => a.trait_type.trim() && a.value.trim());
 
-        const payload = JSON.stringify({
-            txHash,
-            name: name.trim(),
-            description: description.trim(),
-            collection: collection.trim() || "User Created",
-            externalUrl: externalUrl.trim(),
-            attributes: validAttrs,
-            imageBase64,
-            imageFileName: imageFile?.name || "nft-image",
-            imageType: imageFile?.type || "image/png",
-            feeEth: onChainFeeEth,
-            totalPriceEth: totalMintPriceStr,
-            adminCutEth: adminCut > 0 ? adminCut.toFixed(8) : "0",
-            listingPriceEth: listingPrice ? String(listingPrice) : "0",
-            creatorContract,
-        });
+        const form = new FormData();
+        form.append("txHash", String(txHash));
+        form.append("name", name.trim());
+        form.append("description", description.trim());
+        form.append("collection", collection.trim() || "User Created");
+        form.append("externalUrl", externalUrl.trim());
+        form.append("attributes", JSON.stringify(validAttrs));
+        form.append("feeEth", onChainFeeEth || "0");
+        form.append("totalPriceEth", totalMintPriceStr || "0");
+        form.append("adminCutEth", adminCut > 0 ? adminCut.toFixed(8) : "0");
+        form.append("listingPriceEth", listingPrice ? String(listingPrice) : "0");
+        form.append("royaltyPercent", royaltyNum > 0 ? String(royaltyNum) : "0");
+        form.append("creatorContract", creatorContract || "");
+        form.append("chainId", String(targetChainId));
 
-        // Retry up to 3 times with delay — the server-side also retries receipt fetching
-        let res, data;
+        if (imageFile) {
+          form.append("imageFile", imageFile);
+        }
+
+        let res = null;
+        let data = null;
+
         for (let attempt = 1; attempt <= 3; attempt++) {
           res = await fetch("/api/nft/create", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: payload,
+            body: form,
           });
 
-          data = await res.json();
+          const rawText = await res.text();
+
+          try {
+            data = rawText ? JSON.parse(rawText) : {};
+          } catch {
+            data = { error: rawText || "Invalid server response" };
+          }
 
           if (res.ok) break;
 
-          // If receipt not found yet, wait and retry
-          const isRetryable = (data.error || "").includes("receipt") || (data.error || "").includes("not found");
+          const errorText = String(data?.error || "").toLowerCase();
+          const isRetryable =
+            errorText.includes("receipt") ||
+            errorText.includes("not found") ||
+            errorText.includes("processing");
+
           if (!isRetryable || attempt === 3) break;
 
           await new Promise((r) => setTimeout(r, 3000 * attempt));
         }
 
-        if (!res.ok) throw new Error(data.error || "Create failed");
+        if (!res?.ok) throw new Error(data?.error || "Create failed");
 
         setConfirmResult(data);
         setStep(5);
@@ -470,10 +481,12 @@ function CreatePageContent() {
     collection,
     externalUrl,
     listingPrice,
+    royaltyNum,
     onChainFeeEth,
     totalMintPriceStr,
     adminCut,
     creatorContract,
+    targetChainId,
     refreshSession,
   ]);
 
@@ -488,12 +501,14 @@ function CreatePageContent() {
     resetWrite();
     setConfirmResult(null);
     setConfirmError(null);
+    setConfirming(false);
     setStep(1);
     setName("");
     setDescription("");
     setCollection("");
     setExternalUrl("");
     setListingPrice("");
+    setRoyaltyPercent("");
     setAttributes([{ trait_type: "", value: "" }]);
     setImageFile(null);
     setImagePreview(null);
@@ -552,7 +567,7 @@ function CreatePageContent() {
           </h1>
 
           <p className="mx-auto max-w-2xl text-base text-muted sm:text-lg">
-            Upload artwork, add metadata, and mint a real ERC-721 NFT on {chainName}.
+            Upload artwork, add metadata, set royalties, and mint a real ERC-721 NFT on {chainName}.
           </p>
 
           {creatorContract && (
@@ -680,7 +695,7 @@ function CreatePageContent() {
                       </div>
                       <div>
                         <h3 className="font-display text-base font-semibold">Upload Your Artwork</h3>
-                        <p className="text-xs text-muted">PNG, JPG, GIF, WEBP, SVG — Max 10MB</p>
+                        <p className="text-xs text-muted">PNG, JPG, GIF, WEBP, SVG — Max 4MB for DB storage</p>
                       </div>
                     </div>
                   </div>
@@ -853,7 +868,7 @@ function CreatePageContent() {
                           <div>
                             <h3 className="font-display text-sm font-semibold">NFT Details</h3>
                             <p className="text-[11px] text-muted">
-                              Add a name, description, and properties
+                              Add a name, description, price, royalties, and properties
                             </p>
                           </div>
                         </div>
@@ -914,20 +929,39 @@ function CreatePageContent() {
                           </div>
                         </div>
 
-                        <div className="space-y-1.5">
-                          <label className="block text-sm font-medium text-text">NFT Price (ETH)</label>
-                          <p className="text-[11px] text-muted">
-                            Set the price you want this NFT to sell for. Leave at 0 if not for sale yet.
-                          </p>
-                          <input
-                            type="number"
-                            step="0.0001"
-                            min="0"
-                            value={listingPrice}
-                            onChange={(e) => setListingPrice(e.target.value)}
-                            placeholder="0.01"
-                            className="w-full rounded-xl border border-border-light bg-surface2/60 px-4 py-3 text-sm text-text transition-colors placeholder:text-muted-dim focus:border-accent/50 focus:outline-none focus:ring-1 focus:ring-accent/20"
-                          />
+                        <div className="grid gap-4 sm:grid-cols-2">
+                          <div className="space-y-1.5">
+                            <label className="block text-sm font-medium text-text">NFT Price (ETH)</label>
+                            <p className="text-[11px] text-muted">
+                              Set the price you want this NFT to sell for. Leave at 0 if not for sale yet.
+                            </p>
+                            <input
+                              type="number"
+                              step="0.0001"
+                              min="0"
+                              value={listingPrice}
+                              onChange={(e) => setListingPrice(e.target.value)}
+                              placeholder="0.01"
+                              className="w-full rounded-xl border border-border-light bg-surface2/60 px-4 py-3 text-sm text-text transition-colors placeholder:text-muted-dim focus:border-accent/50 focus:outline-none focus:ring-1 focus:ring-accent/20"
+                            />
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <label className="block text-sm font-medium text-text">Creator Royalty (%)</label>
+                            <p className="text-[11px] text-muted">
+                              Saved with the NFT metadata/app flow. Range: 0–100.
+                            </p>
+                            <input
+                              type="number"
+                              step="0.1"
+                              min="0"
+                              max="100"
+                              value={royaltyPercent}
+                              onChange={(e) => setRoyaltyPercent(e.target.value)}
+                              placeholder="5"
+                              className="w-full rounded-xl border border-border-light bg-surface2/60 px-4 py-3 text-sm text-text transition-colors placeholder:text-muted-dim focus:border-accent/50 focus:outline-none focus:ring-1 focus:ring-accent/20"
+                            />
+                          </div>
                         </div>
 
                         <div className="space-y-2.5">
@@ -1059,6 +1093,14 @@ function CreatePageContent() {
                             <p className="font-mono text-sm text-accent">{listingPrice} ETH</p>
                           </div>
                         )}
+                        <div>
+                          <p className="mb-1 text-xs uppercase tracking-wider text-muted-dim">
+                            Creator Royalty
+                          </p>
+                          <p className="font-mono text-sm text-accent">
+                            {royaltyNum > 0 ? `${royaltyNum}%` : "0%"}
+                          </p>
+                        </div>
                       </div>
 
                       {attributes.filter((a) => a.trait_type && a.value).length > 0 && (
@@ -1205,11 +1247,11 @@ function CreatePageContent() {
                 {mintStep === "sending_cut" && "Sending admin payment..."}
                 {mintStep === "minting" && mintState === "tx_signing" && "Confirm in your wallet..."}
                 {mintStep === "minting" && mintState === "tx_pending" && "Transaction pending on-chain..."}
-                {mintStep === "minting" && mintState === "confirming" && "Saving metadata to database..."}
+                {mintStep === "minting" && mintState === "confirming" && "Saving image and NFT metadata..."}
                 {mintState === "error" && "Something went wrong"}
                 {!mintStep && mintState === "tx_signing" && "Confirm in your wallet..."}
                 {!mintStep && mintState === "tx_pending" && "Transaction pending on-chain..."}
-                {!mintStep && mintState === "confirming" && "Saving metadata to database..."}
+                {!mintStep && mintState === "confirming" && "Saving image and NFT metadata..."}
               </h2>
 
               <p className="text-sm text-muted">
@@ -1219,7 +1261,7 @@ function CreatePageContent() {
                   "Your wallet will ask you to approve the mint transaction."}
                 {mintState === "tx_pending" && `Waiting for block confirmation on ${chainName}.`}
                 {mintState === "confirming" &&
-                  "Verifying the mint event and storing your NFT metadata."}
+                  "Verifying the mint event and storing your image directly in the database."}
               </p>
 
               {txExplorerLink && (
@@ -1321,6 +1363,14 @@ function CreatePageContent() {
                   </div>
                 )}
                 <div className="flex justify-between">
+                  <span className="text-muted">Creator Royalty</span>
+                  <span className="font-mono text-accent">
+                    {confirmResult?.royaltyPercent != null
+                      ? `${confirmResult.royaltyPercent}%`
+                      : `${royaltyNum}%`}
+                  </span>
+                </div>
+                <div className="flex justify-between">
                   <span className="text-muted">Standard</span>
                   <span className="font-mono">ERC-721</span>
                 </div>
@@ -1364,5 +1414,5 @@ export default function CreatePage() {
     >
       <CreatePageContent />
     </Suspense>
-  )
+  );
 }

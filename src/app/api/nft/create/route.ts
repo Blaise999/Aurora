@@ -18,6 +18,8 @@ const CREATOR_CONTRACT = (
   process.env.NEXT_PUBLIC_CREATOR_CONTRACT || ""
 ).toLowerCase();
 
+const MAX_DB_IMAGE_BYTES = 4 * 1024 * 1024;
+
 const CREATED_EVENT_ABI = [
   {
     type: "event",
@@ -42,7 +44,7 @@ type AttributeInput = {
   value?: unknown;
 };
 
-type CreateBody = {
+type ParsedCreateInput = {
   txHash?: string;
   name?: string;
   description?: string;
@@ -50,13 +52,15 @@ type CreateBody = {
   externalUrl?: string;
   attributes?: AttributeInput[];
   imageUrl?: string;
-  imageBase64?: string; // kept only for detection/logging; not stored
+  imageBase64?: string;
   feeUsd?: string | number;
   feeEth?: string | number;
   ethPriceAtMint?: string | number;
   listingPriceEth?: string | number;
   creatorContract?: string;
   chainId?: string | number;
+  royaltyPercent?: string | number;
+  imageFile?: File | null;
 };
 
 function hasTopics(log: unknown): log is LogWithTopics {
@@ -113,15 +117,68 @@ function logStep(label: string, extra?: Record<string, unknown>) {
   }
 }
 
-function isLikelyBase64Image(value: string) {
-  return (
-    value.startsWith("data:image/") ||
-    value.length > 5000 ||
-    (!value.startsWith("http://") &&
-      !value.startsWith("https://") &&
-      !value.startsWith("/") &&
-      value.includes("base64"))
-  );
+function isLikelyDataUrl(value: string) {
+  return value.startsWith("data:image/");
+}
+
+async function parseRequest(req: Request): Promise<ParsedCreateInput> {
+  const contentType = req.headers.get("content-type") || "";
+
+  if (contentType.includes("multipart/form-data")) {
+    const form = await req.formData();
+
+    const getString = (key: string) => {
+      const value = form.get(key);
+      return typeof value === "string" ? value : "";
+    };
+
+    const rawAttrs = getString("attributes");
+    let parsedAttrs: AttributeInput[] = [];
+
+    if (rawAttrs) {
+      try {
+        const json = JSON.parse(rawAttrs);
+        if (Array.isArray(json)) parsedAttrs = json;
+      } catch {
+        parsedAttrs = [];
+      }
+    }
+
+    const maybeFile = form.get("imageFile");
+    const imageFile = maybeFile instanceof File && maybeFile.size > 0 ? maybeFile : null;
+
+    return {
+      txHash: getString("txHash"),
+      name: getString("name"),
+      description: getString("description"),
+      collection: getString("collection"),
+      externalUrl: getString("externalUrl"),
+      attributes: parsedAttrs,
+      imageUrl: getString("imageUrl"),
+      imageBase64: getString("imageBase64"),
+      feeUsd: getString("feeUsd"),
+      feeEth: getString("feeEth"),
+      ethPriceAtMint: getString("ethPriceAtMint"),
+      listingPriceEth: getString("listingPriceEth"),
+      creatorContract: getString("creatorContract"),
+      chainId: getString("chainId"),
+      royaltyPercent: getString("royaltyPercent"),
+      imageFile,
+    };
+  }
+
+  const body = (await req.json()) as ParsedCreateInput;
+  return {
+    ...body,
+    imageFile: null,
+  };
+}
+
+async function fileToDataUrl(file: File) {
+  const arrayBuffer = await file.arrayBuffer();
+  const base64 = Buffer.from(arrayBuffer).toString("base64");
+  const mime = file.type || "application/octet-stream";
+  return `data:${mime};base64,${base64}`;
 }
 
 /** Retry getTransactionReceipt with bounded backoff */
@@ -177,8 +234,9 @@ async function getReceiptWithRetry(
 /**
  * POST /api/nft/create
  *
- * Verifies the on-chain AuroraCreator.createNft() tx, extracts the
- * token ID from the Created event, then saves metadata to user_listed.
+ * Verifies the on-chain AuroraCreator.createNft() tx, converts the uploaded
+ * artwork to a data URL for DB storage, extracts the token ID from the Created
+ * event, then saves metadata to user_listed.
  */
 export async function POST(req: Request) {
   const startedAt = Date.now();
@@ -243,9 +301,9 @@ export async function POST(req: Request) {
       );
     }
 
-    console.time("[NFT CREATE] req.json");
-    const body = (await req.json()) as CreateBody;
-    console.timeEnd("[NFT CREATE] req.json");
+    console.time("[NFT CREATE] parse request");
+    const body = await parseRequest(req);
+    console.timeEnd("[NFT CREATE] parse request");
 
     const {
       txHash,
@@ -256,12 +314,14 @@ export async function POST(req: Request) {
       attributes,
       imageUrl,
       imageBase64,
+      imageFile,
       feeUsd,
       feeEth,
       ethPriceAtMint,
       listingPriceEth,
       creatorContract: clientContract,
       chainId: clientChainId,
+      royaltyPercent,
     } = body;
 
     logStep("body parsed", {
@@ -274,9 +334,12 @@ export async function POST(req: Request) {
       attributeCount: Array.isArray(attributes) ? attributes.length : 0,
       hasImageUrl: Boolean(imageUrl),
       hasImageBase64: Boolean(imageBase64),
+      hasImageFile: Boolean(imageFile),
+      imageFileName: imageFile?.name || null,
+      imageFileSize: imageFile?.size || null,
       clientChainId,
       clientContract,
-      bodyKeys: Object.keys(body || {}),
+      royaltyPercent,
     });
 
     if (!txHash || !name) {
@@ -316,37 +379,39 @@ export async function POST(req: Request) {
 
     let resolvedImageUrl = typeof imageUrl === "string" ? imageUrl.trim() : "";
 
-    if (!resolvedImageUrl && typeof imageBase64 === "string" && imageBase64.trim()) {
-      const raw = imageBase64.trim();
-
-      logStep("imageBase64 detected", {
-        approxLength: raw.length,
-        startsWithDataImage: raw.startsWith("data:image/"),
-      });
-
-      if (isLikelyBase64Image(raw)) {
+    if (imageFile) {
+      if (imageFile.size > MAX_DB_IMAGE_BYTES) {
         return NextResponse.json(
-          {
-            error:
-              "Do not send imageBase64 to /api/nft/create. Upload the image first and send imageUrl instead.",
-          },
+          { error: "Image too large for DB storage. Keep it under 4MB." },
           { status: 400 }
         );
       }
 
-      resolvedImageUrl = raw;
+      console.time("[NFT CREATE] fileToDataUrl");
+      resolvedImageUrl = await fileToDataUrl(imageFile);
+      console.timeEnd("[NFT CREATE] fileToDataUrl");
+
+      logStep("image converted from file", {
+        fileName: imageFile.name,
+        fileType: imageFile.type,
+        fileSize: imageFile.size,
+        dataUrlLength: resolvedImageUrl.length,
+      });
+    } else if (!resolvedImageUrl && typeof imageBase64 === "string" && imageBase64.trim()) {
+      const raw = imageBase64.trim();
+
+      if (isLikelyDataUrl(raw)) {
+        resolvedImageUrl = raw;
+
+        logStep("legacy imageBase64 accepted", {
+          dataUrlLength: resolvedImageUrl.length,
+        });
+      }
     }
 
-    if (resolvedImageUrl && isLikelyBase64Image(resolvedImageUrl)) {
-      logStep("bad request: imageUrl is actually base64", {
-        approxLength: resolvedImageUrl.length,
-      });
-
+    if (resolvedImageUrl && isLikelyDataUrl(resolvedImageUrl) && resolvedImageUrl.length > 8_000_000) {
       return NextResponse.json(
-        {
-          error:
-            "imageUrl looks like a base64 payload. Upload the image first and send a real URL/path.",
-        },
+        { error: "Encoded image is too large for DB storage." },
         { status: 400 }
       );
     }
@@ -356,9 +421,8 @@ export async function POST(req: Request) {
       txHash,
       contractAddr,
       userWallet,
-      resolvedImageUrlPreview: resolvedImageUrl
-        ? resolvedImageUrl.slice(0, 120)
-        : "",
+      hasImage: Boolean(resolvedImageUrl),
+      imagePreview: resolvedImageUrl ? resolvedImageUrl.slice(0, 40) : "",
     });
 
     console.time("[NFT CREATE] duplicate tx lookup");
@@ -536,6 +600,7 @@ export async function POST(req: Request) {
     const parsedFeeUsd = parseNumber(feeUsd, 0);
     const parsedEthPriceAtMint = parseNumber(ethPriceAtMint, 0);
     const parsedListingPriceEth = parseNumber(listingPriceEth, 0);
+    const parsedRoyaltyPercent = Math.min(100, Math.max(0, parseNumber(royaltyPercent, 0)));
 
     const mintFeeEth =
       onChainFeePaidEth !== null ? onChainFeePaidEth : parsedFeeEth;
@@ -553,6 +618,17 @@ export async function POST(req: Request) {
         })
       : [];
 
+    const filteredAttrs = validAttrs.filter(
+      (a) => String(a?.trait_type || "").trim().toLowerCase() !== "creator royalty"
+    );
+
+    if (parsedRoyaltyPercent > 0) {
+      filteredAttrs.push({
+        trait_type: "Creator Royalty",
+        value: `${parsedRoyaltyPercent}%`,
+      });
+    }
+
     const listedInsert = {
       profile_id: profileId,
       wallet_address: userWallet,
@@ -564,14 +640,14 @@ export async function POST(req: Request) {
       collection: collection || "User Created",
       image_url: resolvedImageUrl,
       external_url: externalUrl || "",
-      attributes: validAttrs,
+      attributes: filteredAttrs,
       token_type: "ERC721",
       chain:
         chainId === 8453
           ? "Base"
           : chainId === 84532
-          ? "Base Sepolia"
-          : `Chain ${chainId}`,
+            ? "Base Sepolia"
+            : `Chain ${chainId}`,
       tx_hash: txHash,
       mint_fee_eth: mintFeeEth,
       listing_price_eth: parsedListingPriceEth,
@@ -588,8 +664,9 @@ export async function POST(req: Request) {
       contract_address: contractAddr,
       tx_hash: txHash,
       hasImageUrl: Boolean(resolvedImageUrl),
-      attributeCount: validAttrs.length,
+      attributeCount: filteredAttrs.length,
       metadataURI: onChainMetadataUri,
+      royaltyPercent: parsedRoyaltyPercent,
     });
 
     console.time("[NFT CREATE] user_listed insert");
@@ -667,7 +744,9 @@ export async function POST(req: Request) {
           mint_fee_eth: mintFeeEth,
           eth_price_at_mint: ethPriceSnapshot,
           listing_price_eth: parsedListingPriceEth,
+          royalty_percent: parsedRoyaltyPercent,
           image_url: resolvedImageUrl,
+          image_storage_mode: isLikelyDataUrl(resolvedImageUrl) ? "db_data_url" : "external_url",
         },
       });
     console.timeEnd("[NFT CREATE] transactions insert");
@@ -716,7 +795,7 @@ export async function POST(req: Request) {
         .insert({
           type: "create_mint",
           title: "New NFT Created!",
-          body: `${name} (Token #${onChainTokenId}) created by ${notifBuyer} — $${mintFeeUsd} / ${mintFeeEth} ETH fee`,
+          body: `${name} (Token #${onChainTokenId}) created by ${notifBuyer} — ${parsedRoyaltyPercent}% royalty — $${mintFeeUsd} / ${mintFeeEth} ETH fee`,
           metadata: {
             txHash,
             tokenId: onChainTokenId,
@@ -727,6 +806,7 @@ export async function POST(req: Request) {
             mint_fee_eth: mintFeeEth,
             eth_price_at_mint: ethPriceSnapshot,
             listing_price_eth: parsedListingPriceEth,
+            royalty_percent: parsedRoyaltyPercent,
             on_chain_metadata_uri: onChainMetadataUri,
             image_url: resolvedImageUrl,
           },
@@ -763,7 +843,8 @@ export async function POST(req: Request) {
       chainId,
       name,
       collection: collection || "User Created",
-      imageUrl: resolvedImageUrl,
+      royaltyPercent: parsedRoyaltyPercent,
+      hasImage: Boolean(resolvedImageUrl),
       metadataURI: onChainMetadataUri,
       mintFeeUsd,
       mintFeeEth,
