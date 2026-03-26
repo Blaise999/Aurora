@@ -13,6 +13,45 @@ import {
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
+function normalizeIpfsUrl(url) {
+  if (!url || typeof url !== "string") return "";
+  if (url.startsWith("ipfs://ipfs/")) {
+    return `https://ipfs.io/${url.replace("ipfs://", "")}`;
+  }
+  if (url.startsWith("ipfs://")) {
+    return `https://ipfs.io/ipfs/${url.replace("ipfs://", "")}`;
+  }
+  return url;
+}
+
+function getSafeImageUrl(nft) {
+  return normalizeIpfsUrl(
+    nft?.image_url ||
+      nft?.image ||
+      nft?.preview_image ||
+      nft?.thumbnail ||
+      ""
+  );
+}
+
+function normalizeNftRow(nft) {
+  return {
+    ...nft,
+    image_url: getSafeImageUrl(nft),
+    nft_name: nft?.nft_name || nft?.name || null,
+    name: nft?.name || nft?.nft_name || null,
+    collection: nft?.collection || nft?.collection_name || "Aurora Collection",
+    contract_address: nft?.contract_address || nft?.contractAddress || "",
+    token_id: nft?.token_id || nft?.tokenId || "",
+    token_type: nft?.token_type || nft?.tokenType || "NFT",
+    external_url: nft?.external_url || nft?.externalUrl || "",
+    chain: nft?.chain || nft?.network || "",
+  };
+}
+
 async function getProfile(username) {
   const { data, error } = await supabase
     .from("public_profiles")
@@ -32,7 +71,7 @@ async function getMinted(profileId) {
     .order("created_at", { ascending: false });
 
   if (error) return [];
-  return data || [];
+  return (data || []).map(normalizeNftRow);
 }
 
 async function getCollected(profileId) {
@@ -43,7 +82,7 @@ async function getCollected(profileId) {
     .order("assigned_at", { ascending: false });
 
   if (error) return [];
-  return data || [];
+  return (data || []).map(normalizeNftRow);
 }
 
 function shortWallet(address) {
@@ -62,6 +101,13 @@ function getDisplayTitle(nft) {
 
 function getCollectionName(nft) {
   return nft.collection || nft.collection_name || "Aurora Collection";
+}
+
+function getCardKey(prefix, nft, index) {
+  const a = nft?.profile_id || "profile";
+  const b = nft?.contract_address || "contract";
+  const c = nft?.token_id || nft?.id || index;
+  return `${prefix}-${a}-${b}-${c}`;
 }
 
 function StatPill({ icon: Icon, label, value }) {
@@ -124,6 +170,7 @@ function SectionHeader({ eyebrow, title, count, subtitle }) {
 function NftCard({ nft, type = "minted" }) {
   const title = getDisplayTitle(nft);
   const collectionName = getCollectionName(nft);
+  const imageUrl = getSafeImageUrl(nft);
 
   return (
     <article className="group relative overflow-hidden rounded-[28px] border border-white/10 bg-zinc-950/90 transition-all duration-300 hover:-translate-y-1 hover:border-cyan-400/30 hover:shadow-[0_0_0_1px_rgba(34,211,238,0.12),0_24px_60px_rgba(0,0,0,0.45)]">
@@ -131,13 +178,17 @@ function NftCard({ nft, type = "minted" }) {
 
       <div className="relative">
         <div className="relative aspect-[1/1] overflow-hidden border-b border-white/10 bg-black">
-          {nft.image_url ? (
+          {imageUrl ? (
             <>
-              <Image
-                src={nft.image_url}
+              <img
+                src={imageUrl}
                 alt={title}
-                fill
-                className="object-cover transition-transform duration-500 group-hover:scale-105"
+                loading="lazy"
+                referrerPolicy="no-referrer"
+                className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                onError={(e) => {
+                  e.currentTarget.style.display = "none";
+                }}
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-transparent" />
             </>
@@ -150,11 +201,13 @@ function NftCard({ nft, type = "minted" }) {
           )}
 
           <div className="absolute left-4 top-4 flex items-center gap-2">
-            <span className={`rounded-full border px-3 py-1 text-[11px] font-medium uppercase tracking-[0.18em] backdrop-blur-sm ${
-              type === "minted"
-                ? "border-fuchsia-400/25 bg-fuchsia-400/10 text-fuchsia-200"
-                : "border-cyan-400/25 bg-cyan-400/10 text-cyan-200"
-            }`}>
+            <span
+              className={`rounded-full border px-3 py-1 text-[11px] font-medium uppercase tracking-[0.18em] backdrop-blur-sm ${
+                type === "minted"
+                  ? "border-fuchsia-400/25 bg-fuchsia-400/10 text-fuchsia-200"
+                  : "border-cyan-400/25 bg-cyan-400/10 text-cyan-200"
+              }`}
+            >
               {type === "minted" ? "Created ✦" : "Collected"}
             </span>
 
@@ -379,8 +432,12 @@ export default async function PublicProfilePage({ params }) {
             />
           ) : (
             <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-              {minted.map((nft) => (
-                <NftCard key={`minted-${nft.id}`} nft={nft} type="minted" />
+              {minted.map((nft, index) => (
+                <NftCard
+                  key={getCardKey("minted", nft, index)}
+                  nft={nft}
+                  type="minted"
+                />
               ))}
             </div>
           )}
@@ -401,8 +458,12 @@ export default async function PublicProfilePage({ params }) {
             />
           ) : (
             <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-              {collected.map((nft) => (
-                <NftCard key={`collected-${nft.id}`} nft={nft} type="collected" />
+              {collected.map((nft, index) => (
+                <NftCard
+                  key={getCardKey("collected", nft, index)}
+                  nft={nft}
+                  type="collected"
+                />
               ))}
             </div>
           )}
