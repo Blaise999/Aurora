@@ -949,7 +949,7 @@ function CreatePageContent() {
                           <div className="space-y-1.5">
                             <label className="block text-sm font-medium text-text">Creator Royalty (%)</label>
                             <p className="text-[11px] text-muted">
-                              Saved with the NFT metadata/app flow. Range: 0–100.
+                              Range: 5-30.
                             </p>
                             <input
                               type="number"
