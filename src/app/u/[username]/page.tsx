@@ -1,4 +1,4 @@
-import Image from "next/image"; // ← we still import it but don't use it for external images
+import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
@@ -11,56 +11,31 @@ import {
   Trophy,
   Copy,
 } from "lucide-react";
-import { getServiceSupabase } from "@/lib/supabase";   // ← service client only
+import { getServiceSupabase } from "@/lib/supabase/server";
 
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-function normalizeIpfsUrl(url) {
-  if (!url || typeof url !== "string") return "";
-  if (url.startsWith("ipfs://ipfs/")) {
-    return `https://ipfs.io/${url.replace("ipfs://", "")}`;
-  }
-  if (url.startsWith("ipfs://")) {
-    return `https://ipfs.io/ipfs/${url.replace("ipfs://", "")}`;
-  }
-  return url;
-}
-
-function normalizeNft(nft) {
-  return {
-    ...nft,
-    image_url: normalizeIpfsUrl(nft?.image_url || nft?.image || nft?.preview_image || ""),
-    image: normalizeIpfsUrl(nft?.image || nft?.image_url || nft?.preview_image || ""),
-    nft_name: nft?.nft_name || nft?.name || null,
-    name: nft?.name || nft?.nft_name || null,
-    collection: nft?.collection || nft?.collection_name || "Aurora Collection",
-    collection_name: nft?.collection_name || nft?.collection || "Aurora Collection",
-    token_id: nft?.token_id || nft?.tokenId || "",
-    contract_address: nft?.contract_address || nft?.contractAddress || "",
-    token_type: nft?.token_type || nft?.tokenType || "NFT",
-    external_url: nft?.external_url || nft?.externalUrl || "",
-  };
-}
-
 async function getProfile(username) {
-  const service = getServiceSupabase();
-  const { data, error } = await service
+  const supabase = getServiceSupabase();
+
+  const { data, error } = await supabase
     .from("public_profiles")
     .select("*")
     .eq("username", username)
-    .single();
+    .maybeSingle();
 
-  if (error || !data) {
-    console.error("getProfile error:", error);
-    return null;
-  }
+  if (error || !data) return null;
   return data;
 }
 
 async function getMinted(profileId) {
-  const service = getServiceSupabase();
-  const { data, error } = await service
+  if (!profileId) return [];
+
+  const supabase = getServiceSupabase();
+
+  const { data, error } = await supabase
     .from("public_user_listed")
     .select("*")
     .eq("profile_id", profileId)
@@ -70,12 +45,16 @@ async function getMinted(profileId) {
     console.error("getMinted error:", error);
     return [];
   }
-  return (data || []).map(normalizeNft);
+
+  return data || [];
 }
 
 async function getCollected(profileId) {
-  const service = getServiceSupabase();
-  const { data, error } = await service
+  if (!profileId) return [];
+
+  const supabase = getServiceSupabase();
+
+  const { data, error } = await supabase
     .from("public_user_collections")
     .select("*")
     .eq("profile_id", profileId)
@@ -85,7 +64,8 @@ async function getCollected(profileId) {
     console.error("getCollected error:", error);
     return [];
   }
-  return (data || []).map(normalizeNft);
+
+  return data || [];
 }
 
 function shortWallet(address) {
@@ -166,7 +146,6 @@ function SectionHeader({ eyebrow, title, count, subtitle }) {
 function NftCard({ nft, type = "minted" }) {
   const title = getDisplayTitle(nft);
   const collectionName = getCollectionName(nft);
-  const imageUrl = nft.image_url || nft.image || "";
 
   return (
     <article className="group relative overflow-hidden rounded-[28px] border border-white/10 bg-zinc-950/90 transition-all duration-300 hover:-translate-y-1 hover:border-cyan-400/30 hover:shadow-[0_0_0_1px_rgba(34,211,238,0.12),0_24px_60px_rgba(0,0,0,0.45)]">
@@ -174,17 +153,13 @@ function NftCard({ nft, type = "minted" }) {
 
       <div className="relative">
         <div className="relative aspect-[1/1] overflow-hidden border-b border-white/10 bg-black">
-          {imageUrl ? (
+          {nft.image_url ? (
             <>
-              <img
-                src={imageUrl}
+              <Image
+                src={nft.image_url}
                 alt={title}
-                loading="lazy"
-                referrerPolicy="no-referrer"
-                className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
-                onError={(e) => {
-                  e.currentTarget.style.display = "none";
-                }}
+                fill
+                className="object-cover transition-transform duration-500 group-hover:scale-105"
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-transparent" />
             </>
@@ -331,16 +306,12 @@ export default async function PublicProfilePage({ params }) {
               <div className="flex flex-col gap-6 md:flex-row md:items-center">
                 <div className="relative h-28 w-28 shrink-0 overflow-hidden rounded-[28px] border border-white/10 bg-zinc-900 shadow-[0_0_0_1px_rgba(255,255,255,0.03)] md:h-32 md:w-32">
                   <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(34,211,238,0.14),transparent_40%),radial-gradient(circle_at_bottom,rgba(217,70,239,0.12),transparent_42%)]" />
-                  
-                  {/* plain <img> → no more 400 errors */}
                   {profile.avatar_url ? (
-                    <img
+                    <Image
                       src={profile.avatar_url}
                       alt={displayName}
-                      className="h-full w-full object-cover"
-                      onError={(e) => {
-                        e.currentTarget.style.display = "none";
-                      }}
+                      fill
+                      className="object-cover"
                     />
                   ) : (
                     <div className="flex h-full items-center justify-center text-3xl font-bold text-white">
