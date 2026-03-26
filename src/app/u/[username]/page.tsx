@@ -1,9 +1,5 @@
-"use client";
-
-import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-
 import {
   ExternalLink,
   Wallet,
@@ -42,7 +38,8 @@ function normalizeNft(nft) {
     nft_name: nft?.nft_name || nft?.name || null,
     name: nft?.name || nft?.nft_name || null,
     collection: nft?.collection || nft?.collection_name || "Aurora Collection",
-    collection_name: nft?.collection_name || nft?.collection || "Aurora Collection",
+    collection_name:
+      nft?.collection_name || nft?.collection || "Aurora Collection",
     token_id: nft?.token_id || nft?.tokenId || "",
     contract_address: nft?.contract_address || nft?.contractAddress || "",
     token_type: nft?.token_type || nft?.tokenType || "NFT",
@@ -51,49 +48,63 @@ function normalizeNft(nft) {
 }
 
 async function getProfile(username) {
-  const { data, error } = await supabase
-    .from("public_profiles")
-    .select("*")
-    .eq("username", username)
-    .single();
+  try {
+    const { data, error } = await supabase
+      .from("public_profiles")
+      .select("*")
+      .eq("username", username)
+      .single();
 
-  if (error) {
-    console.error("getProfile error:", error);
-    throw new Error(error.message || "Failed to load public profile");
+    if (error) {
+      console.error("getProfile error:", error);
+      return null;
+    }
+
+    return data || null;
+  } catch (error) {
+    console.error("getProfile crash:", error);
+    return null;
   }
-
-  if (!data) return null;
-  return data;
 }
 
 async function getMinted(profileId) {
-  const { data, error } = await supabase
-    .from("public_user_listed")
-    .select("*")
-    .eq("profile_id", profileId)
-    .order("created_at", { ascending: false });
+  try {
+    const { data, error } = await supabase
+      .from("public_user_listed")
+      .select("*")
+      .eq("profile_id", profileId)
+      .order("created_at", { ascending: false });
 
-  if (error) {
-    console.error("getMinted error:", error);
-    throw new Error(error.message || "Failed to load created NFTs");
+    if (error) {
+      console.error("getMinted error:", error);
+      return [];
+    }
+
+    return (data || []).map(normalizeNft);
+  } catch (error) {
+    console.error("getMinted crash:", error);
+    return [];
   }
-
-  return (data || []).map(normalizeNft);
 }
 
 async function getCollected(profileId) {
-  const { data, error } = await supabase
-    .from("public_user_collections")
-    .select("*")
-    .eq("profile_id", profileId)
-    .order("assigned_at", { ascending: false });
+  try {
+    const { data, error } = await supabase
+      .from("public_user_collections")
+      .select("*")
+      .eq("profile_id", profileId)
+      .order("assigned_at", { ascending: false });
 
-  if (error) {
-    console.error("getCollected error:", error);
-    throw new Error(error.message || "Failed to load collected NFTs");
+    if (error) {
+      console.error("getCollected error:", error);
+      return [];
+    }
+
+    return (data || []).map(normalizeNft);
+  } catch (error) {
+    console.error("getCollected crash:", error);
+    return [];
   }
-
-  return (data || []).map(normalizeNft);
 }
 
 function shortWallet(address) {
@@ -305,6 +316,7 @@ export async function generateMetadata({ params }) {
   if (!profile) {
     return {
       title: "Profile Not Found | Aurora NFT",
+      description: "This public Aurora NFT profile could not be found.",
     };
   }
 
@@ -327,6 +339,7 @@ export default async function PublicProfilePage({ params }) {
 
   const displayName = profile.display_name || profile.username;
   const totalShowcase = minted.length + collected.length;
+  const avatarUrl = normalizeIpfsUrl(profile.avatar_url || "");
 
   return (
     <main className="min-h-screen overflow-hidden bg-black text-white">
@@ -345,12 +358,13 @@ export default async function PublicProfilePage({ params }) {
               <div className="flex flex-col gap-6 md:flex-row md:items-center">
                 <div className="relative h-28 w-28 shrink-0 overflow-hidden rounded-[28px] border border-white/10 bg-zinc-900 shadow-[0_0_0_1px_rgba(255,255,255,0.03)] md:h-32 md:w-32">
                   <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(34,211,238,0.14),transparent_40%),radial-gradient(circle_at_bottom,rgba(217,70,239,0.12),transparent_42%)]" />
-                  {profile.avatar_url ? (
-                    <Image
-                      src={profile.avatar_url}
+                  {avatarUrl ? (
+                    <img
+                      src={avatarUrl}
                       alt={displayName}
-                      fill
-                      className="object-cover"
+                      className="h-full w-full object-cover"
+                      loading="eager"
+                      referrerPolicy="no-referrer"
                     />
                   ) : (
                     <div className="flex h-full items-center justify-center text-3xl font-bold text-white">
