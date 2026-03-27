@@ -6,7 +6,6 @@ import Link from "next/link";
 import { useSettings } from "@/hooks/useNfts";
 import {
   useAccount,
-  useConnect,
   useWriteContract,
   useWaitForTransactionReceipt,
   useSwitchChain,
@@ -47,6 +46,8 @@ import {
 } from "lucide-react";
 import WalletConnectModal from "@/components/WalletConnectModal";
 
+const STORAGE_KEY = "aurora_pending_mint_v3";
+
 function StepIndicator({ current, steps }) {
   return (
     <div className="mb-8 flex items-center justify-center gap-1 sm:gap-2">
@@ -83,10 +84,24 @@ function StepIndicator({ current, steps }) {
   );
 }
 
+function clampRoyalty(value) {
+  const parsed = Number.parseFloat(String(value ?? ""));
+  if (!Number.isFinite(parsed)) return 0;
+  return Math.min(30, Math.max(0, parsed));
+}
+
+async function readJsonSafe(res) {
+  const raw = await res.text();
+  try {
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return { error: raw || "Invalid server response" };
+  }
+}
+
 function CreatePageContent() {
   const { settings } = useSettings();
   const { address: liveWalletAddress, isConnected: isWagmiConnected, chain } = useAccount();
-  useConnect();
   const { switchChain } = useSwitchChain();
 
   const {
@@ -175,43 +190,6 @@ function CreatePageContent() {
     return userBalanceEth >= totalMintPrice;
   }, [userBalanceEth, totalMintPrice]);
 
-  useEffect(() => {
-    if (isWagmiConnected && liveWalletAddress) {
-      console.log("[MINT DEBUG]", {
-        wallet: liveWalletAddress,
-        connectedChain: chain?.id,
-        targetChain: targetChainId,
-        balanceRaw: balanceData?.value?.toString?.(),
-        balanceFormatted: userBalanceEth,
-        onChainFee: onChainFeeEth,
-        onChainFeeNum,
-        adminPriceRaw,
-        adminPriceNum,
-        totalMintPrice,
-        totalMintPriceStr,
-        hasEnoughBalance,
-        contract: creatorContract,
-        settingsLoaded: !!settings,
-      });
-    }
-  }, [
-    isWagmiConnected,
-    liveWalletAddress,
-    chain?.id,
-    balanceData,
-    userBalanceEth,
-    onChainFeeEth,
-    onChainFeeNum,
-    adminPriceRaw,
-    adminPriceNum,
-    totalMintPrice,
-    totalMintPriceStr,
-    hasEnoughBalance,
-    creatorContract,
-    settings,
-    targetChainId,
-  ]);
-
   const isMintActive = mintActiveOnChain !== false;
   const isFeeReady = onChainFeeNum > 0;
   const isPriceReady = totalMintPrice !== null && totalMintPrice > 0;
@@ -229,33 +207,46 @@ function CreatePageContent() {
   const fileInputRef = useRef(null);
 
   const [showWalletModal, setShowWalletModal] = useState(false);
+
+  const [step, setStep] = useState(1);
+  const [mintStep, setMintStep] = useState("");
+  const [mintKey, setMintKey] = useState(null);
+  const [pendingMetadataUri, setPendingMetadataUri] = useState(null);
+  const [submittedTxHash, setSubmittedTxHash] = useState(null);
   const [confirmResult, setConfirmResult] = useState(null);
   const [confirmError, setConfirmError] = useState(null);
   const [confirming, setConfirming] = useState(false);
-  const [step, setStep] = useState(1);
+
+  const confirmLoopActiveRef = useRef(false);
+  const unmountedRef = useRef(false);
 
   const {
-    writeContract,
-    data: txHash,
+    writeContractAsync,
     isPending: isSending,
     error: sendError,
     reset: resetWrite,
   } = useWriteContract();
 
-  const { isLoading: isWaiting, isSuccess: isConfirmedOnChain } =
-    useWaitForTransactionReceipt({
-      hash: txHash,
-      confirmations: 1,
-      pollingInterval: 3_000,
-      timeout: 120_000,
-      query: { enabled: Boolean(txHash) },
-    });
+  const { isLoading: isWaiting } = useWaitForTransactionReceipt({
+    hash: submittedTxHash || undefined,
+    confirmations: 1,
+    pollingInterval: 3_000,
+    timeout: 120_000,
+    query: { enabled: Boolean(submittedTxHash) },
+  });
 
-  const royaltyNum = useMemo(() => {
-    const parsed = parseFloat(String(royaltyPercent || "0"));
-    if (!Number.isFinite(parsed)) return 0;
-    return Math.min(100, Math.max(0, parsed));
-  }, [royaltyPercent]);
+  const royaltyNum = useMemo(() => clampRoyalty(royaltyPercent), [royaltyPercent]);
+
+  const handleRoyaltyChange = (value) => {
+    if (value === "") {
+      setRoyaltyPercent("");
+      return;
+    }
+
+    const parsed = Number.parseFloat(value);
+    if (!Number.isFinite(parsed)) return;
+    setRoyaltyPercent(String(clampRoyalty(parsed)));
+  };
 
   const handleFileSelect = (file) => {
     if (!file) return;
@@ -300,7 +291,163 @@ function CreatePageContent() {
   const isStep2Valid = Boolean(name.trim());
   const isFormValid = isStep1Valid && isStep2Valid;
 
-  const [mintStep, setMintStep] = useState("");
+  const txExplorerLink = submittedTxHash ? `${explorerUrl}/tx/${submittedTxHash}` : null;
+  const contractExplorerLink = creatorContract ? `${explorerUrl}/address/${creatorContract}` : null;
+
+  const effectiveWalletShort = effectiveWallet
+    ? `${effectiveWallet.slice(0, 6)}...${effectiveWallet.slice(-4)}`
+    : null;
+
+  const persistPendingState = useCallback(
+    (nextMintKey, nextTxHash = null) => {
+      if (typeof window === "undefined" || !nextMintKey) return;
+
+      const payload = {
+        mintKey: nextMintKey,
+        txHash: nextTxHash || null,
+        pendingMetadataUri: pendingMetadataUri || null,
+        savedAt: Date.now(),
+      };
+
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+    },
+    [pendingMetadataUri]
+  );
+
+  const clearPendingState = useCallback(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.removeItem(STORAGE_KEY);
+  }, []);
+
+  const callConfirmOnce = useCallback(async () => {
+    if (!mintKey || !submittedTxHash) {
+      throw new Error("Missing mint key or transaction hash");
+    }
+
+    const res = await fetch("/api/nft/create/confirm", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        mintKey,
+        txHash: submittedTxHash,
+        creatorContract: creatorContract || "",
+        chainId: targetChainId,
+        totalPriceEth: totalMintPriceStr || "0",
+        adminCutEth: adminCut > 0 ? adminCut.toFixed(8) : "0",
+      }),
+    });
+
+    const data = await readJsonSafe(res);
+
+    if (!res.ok) {
+      throw new Error(data?.error || "Failed to confirm mint");
+    }
+
+    return data;
+  }, [mintKey, submittedTxHash, creatorContract, targetChainId, totalMintPriceStr, adminCut]);
+
+  const runConfirmLoop = useCallback(async () => {
+    if (!mintKey || !submittedTxHash || confirmLoopActiveRef.current || confirmResult?.success) {
+      return;
+    }
+
+    confirmLoopActiveRef.current = true;
+    setConfirming(true);
+    setMintStep("confirming");
+    setStep(4);
+
+    try {
+      const maxAttempts = 40;
+
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        if (unmountedRef.current) return;
+
+        try {
+          const data = await callConfirmOnce();
+
+          if (data?.success) {
+            if (unmountedRef.current) return;
+
+            setConfirmResult(data);
+            setConfirmError(null);
+            setStep(5);
+            setMintStep("done");
+            clearPendingState();
+            await refreshSession();
+            return;
+          }
+
+          if (data?.pending) {
+            setConfirmError(null);
+          }
+        } catch (err) {
+          const message = err?.message || "Confirmation retry failed";
+          setConfirmError(message);
+        }
+
+        const waitMs = Math.min(1500 + attempt * 1200, 20000);
+        await new Promise((resolve) => setTimeout(resolve, waitMs));
+      }
+
+      setConfirmError(
+        "Mint is still syncing. Your pending mint and tx hash are saved, so you can retry below or reopen this page later."
+      );
+    } finally {
+      confirmLoopActiveRef.current = false;
+      if (!unmountedRef.current) {
+        setConfirming(false);
+      }
+    }
+  }, [mintKey, submittedTxHash, confirmResult, callConfirmOnce, clearPendingState, refreshSession]);
+
+  const retryConfirmation = useCallback(async () => {
+    setConfirmError(null);
+    await runConfirmLoop();
+  }, [runConfirmLoop]);
+
+  useEffect(() => {
+    unmountedRef.current = false;
+    return () => {
+      unmountedRef.current = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    try {
+      const raw = window.localStorage.getItem(STORAGE_KEY);
+      if (!raw) return;
+
+      const parsed = JSON.parse(raw);
+      if (!parsed?.mintKey) return;
+
+      setMintKey(parsed.mintKey);
+      if (parsed.txHash) setSubmittedTxHash(parsed.txHash);
+      if (parsed.pendingMetadataUri) setPendingMetadataUri(parsed.pendingMetadataUri);
+      setStep(4);
+      setMintStep(parsed.txHash ? "confirming" : "saved_pending");
+    } catch {
+      // ignore bad local storage data
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!mintKey) return;
+    persistPendingState(mintKey, submittedTxHash || null);
+  }, [mintKey, submittedTxHash, persistPendingState]);
+
+  useEffect(() => {
+    if (mintKey && submittedTxHash && !confirmResult?.success) {
+      runConfirmLoop();
+    }
+  }, [mintKey, submittedTxHash, confirmResult, runConfirmLoop]);
+
+  useEffect(() => {
+    if (sendError) {
+      setConfirmError(sendError.shortMessage || sendError.message || "Transaction failed");
+    }
+  }, [sendError]);
 
   const handleCreateMint = useCallback(async () => {
     if (!isLoggedIn || !isFormValid) return;
@@ -327,9 +474,15 @@ function CreatePageContent() {
 
     if (!hasEnoughBalance) {
       setConfirmError(
-        `Insufficient balance. Mint costs ${totalMintPriceStr} ETH, ` +
-          `your wallet has ${userBalanceEth !== null ? userBalanceEth.toFixed(8) : "unknown"} ETH.`
+        `Insufficient balance. Mint costs ${totalMintPriceStr} ETH, your wallet has ${
+          userBalanceEth !== null ? userBalanceEth.toFixed(8) : "unknown"
+        } ETH.`
       );
+      return;
+    }
+
+    if (royaltyNum > 30) {
+      setConfirmError("Creator royalty cannot be more than 30%.");
       return;
     }
 
@@ -337,45 +490,121 @@ function CreatePageContent() {
     setConfirmResult(null);
     setConfirmError(null);
     setConfirming(false);
+    setSubmittedTxHash(null);
+    setMintKey(null);
+    setPendingMetadataUri(null);
+    setMintStep("saving_pending");
 
-    if (adminCut > 0 && walletClient && ADMIN_WALLET) {
-      setMintStep("sending_cut");
+    let createdMintKey = null;
+    let createdMetadataUri = null;
 
-      try {
+    try {
+      const validAttrs = attributes.filter((a) => a.trait_type.trim() && a.value.trim());
+
+      const form = new FormData();
+      form.append("name", name.trim());
+      form.append("description", description.trim());
+      form.append("collection", collection.trim() || "User Created");
+      form.append("externalUrl", externalUrl.trim());
+      form.append("attributes", JSON.stringify(validAttrs));
+      form.append("feeEth", onChainFeeEth || "0");
+      form.append("totalPriceEth", totalMintPriceStr || "0");
+      form.append("adminCutEth", adminCut > 0 ? adminCut.toFixed(8) : "0");
+      form.append("listingPriceEth", listingPrice ? String(listingPrice) : "0");
+      form.append("royaltyPercent", royaltyNum > 0 ? String(royaltyNum) : "0");
+      form.append("creatorContract", creatorContract || "");
+      form.append("chainId", String(targetChainId));
+
+      if (imageFile) {
+        form.append("imageFile", imageFile);
+      }
+
+      const createRes = await fetch("/api/nft/create", {
+        method: "POST",
+        body: form,
+      });
+
+      const createData = await readJsonSafe(createRes);
+
+      if (!createRes.ok) {
+        throw new Error(createData?.error || "Failed to save pending NFT");
+      }
+
+      createdMintKey = createData.mintKey;
+      createdMetadataUri = createData.metadataUri;
+
+      setMintKey(createData.mintKey);
+      setPendingMetadataUri(createData.metadataUri);
+      persistPendingState(createData.mintKey, null);
+
+      if (adminCut > 0 && walletClient && ADMIN_WALLET) {
+        setMintStep("sending_cut");
+
         const cutHash = await walletClient.sendTransaction({
           to: ADMIN_WALLET,
           value: parseEther(adminCut.toFixed(18)),
           chain,
         });
 
-        const viemMod = await import("viem");
-        const chainsMod = await import("viem/chains");
-        const pc = viemMod.createPublicClient({
-          chain: targetChainId === 8453 ? chainsMod.base : chainsMod.baseSepolia,
-          transport: viemMod.http(),
-        });
+        try {
+          const viemMod = await import("viem");
+          const chainsMod = await import("viem/chains");
 
-        await pc.waitForTransactionReceipt({ hash: cutHash });
-      } catch (e) {
-        setConfirmError(e?.shortMessage || e?.message || "Transaction rejected");
-        setStep(3);
-        setMintStep("");
-        return;
+          const client = viemMod.createPublicClient({
+            chain: targetChainId === 8453 ? chainsMod.base : chainsMod.baseSepolia,
+            transport: viemMod.http(undefined, { timeout: 10000 }),
+          });
+
+          await client.waitForTransactionReceipt({ hash: cutHash });
+        } catch {
+          // admin-cut receipt wait failure should not kill the mint after send
+        }
+      }
+
+      setMintStep("minting");
+
+      const hash = await writeContractAsync({
+        address: creatorContract,
+        abi: AURORA_CREATOR_ABI,
+        functionName: "createNft",
+        args: [createData.metadataUri],
+        value: parseEther(String(onChainFeeEth)),
+        chainId: targetChainId,
+      });
+
+      setSubmittedTxHash(hash);
+      persistPendingState(createData.mintKey, hash);
+
+      try {
+        await fetch("/api/nft/create/confirm", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            mintKey: createData.mintKey,
+            txHash: hash,
+            creatorContract: creatorContract || "",
+            chainId: targetChainId,
+            totalPriceEth: totalMintPriceStr || "0",
+            adminCutEth: adminCut > 0 ? adminCut.toFixed(8) : "0",
+          }),
+        });
+      } catch {
+        // auto loop handles retries
+      }
+    } catch (e) {
+      const message = e?.shortMessage || e?.message || "Mint failed";
+
+      if (createdMintKey) {
+        setConfirmError(
+          `Pending NFT saved with key ${createdMintKey}, but mint is not fully complete yet. ${message}`
+        );
+        setMintKey(createdMintKey);
+        setPendingMetadataUri(createdMetadataUri);
+        setMintStep("saved_pending");
+      } else {
+        setConfirmError(message);
       }
     }
-
-    setMintStep("minting");
-
-    const metadataURI = `${window.location.origin}/api/nft/token-metadata?pending=1`;
-
-    writeContract({
-      address: creatorContract,
-      abi: AURORA_CREATOR_ABI,
-      functionName: "createNft",
-      args: [metadataURI],
-      value: parseEther(String(onChainFeeEth)),
-      chainId: targetChainId,
-    });
   }, [
     isLoggedIn,
     isFormValid,
@@ -390,112 +619,21 @@ function CreatePageContent() {
     hasEnoughBalance,
     totalMintPriceStr,
     userBalanceEth,
-    adminCut,
-    walletClient,
-    ADMIN_WALLET,
-    onChainFeeEth,
-    writeContract,
-  ]);
-
-  useEffect(() => {
-    if (!isConfirmedOnChain || !txHash || confirming || confirmResult) return;
-
-    const finalize = async () => {
-      setConfirming(true);
-
-      try {
-        const validAttrs = attributes.filter((a) => a.trait_type.trim() && a.value.trim());
-
-        const form = new FormData();
-        form.append("txHash", String(txHash));
-        form.append("name", name.trim());
-        form.append("description", description.trim());
-        form.append("collection", collection.trim() || "User Created");
-        form.append("externalUrl", externalUrl.trim());
-        form.append("attributes", JSON.stringify(validAttrs));
-        form.append("feeEth", onChainFeeEth || "0");
-        form.append("totalPriceEth", totalMintPriceStr || "0");
-        form.append("adminCutEth", adminCut > 0 ? adminCut.toFixed(8) : "0");
-        form.append("listingPriceEth", listingPrice ? String(listingPrice) : "0");
-        form.append("royaltyPercent", royaltyNum > 0 ? String(royaltyNum) : "0");
-        form.append("creatorContract", creatorContract || "");
-        form.append("chainId", String(targetChainId));
-
-        if (imageFile) {
-          form.append("imageFile", imageFile);
-        }
-
-        let res = null;
-        let data = null;
-
-        for (let attempt = 1; attempt <= 3; attempt++) {
-          res = await fetch("/api/nft/create", {
-            method: "POST",
-            body: form,
-          });
-
-          const rawText = await res.text();
-
-          try {
-            data = rawText ? JSON.parse(rawText) : {};
-          } catch {
-            data = { error: rawText || "Invalid server response" };
-          }
-
-          if (res.ok) break;
-
-          const errorText = String(data?.error || "").toLowerCase();
-          const isRetryable =
-            errorText.includes("receipt") ||
-            errorText.includes("not found") ||
-            errorText.includes("processing");
-
-          if (!isRetryable || attempt === 3) break;
-
-          await new Promise((r) => setTimeout(r, 3000 * attempt));
-        }
-
-        if (!res?.ok) throw new Error(data?.error || "Create failed");
-
-        setConfirmResult(data);
-        setStep(5);
-        refreshSession();
-      } catch (e) {
-        setConfirmError(e?.message || "Failed to finalize");
-        setStep(4);
-      } finally {
-        setConfirming(false);
-      }
-    };
-
-    finalize();
-  }, [
-    isConfirmedOnChain,
-    txHash,
-    confirming,
-    confirmResult,
-    imageFile,
+    royaltyNum,
     attributes,
     name,
     description,
     collection,
     externalUrl,
     listingPrice,
-    royaltyNum,
     onChainFeeEth,
-    totalMintPriceStr,
     adminCut,
-    creatorContract,
-    targetChainId,
-    refreshSession,
+    imageFile,
+    walletClient,
+    ADMIN_WALLET,
+    writeContractAsync,
+    persistPendingState,
   ]);
-
-  useEffect(() => {
-    if (sendError) {
-      setConfirmError(sendError.shortMessage || sendError.message || "Transaction failed");
-      setStep(3);
-    }
-  }, [sendError]);
 
   const resetAll = () => {
     resetWrite();
@@ -503,6 +641,11 @@ function CreatePageContent() {
     setConfirmError(null);
     setConfirming(false);
     setStep(1);
+    setMintStep("");
+    setMintKey(null);
+    setPendingMetadataUri(null);
+    setSubmittedTxHash(null);
+
     setName("");
     setDescription("");
     setCollection("");
@@ -512,31 +655,44 @@ function CreatePageContent() {
     setAttributes([{ trait_type: "", value: "" }]);
     setImageFile(null);
     setImagePreview(null);
-    setMintStep("");
+
+    clearPendingState();
   };
-
-  const txExplorerLink = txHash ? `${explorerUrl}/tx/${txHash}` : null;
-  const contractExplorerLink = creatorContract ? `${explorerUrl}/address/${creatorContract}` : null;
-
-  const effectiveWalletShort = effectiveWallet
-    ? `${effectiveWallet.slice(0, 6)}...${effectiveWallet.slice(-4)}`
-    : null;
 
   let authState = "needs_login";
   if (isLoggedIn && !hasUsableWallet) authState = "needs_wallet";
   if (isLoggedIn && hasUsableWallet) authState = "ready";
   if (isLoggedIn && isWagmiConnected && isWrongChain) authState = "wrong_network";
 
-  let mintState = "idle";
-  if (confirmResult?.success) mintState = "success";
-  else if (confirmError) mintState = "error";
-  else if (confirming) mintState = "confirming";
-  else if (isWaiting) mintState = "tx_pending";
-  else if (isSending) mintState = "tx_signing";
-
   const handleLogin = () => {
     if (typeof window !== "undefined") window.location.href = "/login";
   };
+
+  const titleText =
+    mintStep === "saving_pending"
+      ? "Saving pending mint..."
+      : mintStep === "sending_cut"
+        ? "Sending admin payment..."
+        : mintStep === "minting"
+          ? "Minting on-chain..."
+          : mintStep === "saved_pending"
+            ? "Pending NFT saved"
+            : mintStep === "confirming"
+              ? "Confirming on-chain receipt..."
+              : "Processing mint...";
+
+  const subtitleText =
+    mintStep === "saving_pending"
+      ? "Your image and metadata are being saved first."
+      : mintStep === "sending_cut"
+        ? "Sending the admin portion before contract mint."
+        : mintStep === "minting"
+          ? "Your wallet will ask you to approve the contract mint."
+          : mintStep === "saved_pending"
+            ? "Your pending NFT is safely saved. Once a tx hash is attached, confirmation can continue."
+            : mintStep === "confirming"
+              ? "The page will keep retrying confirmation for much longer, even after refresh."
+              : "Processing...";
 
   return (
     <div className="min-h-screen">
@@ -567,7 +723,7 @@ function CreatePageContent() {
           </h1>
 
           <p className="mx-auto max-w-2xl text-base text-muted sm:text-lg">
-            Upload artwork, add metadata, set royalties, and mint a real ERC-721 NFT on {chainName}.
+            Save the NFT first, mint it on-chain second, then keep retrying confirmation until it lands.
           </p>
 
           {creatorContract && (
@@ -849,6 +1005,10 @@ function CreatePageContent() {
                         )}
                       </div>
 
+                      <div className="rounded-lg border border-accent/15 bg-accent/5 p-3 text-[11px] text-muted">
+                        Creator royalty is hard-capped at <span className="font-semibold text-accent">30%</span>.
+                      </div>
+
                       {isWagmiConnected && !hasEnoughBalance && totalMintPriceStr && (
                         <div className="rounded-lg border border-danger/20 bg-danger/10 p-3 text-[11px] text-danger">
                           Insufficient balance. Mint costs {totalMintPriceStr} ETH, your wallet has{" "}
@@ -933,7 +1093,7 @@ function CreatePageContent() {
                           <div className="space-y-1.5">
                             <label className="block text-sm font-medium text-text">NFT Price (ETH)</label>
                             <p className="text-[11px] text-muted">
-                              Set the price you want this NFT to sell for. Leave at 0 if not for sale yet.
+                              Leave at 0 if not for sale yet.
                             </p>
                             <input
                               type="number"
@@ -948,16 +1108,14 @@ function CreatePageContent() {
 
                           <div className="space-y-1.5">
                             <label className="block text-sm font-medium text-text">Creator Royalty (%)</label>
-                            <p className="text-[11px] text-muted">
-                              Range: 5-30.
-                            </p>
+                            <p className="text-[11px] text-muted">Range: 0–30.</p>
                             <input
                               type="number"
                               step="0.1"
                               min="0"
-                              max="100"
+                              max="30"
                               value={royaltyPercent}
-                              onChange={(e) => setRoyaltyPercent(e.target.value)}
+                              onChange={(e) => handleRoyaltyChange(e.target.value)}
                               placeholder="5"
                               className="w-full rounded-xl border border-border-light bg-surface2/60 px-4 py-3 text-sm text-text transition-colors placeholder:text-muted-dim focus:border-accent/50 focus:outline-none focus:ring-1 focus:ring-accent/20"
                             />
@@ -982,9 +1140,7 @@ function CreatePageContent() {
                                 <input
                                   type="text"
                                   value={attr.trait_type}
-                                  onChange={(e) =>
-                                    updateAttribute(idx, "trait_type", e.target.value)
-                                  }
+                                  onChange={(e) => updateAttribute(idx, "trait_type", e.target.value)}
                                   placeholder="Trait (e.g. Color)"
                                   className="flex-1 rounded-lg border border-border-light bg-surface2/60 px-3 py-2.5 text-sm text-text placeholder:text-muted-dim focus:border-accent/50 focus:outline-none"
                                 />
@@ -1039,7 +1195,7 @@ function CreatePageContent() {
                     <div>
                       <h2 className="font-display text-xl font-semibold">Review Your NFT</h2>
                       <p className="text-xs text-muted">
-                        This calls AuroraCreator.createNft() with the live on-chain fee
+                        The app saves a pending NFT first, then mints on-chain, then keeps retrying confirmation.
                       </p>
                     </div>
                   </div>
@@ -1097,9 +1253,7 @@ function CreatePageContent() {
                           <p className="mb-1 text-xs uppercase tracking-wider text-muted-dim">
                             Creator Royalty
                           </p>
-                          <p className="font-mono text-sm text-accent">
-                            {royaltyNum > 0 ? `${royaltyNum}%` : "0%"}
-                          </p>
+                          <p className="font-mono text-sm text-accent">{royaltyNum}%</p>
                         </div>
                       </div>
 
@@ -1219,11 +1373,9 @@ function CreatePageContent() {
                       size="lg"
                       className="flex-1"
                       onClick={handleCreateMint}
-                      disabled={
-                        !creatorContract || !isMintActive || !isPriceReady || !hasEnoughBalance
-                      }
+                      disabled={!creatorContract || !isMintActive || !isPriceReady || !hasEnoughBalance}
                     >
-                      <Sparkles size={16} /> Mint On-Chain —{" "}
+                      <Sparkles size={16} /> Save Pending + Mint —{" "}
                       {totalMintPriceStr ? `${totalMintPriceStr} ETH` : "Loading..."}
                     </Button>
                   </div>
@@ -1243,26 +1395,29 @@ function CreatePageContent() {
                 </div>
               </div>
 
-              <h2 className="font-display text-xl font-semibold">
-                {mintStep === "sending_cut" && "Sending admin payment..."}
-                {mintStep === "minting" && mintState === "tx_signing" && "Confirm in your wallet..."}
-                {mintStep === "minting" && mintState === "tx_pending" && "Transaction pending on-chain..."}
-                {mintStep === "minting" && mintState === "confirming" && "Saving image and NFT metadata..."}
-                {mintState === "error" && "Something went wrong"}
-                {!mintStep && mintState === "tx_signing" && "Confirm in your wallet..."}
-                {!mintStep && mintState === "tx_pending" && "Transaction pending on-chain..."}
-                {!mintStep && mintState === "confirming" && "Saving image and NFT metadata..."}
-              </h2>
+              <h2 className="font-display text-xl font-semibold">{titleText}</h2>
+              <p className="text-sm text-muted">{subtitleText}</p>
 
-              <p className="text-sm text-muted">
-                {mintStep === "sending_cut" && "Sending the admin portion before contract mint."}
-                {mintStep !== "sending_cut" &&
-                  mintState === "tx_signing" &&
-                  "Your wallet will ask you to approve the mint transaction."}
-                {mintState === "tx_pending" && `Waiting for block confirmation on ${chainName}.`}
-                {mintState === "confirming" &&
-                  "Verifying the mint event and storing your image directly in the database."}
-              </p>
+              {mintKey && (
+                <div className="rounded-xl border border-border-light bg-surface2/40 p-3 text-left">
+                  <p className="text-[11px] uppercase tracking-wider text-muted-dim">Mint Key</p>
+                  <p className="mt-1 break-all font-mono text-xs text-accent">{mintKey}</p>
+                </div>
+              )}
+
+              {pendingMetadataUri && (
+                <div className="rounded-xl border border-border-light bg-surface2/40 p-3 text-left">
+                  <p className="text-[11px] uppercase tracking-wider text-muted-dim">Metadata URI</p>
+                  <p className="mt-1 break-all font-mono text-xs text-accent">{pendingMetadataUri}</p>
+                </div>
+              )}
+
+              {submittedTxHash && (
+                <div className="rounded-xl border border-border-light bg-surface2/40 p-3 text-left">
+                  <p className="text-[11px] uppercase tracking-wider text-muted-dim">Transaction Hash</p>
+                  <p className="mt-1 break-all font-mono text-xs text-accent">{submittedTxHash}</p>
+                </div>
+              )}
 
               {txExplorerLink && (
                 <a
@@ -1275,41 +1430,38 @@ function CreatePageContent() {
                 </a>
               )}
 
-              {mintState === "error" && (
-                <div className="space-y-3">
-                  <div className="rounded-xl border border-danger/20 bg-danger/10 p-4 text-left">
-                    <p className="break-all text-xs text-muted">
-                      {confirmError || "Transaction rejected or failed."}
-                    </p>
-                  </div>
-                  <div className="flex gap-3">
-                    <Button
-                      variant="ghost"
-                      size="md"
-                      className="flex-1"
-                      onClick={() => {
-                        setStep(2);
-                        setConfirmError(null);
-                        resetWrite();
-                      }}
-                    >
-                      Edit
-                    </Button>
-                    <Button
-                      variant="primary"
-                      size="md"
-                      className="flex-1"
-                      onClick={() => {
-                        setConfirmError(null);
-                        resetWrite();
-                        setStep(3);
-                      }}
-                    >
-                      Try Again
-                    </Button>
-                  </div>
+              {isWaiting && (
+                <div className="rounded-xl border border-accent/20 bg-accent/5 p-3 text-xs text-accent">
+                  Wagmi also sees the transaction and is watching the receipt.
                 </div>
               )}
+
+              {confirmError && (
+                <div className="rounded-xl border border-danger/20 bg-danger/10 p-4 text-left">
+                  <p className="break-all text-xs text-muted">{confirmError}</p>
+                </div>
+              )}
+
+              <div className="flex gap-3">
+                <Button
+                  variant="ghost"
+                  size="md"
+                  className="flex-1"
+                  onClick={() => setStep(2)}
+                >
+                  Edit
+                </Button>
+
+                <Button
+                  variant="primary"
+                  size="md"
+                  className="flex-1"
+                  onClick={retryConfirmation}
+                  disabled={!mintKey || !submittedTxHash || confirming}
+                >
+                  Retry confirmation
+                </Button>
+              </div>
             </div>
           </div>
         )}
@@ -1322,7 +1474,7 @@ function CreatePageContent() {
               </div>
 
               <div>
-                <h2 className="font-display text-2xl font-bold">NFT Minted On-Chain!</h2>
+                <h2 className="font-display text-2xl font-bold">NFT Mint Confirmed!</h2>
                 <p className="mt-2 text-sm text-muted">
                   <strong>&quot;{name}&quot;</strong> is now a real ERC-721 token
                   {confirmResult?.tokenId && <> — Token #{confirmResult.tokenId}</>}.
@@ -1351,9 +1503,9 @@ function CreatePageContent() {
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted">Mint Fee</span>
+                  <span className="text-muted">Total Paid</span>
                   <span className="font-mono text-accent">
-                    {totalMintPriceStr || onChainFeeEth} ETH
+                    {confirmResult?.totalPriceEth || totalMintPriceStr || onChainFeeEth} ETH
                   </span>
                 </div>
                 {listingPrice && parseFloat(listingPrice) > 0 && (

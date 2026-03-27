@@ -1,94 +1,94 @@
 import { NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
 
 export const runtime = "nodejs";
 
-/**
- * GET /api/nft/token-metadata?contract=0x...&tokenId=123
- *
- * Serves ERC-721 metadata JSON. This is what OpenSea, Blur, and other
- * marketplaces call when they read tokenURI() from the AuroraCreator contract.
- *
- * Returns standard ERC-721 metadata:
- *   { name, description, image, external_url, attributes }
- */
+function getSupabaseAdmin() {
+  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!url || !key) {
+    throw new Error("Missing Supabase admin environment variables");
+  }
+
+  return createClient(url, key, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+}
+
 export async function GET(req: Request) {
   try {
-    const { searchParams } = new URL(req.url);
-    const contract = (searchParams.get("contract") || "").toLowerCase();
-    const tokenId = searchParams.get("tokenId") || "";
+    const supabase = getSupabaseAdmin();
+    const url = new URL(req.url);
 
-    // Handle placeholder/pending requests gracefully
-    if (searchParams.get("placeholder") || searchParams.get("pending")) {
-      return NextResponse.json({
-        name: "Pending NFT",
-        description: "This NFT is being minted. Metadata will be available shortly.",
-        image: "",
-        attributes: [],
-      });
+    const key = url.searchParams.get("key")?.trim() || "";
+    const pendingId = url.searchParams.get("pendingId")?.trim() || "";
+    const tokenId = url.searchParams.get("tokenId")?.trim() || "";
+    const contractAddress = url.searchParams.get("contract")?.trim().toLowerCase() || "";
+
+    let row = null;
+    let error = null;
+
+    if (key) {
+      const result = await supabase
+        .from("user_listed")
+        .select("*")
+        .eq("metadata_key", key)
+        .maybeSingle();
+
+      row = result.data;
+      error = result.error;
+    } else if (pendingId) {
+      const result = await supabase
+        .from("user_listed")
+        .select("*")
+        .eq("token_id", pendingId)
+        .maybeSingle();
+
+      row = result.data;
+      error = result.error;
+    } else if (tokenId) {
+      let query = supabase.from("user_listed").select("*").eq("token_id", tokenId);
+
+      if (contractAddress) {
+        query = query.eq("contract_address", contractAddress);
+      }
+
+      const result = await query.maybeSingle();
+      row = result.data;
+      error = result.error;
+    } else {
+      return NextResponse.json({ error: "Missing key or tokenId" }, { status: 400 });
     }
-
-    if (!contract || !tokenId) {
-      return NextResponse.json(
-        { error: "Missing contract or tokenId" },
-        { status: 400 }
-      );
-    }
-
-    const { getSupabase } = await import("@/lib/db/supabase");
-    const sb = getSupabase();
-
-    // Look up in user_listed table
-    const { data, error } = await sb
-      .from("user_listed")
-      .select("*")
-      .eq("contract_address", contract)
-      .eq("token_id", tokenId)
-      .limit(1)
-      .maybeSingle();
 
     if (error) {
-      console.error("token-metadata lookup error:", error);
       return NextResponse.json(
-        { error: "Database error" },
+        { error: `Failed to load metadata: ${error.message}` },
         { status: 500 }
       );
     }
 
-    if (!data) {
-      return NextResponse.json(
-        { error: "Token not found" },
-        { status: 404 }
-      );
+    if (!row) {
+      return NextResponse.json({ error: "Metadata not found" }, { status: 404 });
     }
 
-    // Build standard ERC-721 metadata JSON
-    // https://docs.opensea.io/docs/metadata-standards
-    const metadata: Record<string, unknown> = {
-      name: data.name || `Token #${tokenId}`,
-      description: data.description || "",
-      image: data.image_url || "",
-      external_url: data.external_url || "",
-      attributes: Array.isArray(data.attributes) ? data.attributes : [],
-    };
-
-    // Optional fields
-    if (data.collection) {
-      metadata.collection = {
-        name: data.collection,
-      };
-    }
-
-    return NextResponse.json(metadata, {
-      headers: {
-        "Cache-Control": "public, s-maxage=3600, stale-while-revalidate=86400",
-        "Content-Type": "application/json",
-      },
-    });
-  } catch (e: any) {
-    console.error("[/api/nft/token-metadata] error:", e);
     return NextResponse.json(
-      { error: e?.message || "Failed" },
-      { status: 500 }
+      {
+        name: row.name || "Aurora NFT",
+        description: row.description || "",
+        image: row.image_url || "",
+        external_url: row.external_url || "",
+        attributes: Array.isArray(row.attributes) ? row.attributes : [],
+      },
+      {
+        headers: {
+          "Cache-Control": "public, max-age=60, s-maxage=60",
+        },
+      }
     );
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Unexpected error";
+    console.error("[/api/nft/token-metadata] error:", error);
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

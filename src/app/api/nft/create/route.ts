@@ -1,16 +1,7 @@
 import { NextResponse } from "next/server";
-import {
-  createPublicClient,
-  http,
-  decodeEventLog,
-  type Address,
-  type Hash,
-} from "viem";
-import { base, baseSepolia } from "viem/chains";
-import { supabase } from "@/lib/supabase";
+import { createClient } from "@supabase/supabase-js";
+import type { Address } from "viem";
 import { getSessionData } from "@/lib/auth/session";
-import { notifyMint } from "@/lib/pushover";
-import { telegramNotifyMint } from "@/lib/telegram";
 
 export const runtime = "nodejs";
 
@@ -19,25 +10,7 @@ const CREATOR_CONTRACT = (
 ).toLowerCase();
 
 const MAX_DB_IMAGE_BYTES = 4 * 1024 * 1024;
-
-const CREATED_EVENT_ABI = [
-  {
-    type: "event",
-    name: "Created",
-    inputs: [
-      { name: "creator", type: "address", indexed: true },
-      { name: "tokenId", type: "uint256", indexed: true },
-      { name: "metadataURI", type: "string", indexed: false },
-      { name: "feePaid", type: "uint256", indexed: false },
-    ],
-  },
-] as const;
-
-type LogWithTopics = {
-  address: Address;
-  data: `0x${string}`;
-  topics: readonly `0x${string}`[];
-};
+const MAX_DATA_URL_CHARS = 8_000_000;
 
 type AttributeInput = {
   trait_type?: unknown;
@@ -45,55 +18,35 @@ type AttributeInput = {
 };
 
 type ParsedCreateInput = {
-  txHash?: string;
   name?: string;
   description?: string;
   collection?: string;
   externalUrl?: string;
   attributes?: AttributeInput[];
-  imageUrl?: string;
-  imageBase64?: string;
-  feeUsd?: string | number;
   feeEth?: string | number;
-  ethPriceAtMint?: string | number;
+  totalPriceEth?: string | number;
+  adminCutEth?: string | number;
   listingPriceEth?: string | number;
   creatorContract?: string;
   chainId?: string | number;
   royaltyPercent?: string | number;
+  imageUrl?: string;
+  imageBase64?: string;
   imageFile?: File | null;
 };
 
-function hasTopics(log: unknown): log is LogWithTopics {
-  if (!log || typeof log !== "object") return false;
+function getSupabaseAdmin() {
+  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-  const maybeLog = log as {
-    address?: unknown;
-    data?: unknown;
-    topics?: unknown;
-  };
-
-  return (
-    typeof maybeLog.address === "string" &&
-    typeof maybeLog.data === "string" &&
-    Array.isArray(maybeLog.topics)
-  );
-}
-
-function getClientForChain(chainId: number) {
-  if (chainId === 8453) {
-    return createPublicClient({
-      chain: base,
-      transport: http(process.env.BASE_RPC_URL),
-    });
+  if (!url || !key) {
+    throw new Error("Missing Supabase admin environment variables");
   }
 
-  return createPublicClient({
-    chain: baseSepolia,
-    transport: http(process.env.BASE_SEPOLIA_RPC_URL),
+  return createClient(url, key, {
+    auth: { autoRefreshToken: false, persistSession: false },
   });
 }
-
-type AppPublicClient = ReturnType<typeof getClientForChain>;
 
 function parseNumber(value: unknown, fallback = 0): number {
   const parsed = Number.parseFloat(String(value ?? ""));
@@ -105,20 +58,31 @@ function parseChainId(value: unknown, fallback = 8453): number {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function logStep(label: string, extra?: Record<string, unknown>) {
-  if (extra) {
-    console.log(`[NFT CREATE] ${label}`, extra);
-  } else {
-    console.log(`[NFT CREATE] ${label}`);
-  }
+function clampRoyalty(value: unknown): number {
+  const parsed = parseNumber(value, 0);
+  return Math.min(30, Math.max(0, parsed));
 }
 
 function isLikelyDataUrl(value: string) {
   return value.startsWith("data:image/");
+}
+
+function normalizeAddress(value: unknown): Address | null {
+  const addr = String(value || "").trim().toLowerCase();
+  return addr ? (addr as Address) : null;
+}
+
+function chainLabel(chainId: number) {
+  if (chainId === 8453) return "Base";
+  if (chainId === 84532) return "Base Sepolia";
+  return `Chain ${chainId}`;
+}
+
+async function fileToDataUrl(file: File) {
+  const arrayBuffer = await file.arrayBuffer();
+  const base64 = Buffer.from(arrayBuffer).toString("base64");
+  const mime = file.type || "application/octet-stream";
+  return `data:${mime};base64,${base64}`;
 }
 
 async function parseRequest(req: Request): Promise<ParsedCreateInput> {
@@ -148,21 +112,20 @@ async function parseRequest(req: Request): Promise<ParsedCreateInput> {
     const imageFile = maybeFile instanceof File && maybeFile.size > 0 ? maybeFile : null;
 
     return {
-      txHash: getString("txHash"),
       name: getString("name"),
       description: getString("description"),
       collection: getString("collection"),
       externalUrl: getString("externalUrl"),
       attributes: parsedAttrs,
-      imageUrl: getString("imageUrl"),
-      imageBase64: getString("imageBase64"),
-      feeUsd: getString("feeUsd"),
       feeEth: getString("feeEth"),
-      ethPriceAtMint: getString("ethPriceAtMint"),
+      totalPriceEth: getString("totalPriceEth"),
+      adminCutEth: getString("adminCutEth"),
       listingPriceEth: getString("listingPriceEth"),
       creatorContract: getString("creatorContract"),
       chainId: getString("chainId"),
       royaltyPercent: getString("royaltyPercent"),
+      imageUrl: getString("imageUrl"),
+      imageBase64: getString("imageBase64"),
       imageFile,
     };
   }
@@ -174,86 +137,62 @@ async function parseRequest(req: Request): Promise<ParsedCreateInput> {
   };
 }
 
-async function fileToDataUrl(file: File) {
-  const arrayBuffer = await file.arrayBuffer();
-  const base64 = Buffer.from(arrayBuffer).toString("base64");
-  const mime = file.type || "application/octet-stream";
-  return `data:${mime};base64,${base64}`;
-}
+function sanitizeAttributes(input: AttributeInput[] | undefined, royaltyPercent: number) {
+  const clean = Array.isArray(input)
+    ? input
+        .filter((a) => {
+          const trait = String(a?.trait_type || "").trim();
+          const value = String(a?.value || "").trim();
+          return Boolean(trait && value);
+        })
+        .map((a) => ({
+          trait_type: String(a?.trait_type || "").trim(),
+          value: String(a?.value || "").trim(),
+        }))
+    : [];
 
-/** Retry getTransactionReceipt with bounded backoff */
-async function getReceiptWithRetry(
-  publicClient: AppPublicClient,
-  txHash: Hash,
-  maxAttempts = 5,
-  initialDelayMs = 1500
-) {
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    try {
-      logStep("receipt attempt", { attempt, txHash });
-      const receipt = await publicClient.getTransactionReceipt({ hash: txHash });
-      if (receipt) {
-        logStep("receipt found", {
-          attempt,
-          txHash,
-          status: receipt.status,
-          blockNumber: receipt.blockNumber?.toString?.() || null,
-          logs: receipt.logs?.length ?? 0,
-        });
-        return receipt;
-      }
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      const isNotFound =
-        message.includes("could not be found") ||
-        message.includes("not found") ||
-        message.includes("not yet been processed") ||
-        message.includes("transaction receipt") ||
-        message.includes("Receipt");
+  const withoutRoyalty = clean.filter(
+    (a) => a.trait_type.toLowerCase() !== "creator royalty"
+  );
 
-      logStep("receipt attempt failed", {
-        attempt,
-        txHash,
-        message,
-        retrying: isNotFound && attempt < maxAttempts,
-      });
-
-      if (!isNotFound || attempt === maxAttempts) {
-        throw err;
-      }
-    }
-
-    const delay = Math.round(initialDelayMs * Math.pow(1.35, attempt - 1));
-    logStep("receipt backoff", { attempt, delayMs: delay });
-    await sleep(delay);
+  if (royaltyPercent > 0) {
+    withoutRoyalty.push({
+      trait_type: "Creator Royalty",
+      value: `${royaltyPercent}%`,
+    });
   }
 
-  return null;
+  return withoutRoyalty;
 }
 
-/**
- * POST /api/nft/create
- *
- * Verifies the on-chain AuroraCreator.createNft() tx, converts the uploaded
- * artwork to a data URL for DB storage, extracts the token ID from the Created
- * event, then saves metadata to user_listed.
- */
+async function resolveSessionWallet(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  email: string,
+  sessionWallet?: string | null
+) {
+  let wallet = sessionWallet ? String(sessionWallet).toLowerCase() : null;
+  if (wallet) return wallet;
+
+  const { data: prof, error } = await supabase
+    .from("profiles")
+    .select("wallet_address")
+    .eq("email", email)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Failed to resolve wallet: ${error.message}`);
+  }
+
+  wallet = prof?.wallet_address ? String(prof.wallet_address).toLowerCase() : null;
+  return wallet;
+}
+
 export async function POST(req: Request) {
-  const startedAt = Date.now();
-
   try {
-    logStep("request received");
-
-    console.time("[NFT CREATE] getSessionData");
+    const supabase = getSupabaseAdmin();
     const session = await getSessionData();
-    console.timeEnd("[NFT CREATE] getSessionData");
 
     if (!session?.email || !session?.profileId) {
-      logStep("unauthorized: missing email/profileId", {
-        hasEmail: Boolean(session?.email),
-        hasProfileId: Boolean(session?.profileId),
-      });
-
       return NextResponse.json(
         { error: "You must be logged in to create an NFT" },
         { status: 401 }
@@ -262,117 +201,53 @@ export async function POST(req: Request) {
 
     const profileId = session.profileId;
     const email = session.email;
+    const walletAddress = await resolveSessionWallet(supabase, email, session.wallet);
 
-    let userWallet = session.wallet
-      ? String(session.wallet).toLowerCase()
-      : null;
-
-    logStep("session resolved", {
-      email,
-      profileId,
-      sessionWallet: userWallet,
-    });
-
-    if (!userWallet) {
-      console.time("[NFT CREATE] profile wallet lookup");
-      const { data: prof, error: profError } = await supabase
-        .from("profiles")
-        .select("wallet_address")
-        .eq("email", email)
-        .maybeSingle();
-      console.timeEnd("[NFT CREATE] profile wallet lookup");
-
-      if (profError) {
-        logStep("profile wallet lookup error", {
-          message: profError.message,
-        });
-      }
-
-      userWallet = prof?.wallet_address
-        ? String(prof.wallet_address).toLowerCase()
-        : null;
-    }
-
-    if (!userWallet) {
-      logStep("unauthorized: no wallet found", { email, profileId });
+    if (!walletAddress) {
       return NextResponse.json(
         { error: "No wallet found for session" },
         { status: 401 }
       );
     }
 
-    console.time("[NFT CREATE] parse request");
     const body = await parseRequest(req);
-    console.timeEnd("[NFT CREATE] parse request");
 
     const {
-      txHash,
       name,
       description,
       collection,
       externalUrl,
       attributes,
+      feeEth,
+      listingPriceEth,
+      creatorContract,
+      chainId,
+      royaltyPercent,
       imageUrl,
       imageBase64,
       imageFile,
-      feeUsd,
-      feeEth,
-      ethPriceAtMint,
-      listingPriceEth,
-      creatorContract: clientContract,
-      chainId: clientChainId,
-      royaltyPercent,
     } = body;
 
-    logStep("body parsed", {
-      txHash,
-      name,
-      hasDescription: Boolean(description),
-      hasCollection: Boolean(collection),
-      hasExternalUrl: Boolean(externalUrl),
-      hasAttributes: Array.isArray(attributes),
-      attributeCount: Array.isArray(attributes) ? attributes.length : 0,
-      hasImageUrl: Boolean(imageUrl),
-      hasImageBase64: Boolean(imageBase64),
-      hasImageFile: Boolean(imageFile),
-      imageFileName: imageFile?.name || null,
-      imageFileSize: imageFile?.size || null,
-      clientChainId,
-      clientContract,
-      royaltyPercent,
-    });
-
-    if (!txHash || !name) {
-      logStep("bad request: missing txHash or name", { txHash, name });
-      return NextResponse.json(
-        { error: "Missing txHash or name" },
-        { status: 400 }
-      );
+    if (!name?.trim()) {
+      return NextResponse.json({ error: "Missing NFT name" }, { status: 400 });
     }
 
-    const normalizedTxHash = txHash as Hash;
-
-    const chainId = parseChainId(
-      clientChainId,
+    const resolvedChainId = parseChainId(
+      chainId,
       parseChainId(process.env.NEXT_PUBLIC_CHAIN_ID || "8453", 8453)
     );
 
-    const contractAddr = (
-      clientContract || CREATOR_CONTRACT || ""
-    ).toLowerCase();
-
-    if (!contractAddr) {
-      logStep("bad request: missing creator contract");
+    if (resolvedChainId !== 8453 && resolvedChainId !== 84532) {
       return NextResponse.json(
-        { error: "Missing creator contract address" },
+        { error: `Unsupported chainId ${resolvedChainId}` },
         { status: 400 }
       );
     }
 
-    if (chainId !== 8453 && chainId !== 84532) {
-      logStep("bad request: unsupported chain", { chainId });
+    const contractAddr = normalizeAddress(creatorContract || CREATOR_CONTRACT);
+    if (!contractAddr) {
       return NextResponse.json(
-        { error: `Unsupported chainId ${chainId}` },
+        { error: "Missing creator contract address" },
         { status: 400 }
       );
     }
@@ -387,481 +262,92 @@ export async function POST(req: Request) {
         );
       }
 
-      console.time("[NFT CREATE] fileToDataUrl");
       resolvedImageUrl = await fileToDataUrl(imageFile);
-      console.timeEnd("[NFT CREATE] fileToDataUrl");
-
-      logStep("image converted from file", {
-        fileName: imageFile.name,
-        fileType: imageFile.type,
-        fileSize: imageFile.size,
-        dataUrlLength: resolvedImageUrl.length,
-      });
     } else if (!resolvedImageUrl && typeof imageBase64 === "string" && imageBase64.trim()) {
       const raw = imageBase64.trim();
-
       if (isLikelyDataUrl(raw)) {
         resolvedImageUrl = raw;
-
-        logStep("legacy imageBase64 accepted", {
-          dataUrlLength: resolvedImageUrl.length,
-        });
       }
     }
 
-    if (resolvedImageUrl && isLikelyDataUrl(resolvedImageUrl) && resolvedImageUrl.length > 8_000_000) {
+    if (!resolvedImageUrl) {
+      return NextResponse.json({ error: "Missing NFT image" }, { status: 400 });
+    }
+
+    if (!isLikelyDataUrl(resolvedImageUrl) && !resolvedImageUrl.startsWith("http")) {
+      return NextResponse.json(
+        { error: "Image must be a data URL or valid http(s) URL" },
+        { status: 400 }
+      );
+    }
+
+    if (resolvedImageUrl.length > MAX_DATA_URL_CHARS) {
       return NextResponse.json(
         { error: "Encoded image is too large for DB storage." },
         { status: 400 }
       );
     }
 
-    logStep("verification target", {
-      chainId,
-      txHash,
-      contractAddr,
-      userWallet,
-      hasImage: Boolean(resolvedImageUrl),
-      imagePreview: resolvedImageUrl ? resolvedImageUrl.slice(0, 40) : "",
-    });
-
-    console.time("[NFT CREATE] duplicate tx lookup");
-    const { data: existingTx, error: existingTxError } = await supabase
-      .from("transactions")
-      .select("id")
-      .eq("tx_hash", txHash)
-      .limit(1);
-    console.timeEnd("[NFT CREATE] duplicate tx lookup");
-
-    if (existingTxError) {
-      logStep("duplicate tx lookup error", {
-        message: existingTxError.message,
-      });
-    }
-
-    if (existingTx?.length) {
-      logStep("duplicate tx detected", { txHash });
-      return NextResponse.json(
-        { error: "Transaction already used" },
-        { status: 409 }
-      );
-    }
-
-    const publicClient = getClientForChain(chainId);
-
-    console.time("[NFT CREATE] getReceiptWithRetry");
-    const receipt = await getReceiptWithRetry(publicClient, normalizedTxHash, 5, 1500);
-    console.timeEnd("[NFT CREATE] getReceiptWithRetry");
-
-    if (!receipt) {
-      logStep("receipt not found after retry", { txHash, chainId });
-      return NextResponse.json(
-        {
-          error:
-            "Transaction receipt not found after retries. Check the chainId/RPC and try again.",
-        },
-        { status: 400 }
-      );
-    }
-
-    if (receipt.status !== "success") {
-      logStep("receipt found but tx failed", {
-        txHash,
-        chainId,
-        status: receipt.status,
-      });
-
-      return NextResponse.json(
-        { error: "Transaction failed on-chain" },
-        { status: 400 }
-      );
-    }
-
-    let onChainTokenId: string | null = null;
-    let onChainCreator: string | null = null;
-    let onChainFeePaidEth: number | null = null;
-    let onChainMetadataUri: string | null = null;
-
-    logStep("decoding receipt logs", {
-      logCount: receipt.logs.length,
-      contractAddr,
-    });
-
-    for (const rawLog of receipt.logs) {
-      if (!hasTopics(rawLog)) continue;
-
-      const log = rawLog;
-
-      if (log.address.toLowerCase() !== contractAddr) continue;
-      if (!log.topics.length) continue;
-
-      try {
-        const decoded = decodeEventLog({
-          abi: CREATED_EVENT_ABI,
-          data: log.data,
-          topics: [...log.topics] as [`0x${string}`, ...`0x${string}`[]],
-        }) as {
-          eventName?: string;
-          args?: Record<string, unknown>;
-        };
-
-        if (decoded.eventName === "Created" && decoded.args) {
-          const tokenId = decoded.args.tokenId;
-          const creator = decoded.args.creator;
-          const feePaid = decoded.args.feePaid;
-          const metadataURI = decoded.args.metadataURI;
-
-          if (tokenId != null) onChainTokenId = String(tokenId);
-          if (creator != null) onChainCreator = String(creator).toLowerCase();
-          if (metadataURI != null) onChainMetadataUri = String(metadataURI);
-
-          if (feePaid != null) {
-            try {
-              onChainFeePaidEth = Number(feePaid) / 1e18;
-            } catch {
-              onChainFeePaidEth = null;
-            }
-          }
-
-          logStep("created event decoded", {
-            tokenId: onChainTokenId,
-            creator: onChainCreator,
-            feePaidEth: onChainFeePaidEth,
-            metadataURI: onChainMetadataUri,
-          });
-
-          if (onChainTokenId) break;
-        }
-      } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : String(err);
-        logStep("log decode skipped", { message });
-      }
-    }
-
-    if (!onChainTokenId) {
-      const TRANSFER_TOPIC =
-        "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
-
-      logStep("created event not found, falling back to transfer log");
-
-      for (const rawLog of receipt.logs) {
-        if (!hasTopics(rawLog)) continue;
-
-        const log = rawLog;
-
-        if (log.address.toLowerCase() !== contractAddr) continue;
-        if (!log.topics.length) continue;
-        if (log.topics[0].toLowerCase() !== TRANSFER_TOPIC) continue;
-        if (log.topics.length < 4) continue;
-
-        onChainTokenId = String(BigInt(log.topics[3]));
-        onChainCreator = userWallet;
-
-        logStep("transfer fallback resolved token", {
-          tokenId: onChainTokenId,
-          creator: onChainCreator,
-        });
-
-        break;
-      }
-    }
-
-    if (!onChainTokenId) {
-      logStep("verification failed: no mint event found", {
-        txHash,
-        contractAddr,
-        chainId,
-        receiptLogCount: receipt.logs.length,
-      });
-
-      return NextResponse.json(
-        {
-          error:
-            "No mint event found in transaction. Check contract address, chainId, and RPC.",
-        },
-        { status: 400 }
-      );
-    }
-
-    if (onChainCreator && onChainCreator !== userWallet) {
-      logStep("wallet mismatch", {
-        sessionWallet: userWallet,
-        onChainCreator,
-        txHash,
-      });
-
-      return NextResponse.json(
-        { error: "Wallet mismatch — tx creator does not match your session" },
-        { status: 400 }
-      );
-    }
-
     const parsedFeeEth = parseNumber(feeEth, 0);
-    const parsedFeeUsd = parseNumber(feeUsd, 0);
-    const parsedEthPriceAtMint = parseNumber(ethPriceAtMint, 0);
     const parsedListingPriceEth = parseNumber(listingPriceEth, 0);
-    const parsedRoyaltyPercent = Math.min(100, Math.max(0, parseNumber(royaltyPercent, 0)));
+    const parsedRoyaltyPercent = clampRoyalty(royaltyPercent);
+    const cleanAttributes = sanitizeAttributes(attributes, parsedRoyaltyPercent);
 
-    const mintFeeEth =
-      onChainFeePaidEth !== null ? onChainFeePaidEth : parsedFeeEth;
+    const mintKey = `mint:${crypto.randomUUID()}`;
+    const temporaryTokenId = `pending:${crypto.randomUUID()}`;
+    const origin = new URL(req.url).origin;
+    const metadataUri = `${origin}/api/nft/token-metadata?key=${encodeURIComponent(mintKey)}`;
 
-    const mintFeeUsd = parsedFeeUsd;
-    const ethPriceSnapshot = parsedEthPriceAtMint;
-
-    const validAttrs = Array.isArray(attributes)
-      ? attributes.filter((a) => {
-          const attr = a as AttributeInput;
-          return (
-            String(attr?.trait_type || "").trim() &&
-            String(attr?.value || "").trim()
-          );
-        })
-      : [];
-
-    const filteredAttrs = validAttrs.filter(
-      (a) => String(a?.trait_type || "").trim().toLowerCase() !== "creator royalty"
-    );
-
-    if (parsedRoyaltyPercent > 0) {
-      filteredAttrs.push({
-        trait_type: "Creator Royalty",
-        value: `${parsedRoyaltyPercent}%`,
-      });
-    }
-
-    const listedInsert = {
+    const insertRow = {
       profile_id: profileId,
-      wallet_address: userWallet,
-      chain_id: chainId,
+      wallet_address: walletAddress,
+      metadata_key: mintKey,
+      chain_id: resolvedChainId,
       contract_address: contractAddr,
-      token_id: onChainTokenId,
-      name,
-      description: description || "",
-      collection: collection || "User Created",
+      token_id: temporaryTokenId,
+      name: name.trim(),
+      description: (description || "").trim(),
+      collection: (collection || "User Created").trim(),
       image_url: resolvedImageUrl,
-      external_url: externalUrl || "",
-      attributes: filteredAttrs,
+      external_url: (externalUrl || "").trim(),
+      attributes: cleanAttributes,
       token_type: "ERC721",
-      chain:
-        chainId === 8453
-          ? "Base"
-          : chainId === 84532
-            ? "Base Sepolia"
-            : `Chain ${chainId}`,
-      tx_hash: txHash,
-      mint_fee_eth: mintFeeEth,
+      chain: chainLabel(resolvedChainId),
+      tx_hash: null,
+      mint_fee_eth: parsedFeeEth,
       listing_price_eth: parsedListingPriceEth,
-      mint_fee_usd: mintFeeUsd,
-      eth_price_at_mint: ethPriceSnapshot,
-      status: "confirmed",
+      mint_fee_usd: 0,
+      eth_price_at_mint: 0,
+      status: "pending",
       created_at: new Date().toISOString(),
     };
 
-    logStep("prepared user_listed insert", {
-      profileId,
-      wallet_address: userWallet,
-      token_id: onChainTokenId,
-      contract_address: contractAddr,
-      tx_hash: txHash,
-      hasImageUrl: Boolean(resolvedImageUrl),
-      attributeCount: filteredAttrs.length,
-      metadataURI: onChainMetadataUri,
-      royaltyPercent: parsedRoyaltyPercent,
-    });
-
-    console.time("[NFT CREATE] user_listed insert");
-    const { error: listedError } = await supabase
+    const { error: insertError } = await supabase
       .from("user_listed")
-      .insert(listedInsert);
-    console.timeEnd("[NFT CREATE] user_listed insert");
+      .insert(insertRow);
 
-    if (listedError) {
-      logStep("user_listed insert error", {
-        code: listedError.code,
-        message: listedError.message,
-        details: listedError.details,
-        hint: listedError.hint,
-      });
-
+    if (insertError) {
       return NextResponse.json(
-        { error: "Failed to save NFT: " + listedError.message },
+        { error: `Failed to save pending NFT: ${insertError.message}` },
         { status: 500 }
       );
     }
 
-    console.time("[NFT CREATE] wallet_mints insert");
-    const { error: walletMintsError } = await supabase
-      .from("wallet_mints")
-      .insert({
-        wallet_address: userWallet,
-        chain_id: chainId,
-        contract_address: contractAddr,
-        token_id: onChainTokenId,
-        tx_hash: txHash,
-        mint_price_eth: 0,
-        mint_fee_eth: mintFeeEth,
-        mint_fee_usd: mintFeeUsd,
-        eth_price_at_mint: ethPriceSnapshot,
-        total_paid_eth: mintFeeEth,
-        snapshot_name: name,
-        snapshot_image: (resolvedImageUrl || "").slice(0, 500),
-        snapshot_desc: (description || "").slice(0, 500),
-        status: "confirmed",
-        minted_at: new Date().toISOString(),
-      });
-    console.timeEnd("[NFT CREATE] wallet_mints insert");
-
-    if (walletMintsError) {
-      logStep("wallet_mints insert error", {
-        code: walletMintsError.code,
-        message: walletMintsError.message,
-        details: walletMintsError.details,
-        hint: walletMintsError.hint,
-      });
-    }
-
-    console.time("[NFT CREATE] transactions insert");
-    const { error: txInsertError } = await supabase
-      .from("transactions")
-      .insert({
-        wallet_address: userWallet,
-        profile_id: profileId,
-        tx_hash: txHash,
-        tx_type: "create_mint",
-        chain_id: chainId,
-        contract_address: contractAddr,
-        token_id: onChainTokenId,
-        amount_eth: mintFeeEth,
-        admin_wallet: "",
-        status: "confirmed",
-        metadata: {
-          type: "create_mint",
-          nft_name: name,
-          collection: collection || "User Created",
-          on_chain_token_id: onChainTokenId,
-          on_chain_metadata_uri: onChainMetadataUri,
-          mint_fee_usd: mintFeeUsd,
-          mint_fee_eth: mintFeeEth,
-          eth_price_at_mint: ethPriceSnapshot,
-          listing_price_eth: parsedListingPriceEth,
-          royalty_percent: parsedRoyaltyPercent,
-          image_url: resolvedImageUrl,
-          image_storage_mode: isLikelyDataUrl(resolvedImageUrl) ? "db_data_url" : "external_url",
-        },
-      });
-    console.timeEnd("[NFT CREATE] transactions insert");
-
-    if (txInsertError) {
-      logStep("transactions insert error", {
-        code: txInsertError.code,
-        message: txInsertError.message,
-        details: txInsertError.details,
-        hint: txInsertError.hint,
-      });
-    }
-
-    const notifBuyer = email || userWallet;
-
-    void notifyMint({
-      nftName: name,
-      tokenId: onChainTokenId,
-      creator: notifBuyer,
-      fee: String(mintFeeEth),
-      mintPrice: "0",
-      price: String(parsedListingPriceEth),
-      contractAddress: contractAddr,
-    }).catch((err) => {
-      const message = err instanceof Error ? err.message : String(err);
-      logStep("notifyMint failed", { message });
-    });
-
-    void telegramNotifyMint({
-      nftName: name,
-      tokenId: onChainTokenId,
-      buyer: notifBuyer,
-      fee: String(mintFeeEth),
-      listingPrice: String(parsedListingPriceEth),
-      contractAddress: contractAddr,
-      chainId,
-    }).catch((err) => {
-      const message = err instanceof Error ? err.message : String(err);
-      logStep("telegramNotifyMint failed", { message });
-    });
-
-    console.time("[NFT CREATE] admin_notifications insert");
-    try {
-      const { error: adminNotifError } = await supabase
-        .from("admin_notifications")
-        .insert({
-          type: "create_mint",
-          title: "New NFT Created!",
-          body: `${name} (Token #${onChainTokenId}) created by ${notifBuyer} — ${parsedRoyaltyPercent}% royalty — $${mintFeeUsd} / ${mintFeeEth} ETH fee`,
-          metadata: {
-            txHash,
-            tokenId: onChainTokenId,
-            creator: notifBuyer,
-            nftName: name,
-            contractAddress: contractAddr,
-            mint_fee_usd: mintFeeUsd,
-            mint_fee_eth: mintFeeEth,
-            eth_price_at_mint: ethPriceSnapshot,
-            listing_price_eth: parsedListingPriceEth,
-            royalty_percent: parsedRoyaltyPercent,
-            on_chain_metadata_uri: onChainMetadataUri,
-            image_url: resolvedImageUrl,
-          },
-        });
-
-      if (adminNotifError) {
-        logStep("admin_notifications insert error", {
-          code: adminNotifError.code,
-          message: adminNotifError.message,
-          details: adminNotifError.details,
-          hint: adminNotifError.hint,
-        });
-      }
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      logStep("admin_notifications insert threw", { message });
-    }
-    console.timeEnd("[NFT CREATE] admin_notifications insert");
-
-    logStep("success", {
-      txHash,
-      tokenId: onChainTokenId,
-      chainId,
-      contractAddress: contractAddr,
-      durationMs: Date.now() - startedAt,
-    });
-
     return NextResponse.json({
       success: true,
-      txHash,
-      tokenId: onChainTokenId,
-      profileId,
+      status: "pending",
+      mintKey,
+      metadataUri,
       contractAddress: contractAddr,
-      chainId,
-      name,
-      collection: collection || "User Created",
+      chainId: resolvedChainId,
       royaltyPercent: parsedRoyaltyPercent,
-      hasImage: Boolean(resolvedImageUrl),
-      metadataURI: onChainMetadataUri,
-      mintFeeUsd,
-      mintFeeEth,
-      ethPriceAtMint: ethPriceSnapshot,
       listingPriceEth: parsedListingPriceEth,
+      mintFeeEth: parsedFeeEth,
+      hasImage: Boolean(resolvedImageUrl),
     });
   } catch (error: unknown) {
-    const message =
-      error instanceof Error ? error.message : "Unexpected error";
-
-    logStep("fatal error", {
-      message,
-      durationMs: Date.now() - startedAt,
-    });
-
+    const message = error instanceof Error ? error.message : "Unexpected error";
     console.error("[/api/nft/create] error:", error);
-
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
