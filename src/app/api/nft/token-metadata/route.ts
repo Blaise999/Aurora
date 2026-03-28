@@ -16,50 +16,62 @@ function getSupabaseAdmin() {
   });
 }
 
-export async function GET(req: Request) {
+function getBaseUrl(req: Request) {
+  const url = new URL(req.url);
+  const forwardedProto = req.headers.get("x-forwarded-proto");
+  const forwardedHost = req.headers.get("x-forwarded-host");
+
+  if (forwardedProto && forwardedHost) {
+    return `${forwardedProto}://${forwardedHost}`;
+  }
+
+  const origin = req.headers.get("origin");
+  if (origin) return origin;
+
+  return url.origin;
+}
+
+function buildJson(row: any, req: Request, mintKey: string) {
+  const baseUrl = getBaseUrl(req);
+  const rawName = typeof row?.name === "string" ? row.name.trim() : "";
+  const rawDescription =
+    typeof row?.description === "string" ? row.description.trim() : "";
+  const rawExternalUrl =
+    typeof row?.external_url === "string" ? row.external_url.trim() : "";
+
+  const image =
+    row?.image_url && String(row.image_url).trim()
+      ? `${baseUrl}/api/nft/token-image/${encodeURIComponent(mintKey)}`
+      : "";
+
+  return {
+    name: rawName || "Aurora NFT",
+    description: rawDescription,
+    image,
+    external_url: rawExternalUrl,
+    attributes: Array.isArray(row?.attributes) ? row.attributes : [],
+  };
+}
+
+export async function GET(
+  req: Request,
+  context: { params: Promise<{ mintKey: string }> }
+) {
   try {
     const supabase = getSupabaseAdmin();
-    const url = new URL(req.url);
+    const { mintKey } = await context.params;
 
-    const key = url.searchParams.get("key")?.trim() || "";
-    const pendingId = url.searchParams.get("pendingId")?.trim() || "";
-    const tokenId = url.searchParams.get("tokenId")?.trim() || "";
-    const contractAddress = url.searchParams.get("contract")?.trim().toLowerCase() || "";
+    const key = String(mintKey || "").trim();
 
-    let row = null;
-    let error = null;
-
-    if (key) {
-      const result = await supabase
-        .from("user_listed")
-        .select("*")
-        .eq("metadata_key", key)
-        .maybeSingle();
-
-      row = result.data;
-      error = result.error;
-    } else if (pendingId) {
-      const result = await supabase
-        .from("user_listed")
-        .select("*")
-        .eq("token_id", pendingId)
-        .maybeSingle();
-
-      row = result.data;
-      error = result.error;
-    } else if (tokenId) {
-      let query = supabase.from("user_listed").select("*").eq("token_id", tokenId);
-
-      if (contractAddress) {
-        query = query.eq("contract_address", contractAddress);
-      }
-
-      const result = await query.maybeSingle();
-      row = result.data;
-      error = result.error;
-    } else {
-      return NextResponse.json({ error: "Missing key or tokenId" }, { status: 400 });
+    if (!key) {
+      return NextResponse.json({ error: "Missing mintKey" }, { status: 400 });
     }
+
+    const { data: row, error } = await supabase
+      .from("user_listed")
+      .select("*")
+      .eq("metadata_key", key)
+      .maybeSingle();
 
     if (error) {
       return NextResponse.json(
@@ -72,23 +84,14 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "Metadata not found" }, { status: 404 });
     }
 
-    return NextResponse.json(
-      {
-        name: row.name || "Aurora NFT",
-        description: row.description || "",
-        image: row.image_url || "",
-        external_url: row.external_url || "",
-        attributes: Array.isArray(row.attributes) ? row.attributes : [],
+    return NextResponse.json(buildJson(row, req, key), {
+      headers: {
+        "Cache-Control": "public, max-age=60, s-maxage=60",
       },
-      {
-        headers: {
-          "Cache-Control": "public, max-age=60, s-maxage=60",
-        },
-      }
-    );
+    });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Unexpected error";
-    console.error("[/api/nft/token-metadata] error:", error);
+    console.error("[/api/nft/token-metadata/[mintKey]] error:", error);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

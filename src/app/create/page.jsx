@@ -110,7 +110,7 @@ function buildMintKey() {
 
 function buildMetadataUri(mintKey) {
   if (typeof window === "undefined") return "";
-  return `${window.location.origin}/api/nft/token-metadata/${mintKey}`;
+  return `${window.location.origin}/api/nft/token-metadata/${encodeURIComponent(mintKey)}`;
 }
 
 async function readJsonSafe(res) {
@@ -122,9 +122,17 @@ async function readJsonSafe(res) {
   }
 }
 
+function normalizeText(value, maxLen = 0) {
+  const text = String(value ?? "");
+  const trimmed = text.trim();
+  if (!maxLen || trimmed.length <= maxLen) return trimmed;
+  return trimmed.slice(0, maxLen).trim();
+}
+
 function CreatePageContent() {
   const { settings } = useSettings();
-  const { address: liveWalletAddress, isConnected: isWagmiConnected, chain } = useAccount();
+  const { address: liveWalletAddress, isConnected: isWagmiConnected, chain } =
+    useAccount();
   const { switchChain } = useSwitchChain();
 
   const {
@@ -139,7 +147,9 @@ function CreatePageContent() {
   const explorerUrl = getExplorerUrl();
   const creatorContract = getCreatorContractAddress();
 
-  const liveWallet = liveWalletAddress ? String(liveWalletAddress).toLowerCase() : null;
+  const liveWallet = liveWalletAddress
+    ? String(liveWalletAddress).toLowerCase()
+    : null;
   const savedWallet = linkedWallet
     ? String(linkedWallet).toLowerCase()
     : profile?.wallet_address
@@ -183,7 +193,9 @@ function CreatePageContent() {
     query: { enabled: Boolean(liveWalletAddress && isWagmiConnected) },
   });
 
-  const userBalanceEth = balanceData ? parseFloat(formatEther(balanceData.value)) : null;
+  const userBalanceEth = balanceData
+    ? parseFloat(formatEther(balanceData.value))
+    : null;
 
   const hasEnoughBalance = useMemo(() => {
     if (userBalanceEth === null || onChainFeeNum <= 0) return true;
@@ -193,7 +205,9 @@ function CreatePageContent() {
   const isMintActive = mintActiveOnChain !== false;
   const isFeeReady = onChainFeeNum > 0;
   const mintFeeText =
-    onChainFeeNum > 0 ? onChainFeeNum.toFixed(8).replace(/\.?0+$/, "") : null;
+    onChainFeeNum > 0
+      ? onChainFeeNum.toFixed(8).replace(/\.?0+$/, "")
+      : null;
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -240,7 +254,10 @@ function CreatePageContent() {
     query: { enabled: Boolean(submittedTxHash) },
   });
 
-  const royaltyNum = useMemo(() => clampRoyalty(royaltyPercent), [royaltyPercent]);
+  const royaltyNum = useMemo(
+    () => clampRoyalty(royaltyPercent),
+    [royaltyPercent]
+  );
 
   const handleRoyaltyChange = (value) => {
     if (value === "") {
@@ -270,7 +287,7 @@ function CreatePageContent() {
     }
 
     if (file.size > 4 * 1024 * 1024) {
-      alert("File must be under 4MB when saving directly in the database");
+      alert("File must be under 4MB");
       return;
     }
 
@@ -287,17 +304,25 @@ function CreatePageContent() {
     if (e.dataTransfer.files?.[0]) handleFileSelect(e.dataTransfer.files[0]);
   };
 
-  const addAttribute = () => setAttributes((p) => [...p, { trait_type: "", value: "" }]);
-  const removeAttribute = (i) => setAttributes((p) => p.filter((_, j) => j !== i));
+  const addAttribute = () =>
+    setAttributes((p) => [...p, { trait_type: "", value: "" }]);
+
+  const removeAttribute = (i) =>
+    setAttributes((p) => p.filter((_, j) => j !== i));
+
   const updateAttribute = (i, f, v) =>
     setAttributes((p) => p.map((a, j) => (j === i ? { ...a, [f]: v } : a)));
 
   const isStep1Valid = Boolean(imageFile);
-  const isStep2Valid = Boolean(name.trim());
+  const isStep2Valid = Boolean(normalizeText(name, 100));
   const isFormValid = isStep1Valid && isStep2Valid;
 
-  const txExplorerLink = submittedTxHash ? `${explorerUrl}/tx/${submittedTxHash}` : null;
-  const contractExplorerLink = creatorContract ? `${explorerUrl}/address/${creatorContract}` : null;
+  const txExplorerLink = submittedTxHash
+    ? `${explorerUrl}/tx/${submittedTxHash}`
+    : null;
+  const contractExplorerLink = creatorContract
+    ? `${explorerUrl}/address/${creatorContract}`
+    : null;
 
   const effectiveWalletShort = effectiveWallet
     ? `${effectiveWallet.slice(0, 6)}...${effectiveWallet.slice(-4)}`
@@ -313,17 +338,25 @@ function CreatePageContent() {
       form.append("creatorContract", creatorContract || "");
       form.append("chainId", String(targetChainId));
       form.append("walletAddress", effectiveWallet || "");
-      form.append("name", name.trim());
-      form.append("description", description.trim());
-      form.append("collection", collection.trim() || "User Created");
-      form.append("externalUrl", externalUrl.trim());
+      form.append("name", normalizeText(name, 100));
+      form.append("description", normalizeText(description, 1000));
+      form.append(
+        "collection",
+        normalizeText(collection, 100) || "User Created"
+      );
+      form.append("externalUrl", normalizeText(externalUrl, 1000));
       form.append("listingPriceEth", listingPrice ? String(listingPrice) : "0");
       form.append("royaltyPercent", royaltyNum > 0 ? String(royaltyNum) : "0");
       form.append("feeEth", onChainFeeEth || "0");
       form.append(
         "attributes",
         JSON.stringify(
-          attributes.filter((a) => a.trait_type.trim() && a.value.trim())
+          attributes
+            .map((a) => ({
+              trait_type: normalizeText(a.trait_type, 100),
+              value: normalizeText(a.value, 200),
+            }))
+            .filter((a) => a.trait_type && a.value)
         )
       );
 
@@ -351,7 +384,13 @@ function CreatePageContent() {
 
   const finalizeMint = useCallback(
     async (hashArg = submittedTxHash, keyArg = mintKey) => {
-      if (!hashArg || !keyArg || !imageFile || finalResult?.success || finalizingRef.current) {
+      if (
+        !hashArg ||
+        !keyArg ||
+        !imageFile ||
+        finalResult?.success ||
+        finalizingRef.current
+      ) {
         return false;
       }
 
@@ -365,7 +404,10 @@ function CreatePageContent() {
         let lastMessage = "Failed to save minted NFT to profile.";
 
         for (let attempt = 1; attempt <= 4; attempt++) {
-          console.log(LOG, `finalize attempt ${attempt}/4`, { hashArg, keyArg });
+          console.log(LOG, `finalize attempt ${attempt}/4`, {
+            hashArg,
+            keyArg,
+          });
 
           const res = await fetch("/api/nft/create", {
             method: "POST",
@@ -435,7 +477,9 @@ function CreatePageContent() {
   useEffect(() => {
     if (sendError) {
       console.error(LOG, "wallet send error", sendError);
-      setPageError(sendError.shortMessage || sendError.message || "Transaction failed");
+      setPageError(
+        sendError.shortMessage || sendError.message || "Transaction failed"
+      );
       setMintStage("failed");
     }
   }, [sendError]);
@@ -452,7 +496,9 @@ function CreatePageContent() {
   }, [watchedReceiptError]);
 
   useEffect(() => {
-    if (!watchedReceipt || !submittedTxHash || !mintKey || finalResult?.success) return;
+    if (!watchedReceipt || !submittedTxHash || !mintKey || finalResult?.success) {
+      return;
+    }
     void finalizeMint(submittedTxHash, mintKey);
   }, [watchedReceipt, submittedTxHash, mintKey, finalResult, finalizeMint]);
 
@@ -493,8 +539,14 @@ function CreatePageContent() {
       return;
     }
 
+    const cleanName = normalizeText(name, 100);
     const nextMintKey = buildMintKey();
     const metadataUri = buildMetadataUri(nextMintKey);
+
+    if (!cleanName) {
+      setPageError("NFT name is required.");
+      return;
+    }
 
     if (!metadataUri) {
       setPageError("Could not build metadata URI.");
@@ -532,7 +584,6 @@ function CreatePageContent() {
       setSubmittedTxHash(hash);
       setMintStage("waiting_receipt");
 
-      // Start backend verification immediately.
       void finalizeMint(hash, nextMintKey);
     } catch (e) {
       console.error(LOG, "handleCreateMint failed", e);
@@ -556,6 +607,7 @@ function CreatePageContent() {
     royaltyNum,
     effectiveWallet,
     onChainFeeEth,
+    name,
     writeContractAsync,
     finalizeMint,
   ]);
@@ -657,7 +709,9 @@ function CreatePageContent() {
                 {creatorContract.slice(0, 6)}...{creatorContract.slice(-4)}
               </a>
               {totalMintedOnChain !== undefined && (
-                <span className="ml-2 text-muted">| {String(totalMintedOnChain)} minted</span>
+                <span className="ml-2 text-muted">
+                  | {String(totalMintedOnChain)} minted
+                </span>
               )}
             </div>
           )}
@@ -679,7 +733,9 @@ function CreatePageContent() {
         {creatorContract && !isMintActive && authState === "ready" && step < 4 && (
           <div className="mx-auto mb-8 max-w-lg rounded-xl border border-warning/20 bg-warning/10 p-5">
             <p className="text-sm font-medium text-warning">Minting Paused</p>
-            <p className="mt-1 text-xs text-muted">The contract owner has paused minting.</p>
+            <p className="mt-1 text-xs text-muted">
+              The contract owner has paused minting.
+            </p>
           </div>
         )}
 
@@ -697,7 +753,9 @@ function CreatePageContent() {
             <div className="glass-card rounded-card space-y-4 p-8 text-center">
               <User size={40} className="mx-auto text-accent" />
               <h2 className="font-display text-xl font-semibold">Sign In Required</h2>
-              <p className="text-sm text-muted">Log in or sign up to start creating NFTs.</p>
+              <p className="text-sm text-muted">
+                Log in or sign up to start creating NFTs.
+              </p>
               <Button
                 variant="primary"
                 size="lg"
@@ -721,7 +779,9 @@ function CreatePageContent() {
             <div className="glass-card rounded-card space-y-4 p-8 text-center">
               <Wallet size={40} className="mx-auto text-muted-dim" />
               <h2 className="font-display text-xl font-semibold">Connect Wallet</h2>
-              <p className="text-sm text-muted">Connect your wallet to mint NFTs on-chain.</p>
+              <p className="text-sm text-muted">
+                Connect your wallet to mint NFTs on-chain.
+              </p>
               <Button
                 variant="primary"
                 size="lg"
@@ -741,7 +801,9 @@ function CreatePageContent() {
               <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-warning/10">
                 <span className="text-sm font-semibold text-warning">!</span>
               </div>
-              <h2 className="font-display text-xl font-semibold text-warning">Wrong Network</h2>
+              <h2 className="font-display text-xl font-semibold text-warning">
+                Wrong Network
+              </h2>
               <p className="text-sm text-muted">Switch to {chainName} to continue.</p>
               <Button
                 variant="primary"
@@ -757,7 +819,10 @@ function CreatePageContent() {
 
         {authState === "ready" && step <= 3 && (
           <>
-            <StepIndicator current={step} steps={["Upload Art", "Add Details", "Review & Mint"]} />
+            <StepIndicator
+              current={step}
+              steps={["Upload Art", "Add Details", "Review & Mint"]}
+            />
 
             {step === 1 && (
               <div className="mx-auto max-w-2xl">
@@ -768,8 +833,12 @@ function CreatePageContent() {
                         <ImagePlus size={20} className="text-accent-violet" />
                       </div>
                       <div>
-                        <h3 className="font-display text-base font-semibold">Upload Your Artwork</h3>
-                        <p className="text-xs text-muted">PNG, JPG, GIF, WEBP, SVG — Max 4MB for DB storage</p>
+                        <h3 className="font-display text-base font-semibold">
+                          Upload Your Artwork
+                        </h3>
+                        <p className="text-xs text-muted">
+                          PNG, JPG, GIF, WEBP, SVG — Max 4MB
+                        </p>
                       </div>
                     </div>
                   </div>
@@ -778,7 +847,12 @@ function CreatePageContent() {
                     {imagePreview ? (
                       <div className="relative overflow-hidden rounded-xl border border-border-light">
                         <div className="relative mx-auto aspect-square max-h-[400px]">
-                          <Image src={imagePreview} alt="Preview" fill className="object-contain" />
+                          <Image
+                            src={imagePreview}
+                            alt="Preview"
+                            fill
+                            className="object-contain"
+                          />
                         </div>
                         <button
                           type="button"
@@ -816,14 +890,18 @@ function CreatePageContent() {
                           <p className="mb-2 text-base font-medium text-text">
                             Drag & drop or click to upload
                           </p>
-                          <p className="text-sm text-muted">Recommended: 1000×1000px or higher</p>
+                          <p className="text-sm text-muted">
+                            Recommended: 1000×1000px or higher
+                          </p>
                         </div>
                         <input
                           ref={fileInputRef}
                           type="file"
                           accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml"
                           className="hidden"
-                          onChange={(e) => handleFileSelect(e.target.files?.[0] || null)}
+                          onChange={(e) =>
+                            handleFileSelect(e.target.files?.[0] || null)
+                          }
                         />
                       </div>
                     )}
@@ -850,10 +928,17 @@ function CreatePageContent() {
                     {imagePreview && (
                       <div className="glass-card rounded-card sticky top-24 overflow-hidden">
                         <div className="relative aspect-square">
-                          <Image src={imagePreview} alt="Preview" fill className="object-contain" />
+                          <Image
+                            src={imagePreview}
+                            alt="Preview"
+                            fill
+                            className="object-contain"
+                          />
                         </div>
                         <div className="border-t border-border-light p-3">
-                          <p className="truncate text-xs text-muted">{imageFile?.name}</p>
+                          <p className="truncate text-xs text-muted">
+                            {imageFile?.name}
+                          </p>
                           <button
                             type="button"
                             onClick={() => {
@@ -872,7 +957,9 @@ function CreatePageContent() {
                     <div className="glass-card rounded-card mt-4 space-y-3 p-4">
                       <div className="flex items-center gap-2">
                         <Zap size={14} className="text-accent" />
-                        <span className="font-display text-sm font-semibold">Pricing</span>
+                        <span className="font-display text-sm font-semibold">
+                          Pricing
+                        </span>
                         {isFeeReady ? (
                           <Badge color="success" className="!text-[9px]">
                             Live
@@ -894,7 +981,9 @@ function CreatePageContent() {
 
                         <div className="flex justify-between text-sm">
                           <span className="text-muted">Gas Fee</span>
-                          <span className="font-mono text-muted-dim">Estimated by wallet</span>
+                          <span className="font-mono text-muted-dim">
+                            Estimated by wallet
+                          </span>
                         </div>
 
                         <div className="my-1 border-t border-border-light" />
@@ -924,13 +1013,18 @@ function CreatePageContent() {
                       </div>
 
                       <div className="rounded-lg border border-accent/15 bg-accent/5 p-3 text-[11px] text-muted">
-                        Creator royalty is hard-capped at <span className="font-semibold text-accent">30%</span>.
+                        Creator royalty is hard-capped at{" "}
+                        <span className="font-semibold text-accent">30%</span>.
                       </div>
 
                       {isWagmiConnected && !hasEnoughBalance && mintFeeText && (
                         <div className="rounded-lg border border-danger/20 bg-danger/10 p-3 text-[11px] text-danger">
-                          Insufficient balance. Mint fee is {mintFeeText} ETH, your wallet has{" "}
-                          {userBalanceEth !== null ? userBalanceEth.toFixed(6) : "unknown"} ETH.
+                          Insufficient balance. Mint fee is {mintFeeText} ETH, your
+                          wallet has{" "}
+                          {userBalanceEth !== null
+                            ? userBalanceEth.toFixed(6)
+                            : "unknown"}{" "}
+                          ETH.
                         </div>
                       )}
                     </div>
@@ -944,7 +1038,9 @@ function CreatePageContent() {
                             <PenLine size={18} className="text-accent" />
                           </div>
                           <div>
-                            <h3 className="font-display text-sm font-semibold">NFT Details</h3>
+                            <h3 className="font-display text-sm font-semibold">
+                              NFT Details
+                            </h3>
                             <p className="text-[11px] text-muted">
                               Add a name, description, price, royalties, and properties
                             </p>
@@ -965,11 +1061,15 @@ function CreatePageContent() {
                             className="w-full rounded-xl border border-border-light bg-surface2/60 px-4 py-3 text-sm text-text transition-colors placeholder:text-muted-dim focus:border-accent/50 focus:outline-none focus:ring-1 focus:ring-accent/20"
                             maxLength={100}
                           />
-                          <p className="text-right text-[11px] text-muted-dim">{name.length}/100</p>
+                          <p className="text-right text-[11px] text-muted-dim">
+                            {name.length}/100
+                          </p>
                         </div>
 
                         <div className="space-y-1.5">
-                          <label className="block text-sm font-medium text-text">Description</label>
+                          <label className="block text-sm font-medium text-text">
+                            Description
+                          </label>
                           <textarea
                             value={description}
                             onChange={(e) => setDescription(e.target.value)}
@@ -985,32 +1085,42 @@ function CreatePageContent() {
 
                         <div className="grid gap-4 sm:grid-cols-2">
                           <div className="space-y-1.5">
-                            <label className="block text-sm font-medium text-text">Collection</label>
+                            <label className="block text-sm font-medium text-text">
+                              Collection
+                            </label>
                             <input
                               type="text"
                               value={collection}
                               onChange={(e) => setCollection(e.target.value)}
                               placeholder="e.g. My Art Series"
                               className="w-full rounded-xl border border-border-light bg-surface2/60 px-4 py-3 text-sm text-text transition-colors placeholder:text-muted-dim focus:border-accent/50 focus:outline-none focus:ring-1 focus:ring-accent/20"
+                              maxLength={100}
                             />
                           </div>
 
                           <div className="space-y-1.5">
-                            <label className="block text-sm font-medium text-text">External URL</label>
+                            <label className="block text-sm font-medium text-text">
+                              External URL
+                            </label>
                             <input
                               type="url"
                               value={externalUrl}
                               onChange={(e) => setExternalUrl(e.target.value)}
                               placeholder="https://..."
                               className="w-full rounded-xl border border-border-light bg-surface2/60 px-4 py-3 text-sm text-text transition-colors placeholder:text-muted-dim focus:border-accent/50 focus:outline-none focus:ring-1 focus:ring-accent/20"
+                              maxLength={1000}
                             />
                           </div>
                         </div>
 
                         <div className="grid gap-4 sm:grid-cols-2">
                           <div className="space-y-1.5">
-                            <label className="block text-sm font-medium text-text">NFT Price (ETH)</label>
-                            <p className="text-[11px] text-muted">Leave at 0 if not for sale yet.</p>
+                            <label className="block text-sm font-medium text-text">
+                              NFT Price (ETH)
+                            </label>
+                            <p className="text-[11px] text-muted">
+                              Leave at 0 if not for sale yet.
+                            </p>
                             <input
                               type="number"
                               step="0.0001"
@@ -1023,7 +1133,9 @@ function CreatePageContent() {
                           </div>
 
                           <div className="space-y-1.5">
-                            <label className="block text-sm font-medium text-text">Creator Royalty (%)</label>
+                            <label className="block text-sm font-medium text-text">
+                              Creator Royalty (%)
+                            </label>
                             <p className="text-[11px] text-muted">Range: 0–30.</p>
                             <input
                               type="number"
@@ -1040,7 +1152,9 @@ function CreatePageContent() {
 
                         <div className="space-y-2.5">
                           <div className="flex items-center justify-between">
-                            <label className="block text-sm font-medium text-text">Properties</label>
+                            <label className="block text-sm font-medium text-text">
+                              Properties
+                            </label>
                             <button
                               type="button"
                               onClick={addAttribute}
@@ -1056,14 +1170,18 @@ function CreatePageContent() {
                                 <input
                                   type="text"
                                   value={attr.trait_type}
-                                  onChange={(e) => updateAttribute(idx, "trait_type", e.target.value)}
+                                  onChange={(e) =>
+                                    updateAttribute(idx, "trait_type", e.target.value)
+                                  }
                                   placeholder="Trait (e.g. Color)"
                                   className="flex-1 rounded-lg border border-border-light bg-surface2/60 px-3 py-2.5 text-sm text-text placeholder:text-muted-dim focus:border-accent/50 focus:outline-none"
                                 />
                                 <input
                                   type="text"
                                   value={attr.value}
-                                  onChange={(e) => updateAttribute(idx, "value", e.target.value)}
+                                  onChange={(e) =>
+                                    updateAttribute(idx, "value", e.target.value)
+                                  }
                                   placeholder="Value (e.g. Blue)"
                                   className="flex-1 rounded-lg border border-border-light bg-surface2/60 px-3 py-2.5 text-sm text-text placeholder:text-muted-dim focus:border-accent/50 focus:outline-none"
                                 />
@@ -1109,9 +1227,12 @@ function CreatePageContent() {
                       <Shield size={20} className="text-accent-violet" />
                     </div>
                     <div>
-                      <h2 className="font-display text-xl font-semibold">Review Your NFT</h2>
+                      <h2 className="font-display text-xl font-semibold">
+                        Review Your NFT
+                      </h2>
                       <p className="text-xs text-muted">
-                        One mint transaction, then automatic receipt verification and profile sync.
+                        One mint transaction, then automatic receipt verification and
+                        profile sync.
                       </p>
                     </div>
                   </div>
@@ -1121,7 +1242,12 @@ function CreatePageContent() {
                       {imagePreview && (
                         <div className="overflow-hidden rounded-xl border border-border-light">
                           <div className="relative aspect-square">
-                            <Image src={imagePreview} alt="Preview" fill className="object-contain" />
+                            <Image
+                              src={imagePreview}
+                              alt="Preview"
+                              fill
+                              className="object-contain"
+                            />
                           </div>
                         </div>
                       )}
@@ -1129,17 +1255,21 @@ function CreatePageContent() {
 
                     <div className="space-y-3 sm:col-span-3">
                       <div>
-                        <p className="mb-1 text-xs uppercase tracking-wider text-muted-dim">Name</p>
-                        <p className="font-display text-lg font-semibold">{name}</p>
+                        <p className="mb-1 text-xs uppercase tracking-wider text-muted-dim">
+                          Name
+                        </p>
+                        <p className="font-display text-lg font-semibold">
+                          {normalizeText(name, 100)}
+                        </p>
                       </div>
 
-                      {description && (
+                      {normalizeText(description, 1000) && (
                         <div>
                           <p className="mb-1 text-xs uppercase tracking-wider text-muted-dim">
                             Description
                           </p>
                           <p className="line-clamp-3 text-sm leading-relaxed text-muted">
-                            {description}
+                            {normalizeText(description, 1000)}
                           </p>
                         </div>
                       )}
@@ -1149,7 +1279,9 @@ function CreatePageContent() {
                           <p className="mb-1 text-xs uppercase tracking-wider text-muted-dim">
                             Collection
                           </p>
-                          <p className="text-sm">{collection || "User Created"}</p>
+                          <p className="text-sm">
+                            {normalizeText(collection, 100) || "User Created"}
+                          </p>
                         </div>
                         <div>
                           <p className="mb-1 text-xs uppercase tracking-wider text-muted-dim">
@@ -1162,14 +1294,18 @@ function CreatePageContent() {
                             <p className="mb-1 text-xs uppercase tracking-wider text-muted-dim">
                               NFT Price
                             </p>
-                            <p className="font-mono text-sm text-accent">{listingPrice} ETH</p>
+                            <p className="font-mono text-sm text-accent">
+                              {listingPrice} ETH
+                            </p>
                           </div>
                         )}
                         <div>
                           <p className="mb-1 text-xs uppercase tracking-wider text-muted-dim">
                             Creator Royalty
                           </p>
-                          <p className="font-mono text-sm text-accent">{royaltyNum}%</p>
+                          <p className="font-mono text-sm text-accent">
+                            {royaltyNum}%
+                          </p>
                         </div>
                       </div>
 
@@ -1186,7 +1322,10 @@ function CreatePageContent() {
                                   key={i}
                                   className="rounded-lg border border-accent/10 bg-accent/5 px-3 py-1 text-xs"
                                 >
-                                  <span className="text-accent">{a.trait_type}:</span> {a.value}
+                                  <span className="text-accent">
+                                    {normalizeText(a.trait_type, 100)}:
+                                  </span>{" "}
+                                  {normalizeText(a.value, 200)}
                                 </span>
                               ))}
                           </div>
@@ -1207,12 +1346,16 @@ function CreatePageContent() {
 
                     <div className="flex justify-between text-sm">
                       <span className="text-muted">Function</span>
-                      <span className="font-mono text-xs">createNft(metadataURI)</span>
+                      <span className="font-mono text-xs">
+                        createNft(metadataURI)
+                      </span>
                     </div>
 
                     <div className="flex justify-between text-sm">
                       <span className="text-muted">Wallet</span>
-                      <span className="font-mono text-xs">{effectiveWalletShort}</span>
+                      <span className="font-mono text-xs">
+                        {effectiveWalletShort}
+                      </span>
                     </div>
 
                     <div className="flex justify-between text-sm">
@@ -1224,7 +1367,9 @@ function CreatePageContent() {
 
                     <div className="flex justify-between text-sm">
                       <span className="text-muted">Gas Fee</span>
-                      <span className="font-mono text-xs text-muted-dim">Estimated by wallet</span>
+                      <span className="font-mono text-xs text-muted-dim">
+                        Estimated by wallet
+                      </span>
                     </div>
 
                     <div className="flex justify-between border-t border-border-light pt-2 text-sm">
@@ -1249,7 +1394,9 @@ function CreatePageContent() {
                   {pageError && (
                     <div className="mt-4 rounded-xl border border-danger/20 bg-danger/10 p-4">
                       <p className="text-sm font-medium text-danger">Error</p>
-                      <p className="mt-1 break-all text-xs text-muted">{pageError}</p>
+                      <p className="mt-1 break-all text-xs text-muted">
+                        {pageError}
+                      </p>
                     </div>
                   )}
 
@@ -1257,7 +1404,8 @@ function CreatePageContent() {
                     <div className="mt-4 flex items-start gap-2 rounded-xl border border-warning/20 bg-warning/10 p-4">
                       <AlertTriangle size={15} className="mt-0.5 text-warning" />
                       <p className="text-xs text-warning">
-                        Mint fee is still loading. Minting stays disabled until it loads.
+                        Mint fee is still loading. Minting stays disabled until it
+                        loads.
                       </p>
                     </div>
                   )}
@@ -1266,8 +1414,12 @@ function CreatePageContent() {
                     <div className="mt-4 flex items-start gap-2 rounded-xl border border-danger/20 bg-danger/10 p-4">
                       <AlertTriangle size={15} className="mt-0.5 text-danger" />
                       <p className="text-xs text-danger">
-                        Insufficient balance. Mint fee is {mintFeeText} ETH, your wallet has{" "}
-                        {userBalanceEth !== null ? userBalanceEth.toFixed(6) : "unknown"} ETH.
+                        Insufficient balance. Mint fee is {mintFeeText} ETH, your
+                        wallet has{" "}
+                        {userBalanceEth !== null
+                          ? userBalanceEth.toFixed(6)
+                          : "unknown"}{" "}
+                        ETH.
                       </p>
                     </div>
                   )}
@@ -1327,15 +1479,23 @@ function CreatePageContent() {
 
               {mintKey && (
                 <div className="rounded-xl border border-border-light bg-surface2/40 p-3 text-left">
-                  <p className="text-[11px] uppercase tracking-wider text-muted-dim">Mint Key</p>
-                  <p className="mt-1 break-all font-mono text-xs text-accent">{mintKey}</p>
+                  <p className="text-[11px] uppercase tracking-wider text-muted-dim">
+                    Mint Key
+                  </p>
+                  <p className="mt-1 break-all font-mono text-xs text-accent">
+                    {mintKey}
+                  </p>
                 </div>
               )}
 
               {submittedTxHash && (
                 <div className="rounded-xl border border-border-light bg-surface2/40 p-3 text-left">
-                  <p className="text-[11px] uppercase tracking-wider text-muted-dim">Transaction Hash</p>
-                  <p className="mt-1 break-all font-mono text-xs text-accent">{submittedTxHash}</p>
+                  <p className="text-[11px] uppercase tracking-wider text-muted-dim">
+                    Transaction Hash
+                  </p>
+                  <p className="mt-1 break-all font-mono text-xs text-accent">
+                    {submittedTxHash}
+                  </p>
                 </div>
               )}
 
@@ -1410,9 +1570,12 @@ function CreatePageContent() {
               </div>
 
               <div>
-                <h2 className="font-display text-2xl font-bold">NFT Mint Confirmed!</h2>
+                <h2 className="font-display text-2xl font-bold">
+                  NFT Mint Confirmed!
+                </h2>
                 <p className="mt-2 text-sm text-muted">
-                  <strong>&quot;{name}&quot;</strong> is now a real ERC-721 token
+                  <strong>&quot;{normalizeText(name, 100)}&quot;</strong> is now a real
+                  ERC-721 token
                   {finalResult?.tokenId && <> — Token #{finalResult.tokenId}</>}.
                 </p>
               </div>
@@ -1420,7 +1583,12 @@ function CreatePageContent() {
               {imagePreview && (
                 <div className="mx-auto max-w-[200px] overflow-hidden rounded-xl border border-border-light">
                   <div className="relative aspect-square">
-                    <Image src={imagePreview} alt={name} fill className="object-contain" />
+                    <Image
+                      src={imagePreview}
+                      alt={normalizeText(name, 100)}
+                      fill
+                      className="object-contain"
+                    />
                   </div>
                 </div>
               )}
@@ -1429,7 +1597,9 @@ function CreatePageContent() {
                 {finalResult?.tokenId && (
                   <div className="flex justify-between">
                     <span className="text-muted">Token ID</span>
-                    <span className="font-mono font-medium">#{finalResult.tokenId}</span>
+                    <span className="font-mono font-medium">
+                      #{finalResult.tokenId}
+                    </span>
                   </div>
                 )}
                 <div className="flex justify-between">
@@ -1486,7 +1656,10 @@ function CreatePageContent() {
         )}
       </div>
 
-      <WalletConnectModal open={showWalletModal} onClose={() => setShowWalletModal(false)} />
+      <WalletConnectModal
+        open={showWalletModal}
+        onClose={() => setShowWalletModal(false)}
+      />
     </div>
   );
 }

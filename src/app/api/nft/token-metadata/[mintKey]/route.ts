@@ -16,24 +16,63 @@ function getSupabaseAdmin() {
   });
 }
 
-function buildJson(row: any) {
+function getBaseUrl(req: Request) {
+  const url = new URL(req.url);
+  const forwardedProto = req.headers.get("x-forwarded-proto");
+  const forwardedHost = req.headers.get("x-forwarded-host");
+
+  if (forwardedProto && forwardedHost) {
+    return `${forwardedProto}://${forwardedHost}`;
+  }
+
+  const origin = req.headers.get("origin");
+  if (origin) return origin;
+
+  return url.origin;
+}
+
+function cleanString(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function normalizeAttributes(value: unknown) {
+  return Array.isArray(value) ? value : [];
+}
+
+function buildJson(row: any, req: Request, mintKey: string) {
+  const baseUrl = getBaseUrl(req);
+
+  const rawName = cleanString(row?.name);
+  const rawDescription = cleanString(row?.description);
+  const rawExternalUrl = cleanString(row?.external_url);
+
+  const image =
+    row?.image_url && String(row.image_url).trim()
+      ? `${baseUrl}/api/nft/token-image/${encodeURIComponent(mintKey)}`
+      : "";
+
   return {
-    name: row?.name || "Aurora NFT",
-    description: row?.description || "",
-    image: row?.image_url || "",
-    external_url: row?.external_url || "",
-    attributes: Array.isArray(row?.attributes) ? row.attributes : [],
+    // THIS MUST BE THE TOKEN'S OWN NAME, NOT THE COLLECTION NAME
+    name: rawName || (row?.token_id != null ? `NFT #${row.token_id}` : "Untitled NFT"),
+
+    // THIS MUST BE THE TOKEN'S OWN DESCRIPTION
+    description: rawDescription || "",
+
+    // ABSOLUTE IMAGE URL FOR WALLET COMPATIBILITY
+    image,
+
+    external_url: rawExternalUrl || "",
+    attributes: normalizeAttributes(row?.attributes),
   };
 }
 
 export async function GET(
-  _req: Request,
+  req: Request,
   context: { params: Promise<{ mintKey: string }> }
 ) {
   try {
     const supabase = getSupabaseAdmin();
     const { mintKey } = await context.params;
-
     const key = String(mintKey || "").trim();
 
     if (!key) {
@@ -57,14 +96,19 @@ export async function GET(
       return NextResponse.json({ error: "Metadata not found" }, { status: 404 });
     }
 
-    return NextResponse.json(buildJson(row), {
+    const payload = buildJson(row, req, key);
+
+    return NextResponse.json(payload, {
       headers: {
-        "Cache-Control": "public, max-age=60, s-maxage=60",
+        "Content-Type": "application/json; charset=utf-8",
+        "Cache-Control": "public, max-age=0, s-maxage=60, stale-while-revalidate=300",
+        "Access-Control-Allow-Origin": "*",
       },
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Unexpected error";
     console.error("[/api/nft/token-metadata/[mintKey]] error:", error);
+
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
