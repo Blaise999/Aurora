@@ -306,7 +306,47 @@ export async function POST(req: Request) {
       );
     }
 
-    const body = (await req.json()) as ConfirmBody;
+let body: ConfirmBody = {};
+let rawBody = "";
+
+try {
+  rawBody = await req.text();
+
+  console.log("[/api/nft/create/confirm] raw request body:", rawBody);
+
+  if (!rawBody || rawBody.trim() === "") {
+    console.warn("[/api/nft/create/confirm] empty body received");
+    body = {};
+  } else {
+    body = JSON.parse(rawBody) as ConfirmBody;
+  }
+} catch (err) {
+  console.error("[/api/nft/create/confirm] invalid JSON body", {
+    rawBody,
+    error: err instanceof Error ? err.message : String(err),
+  });
+
+  return NextResponse.json(
+    {
+      error: "Invalid JSON body sent to confirm route",
+      rawBody: rawBody || "<empty>",
+    },
+    { status: 400 }
+  );
+}
+
+if (!body || Object.keys(body).length === 0) {
+  console.warn("[/api/nft/create/confirm] empty parsed body — ignoring request");
+
+  return NextResponse.json(
+    {
+      success: false,
+      ignored: true,
+      reason: "Empty request body",
+    },
+    { status: 200 }
+  );
+}
 
     const mintKey = String(body.mintKey || "").trim();
     const txHash = String(body.txHash || "").trim() as Hash;
