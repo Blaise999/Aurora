@@ -14,6 +14,9 @@ import { telegramNotifyMint } from "@/lib/telegram";
 
 export const runtime = "nodejs";
 
+const LOG = "[/api/nft/create/confirm]";
+const CREATOR_CONTRACT = (process.env.NEXT_PUBLIC_CREATOR_CONTRACT || "").toLowerCase();
+
 const CREATED_EVENT_ABI = [
   {
     type: "event",
@@ -58,6 +61,21 @@ function getSupabaseAdmin() {
   return createClient(url, key, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
+}
+
+function jsonError(
+  message: string,
+  status = 400,
+  extra?: Record<string, unknown>
+) {
+  return NextResponse.json(
+    {
+      success: false,
+      error: message,
+      ...(extra || {}),
+    },
+    { status }
+  );
 }
 
 function parseNumber(value: unknown, fallback = 0): number {
@@ -128,8 +146,10 @@ function getRpcUrls(chainId: number) {
     return Array.from(
       new Set(
         [
+          process.env.BASE_FLASHBLOCKS_RPC_URL,
           process.env.BASE_RPC_URL,
           process.env.BASE_RPC_URL_2,
+          "https://mainnet-preconf.base.org",
           "https://mainnet.base.org",
         ].filter(Boolean)
       )
@@ -139,8 +159,10 @@ function getRpcUrls(chainId: number) {
   return Array.from(
     new Set(
       [
+        process.env.BASE_SEPOLIA_FLASHBLOCKS_RPC_URL,
         process.env.BASE_SEPOLIA_RPC_URL,
         process.env.BASE_SEPOLIA_RPC_URL_2,
+        "https://sepolia-preconf.base.org",
         "https://sepolia.base.org",
       ].filter(Boolean)
     )
@@ -154,32 +176,56 @@ function getClientsForChain(chainId: number) {
   return urls.map((url) =>
     createPublicClient({
       chain,
-      transport: http(url, {
-        timeout: 10000,
-      }),
+      transport: http(url, { timeout: 10000 }),
     })
   );
 }
 
 async function getReceiptStrong(chainId: number, txHash: Hash) {
   const clients = getClientsForChain(chainId);
-  const maxAttempts = 8;
+  const delays = [0, 600, 1000, 1800, 3000, 5000];
 
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+  for (let i = 0; i < delays.length; i++) {
+    if (delays[i] > 0) {
+      await sleep(delays[i]);
+    }
+
+    console.log(LOG, `receipt attempt ${i + 1}/${delays.length}`, {
+      chainId,
+      txHash,
+      clientCount: clients.length,
+    });
+
     const results = await Promise.allSettled(
       clients.map((client) => client.getTransactionReceipt({ hash: txHash }))
     );
 
-    for (const result of results) {
-      if (result.status === "fulfilled" && result.value) {
-        return result.value;
-      }
-    }
+    let found: Awaited<ReturnType<(typeof clients)[number]["getTransactionReceipt"]>> | null =
+      null;
 
-    const delay = Math.min(Math.round(1400 * Math.pow(1.55, attempt - 1)), 12000);
-    await sleep(delay);
+    results.forEach((result, idx) => {
+      if (result.status === "fulfilled" && result.value) {
+        console.log(LOG, "receipt found from client", {
+          idx,
+          blockNumber: String(result.value.blockNumber),
+          status: result.value.status,
+        });
+        found = result.value;
+      } else if (result.status === "rejected") {
+        console.warn(LOG, "receipt lookup failed on one client", {
+          idx,
+          error:
+            result.reason instanceof Error
+              ? result.reason.message
+              : String(result.reason),
+        });
+      }
+    });
+
+    if (found) return found;
   }
 
+  console.warn(LOG, "receipt not found after all attempts", { txHash, chainId });
   return null;
 }
 
@@ -225,6 +271,13 @@ function decodeMintFromReceipt(receipt: any, contractAddr: string) {
         }
 
         if (onChainTokenId) {
+          console.log(LOG, "decoded Created event", {
+            onChainTokenId,
+            onChainCreator,
+            onChainFeePaidEth,
+            onChainMetadataUri,
+          });
+
           return {
             tokenId: onChainTokenId,
             creator: onChainCreator,
@@ -250,103 +303,105 @@ function decodeMintFromReceipt(receipt: any, contractAddr: string) {
     if (log.topics[0].toLowerCase() !== TRANSFER_TOPIC) continue;
     if (log.topics.length < 4) continue;
 
-    return {
+    const fallback = {
       tokenId: String(BigInt(log.topics[3])),
       creator: null,
       feePaidEth: null,
       metadataURI: null,
     };
+
+    console.log(LOG, "fallback decoded Transfer event", fallback);
+    return fallback;
   }
 
+  console.warn(LOG, "no matching mint logs found in receipt");
   return null;
 }
 
-async function resolveSessionWallet(
-  supabase: ReturnType<typeof getSupabaseAdmin>,
-  email: string,
-  sessionWallet?: string | null
-) {
-  let wallet = sessionWallet ? String(sessionWallet).toLowerCase() : null;
-  if (wallet) return wallet;
+function isInternalConfirmRequest(req: Request) {
+  const secret = process.env.NFT_CONFIRM_SECRET || process.env.CRON_SECRET || "";
 
-  const { data: prof, error } = await supabase
-    .from("profiles")
-    .select("wallet_address")
-    .eq("email", email)
-    .maybeSingle();
+  if (!secret) return false;
 
-  if (error) {
-    throw new Error(`Failed to resolve wallet: ${error.message}`);
-  }
+  const headerSecret =
+    req.headers.get("x-internal-secret") ||
+    req.headers.get("x-cron-secret") ||
+    req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ||
+    "";
 
-  wallet = prof?.wallet_address ? String(prof.wallet_address).toLowerCase() : null;
-  return wallet;
+  return Boolean(headerSecret && headerSecret === secret);
+}
+
+function looksLikeInsufficientFundsMessage(value: string) {
+  const text = value.toLowerCase();
+  return (
+    text.includes("insufficient funds") ||
+    text.includes("not enough eth") ||
+    text.includes("user rejected") ||
+    text.includes("rejected the request") ||
+    text.includes("denied transaction") ||
+    text.includes("missing txhash")
+  );
 }
 
 export async function POST(req: Request) {
   try {
     const supabase = getSupabaseAdmin();
-    const session = await getSessionData();
+    const isInternal = isInternalConfirmRequest(req);
 
-    if (!session?.email || !session?.profileId) {
-      return NextResponse.json(
-        { error: "You must be logged in to confirm an NFT mint" },
-        { status: 401 }
-      );
+    let body: ConfirmBody = {};
+    let rawBody = "";
+
+    try {
+      rawBody = await req.text();
+
+      console.log(LOG, "raw request body", rawBody);
+
+      if (!rawBody || rawBody.trim() === "") {
+        console.warn(LOG, "empty body received");
+        body = {};
+      } else {
+        body = JSON.parse(rawBody) as ConfirmBody;
+      }
+    } catch (err) {
+      console.error(LOG, "invalid JSON body", {
+        rawBody,
+        error: err instanceof Error ? err.message : String(err),
+      });
+
+      return jsonError("Invalid JSON body sent to confirm route", 400, {
+        rawBody: rawBody || "<empty>",
+      });
     }
 
-    const profileId = session.profileId;
-    const email = session.email;
-    const walletAddress = await resolveSessionWallet(supabase, email, session.wallet);
+    console.log(LOG, "incoming request", {
+      isInternal,
+      hasBody: Boolean(body && Object.keys(body).length > 0),
+    });
 
-    if (!walletAddress) {
-      return NextResponse.json(
-        { error: "No wallet found for session" },
-        { status: 401 }
-      );
+    if (!body || Object.keys(body).length === 0) {
+      console.warn(LOG, "empty parsed body");
+      return jsonError("Empty request body", 400, {
+        hint: "Expected JSON with mintKey and txHash.",
+      });
     }
 
-let body: ConfirmBody = {};
-let rawBody = "";
+    let profileId: string | null = null;
+    let email: string | null = null;
+    let sessionWallet: string | null = null;
 
-try {
-  rawBody = await req.text();
+    if (!isInternal) {
+      const session = await getSessionData();
 
-  console.log("[/api/nft/create/confirm] raw request body:", rawBody);
+      if (!session?.email || !session?.profileId) {
+        console.warn(LOG, "unauthorized: missing session");
+        return jsonError("You must be logged in to confirm an NFT mint", 401);
+      }
 
-  if (!rawBody || rawBody.trim() === "") {
-    console.warn("[/api/nft/create/confirm] empty body received");
-    body = {};
-  } else {
-    body = JSON.parse(rawBody) as ConfirmBody;
-  }
-} catch (err) {
-  console.error("[/api/nft/create/confirm] invalid JSON body", {
-    rawBody,
-    error: err instanceof Error ? err.message : String(err),
-  });
-
-  return NextResponse.json(
-    {
-      error: "Invalid JSON body sent to confirm route",
-      rawBody: rawBody || "<empty>",
-    },
-    { status: 400 }
-  );
-}
-
-if (!body || Object.keys(body).length === 0) {
-  console.warn("[/api/nft/create/confirm] empty parsed body — ignoring request");
-
-  return NextResponse.json(
-    {
-      success: false,
-      ignored: true,
-      reason: "Empty request body",
-    },
-    { status: 200 }
-  );
-}
+      profileId = String(session.profileId);
+      email = session.email;
+      sessionWallet = session.wallet || null;
+    }
 
     const mintKey = String(body.mintKey || "").trim();
     const txHash = String(body.txHash || "").trim() as Hash;
@@ -354,46 +409,72 @@ if (!body || Object.keys(body).length === 0) {
     const adminCutEth = parseNumber(body.adminCutEth, 0);
 
     if (!mintKey) {
-      return NextResponse.json({ error: "Missing mintKey" }, { status: 400 });
+      return jsonError("Missing mintKey", 400, {
+        hint: "The pending mint key was not provided.",
+      });
     }
 
     if (!txHash) {
-      return NextResponse.json({ error: "Missing txHash" }, { status: 400 });
+      return jsonError("Missing txHash", 400, {
+        hint: "The wallet transaction may not have been submitted. Check Base ETH for gas and try again.",
+      });
+    }
+
+    if (txHash.length !== 66 || !txHash.startsWith("0x")) {
+      return jsonError("Missing or invalid txHash", 400, {
+        txHash,
+        hint: "Transaction hash should start with 0x and be 66 characters long.",
+      });
     }
 
     const resolvedChainId = parseChainId(
       body.chainId,
       parseChainId(process.env.NEXT_PUBLIC_CHAIN_ID || "8453", 8453)
     );
+    const dbChainId = String(resolvedChainId);
 
     if (resolvedChainId !== 8453 && resolvedChainId !== 84532) {
-      return NextResponse.json(
-        { error: `Unsupported chainId ${resolvedChainId}` },
-        { status: 400 }
-      );
+      return jsonError(`Unsupported chainId ${resolvedChainId}`, 400);
     }
 
-    const contractAddr = normalizeAddress(body.creatorContract);
-    if (!contractAddr) {
-      return NextResponse.json(
-        { error: "Missing creator contract address" },
-        { status: 400 }
-      );
+    let pendingQuery = supabase.from("user_listed").select("*").eq("metadata_key", mintKey);
+
+    if (!isInternal && profileId) {
+      pendingQuery = pendingQuery.eq("profile_id", profileId);
     }
 
-    const { data: pendingRow, error: pendingError } = await supabase
-      .from("user_listed")
-      .select("*")
-      .eq("profile_id", profileId)
-      .eq("metadata_key", mintKey)
-      .maybeSingle();
+    const { data: pendingRow, error: pendingError } = await pendingQuery.maybeSingle();
 
     if (pendingError) {
-      return NextResponse.json(
-        { error: `Failed to load mint row: ${pendingError.message}` },
-        { status: 500 }
-      );
+      console.error(LOG, "failed loading pending row", pendingError);
+      return jsonError(`Failed to load mint row: ${pendingError.message}`, 500);
     }
+
+    const contractAddr = normalizeAddress(
+      body.creatorContract || pendingRow?.contract_address || CREATOR_CONTRACT
+    );
+
+    if (!contractAddr) {
+      return jsonError("Missing creator contract address", 400);
+    }
+
+    if (CREATOR_CONTRACT && contractAddr !== CREATOR_CONTRACT) {
+      return jsonError("Creator contract does not match the configured contract", 400, {
+        provided: contractAddr,
+        expected: CREATOR_CONTRACT,
+      });
+    }
+
+    console.log(LOG, "loaded pending row", {
+      found: Boolean(pendingRow),
+      mintKey,
+      txHash,
+      contractAddr,
+      resolvedChainId,
+      pendingStatus: pendingRow?.status,
+      pendingWallet: pendingRow?.wallet_address,
+      pendingTxHash: pendingRow?.tx_hash,
+    });
 
     const { data: existingTransaction } = await supabase
       .from("transactions")
@@ -402,6 +483,11 @@ if (!body || Object.keys(body).length === 0) {
       .maybeSingle();
 
     if (!pendingRow && existingTransaction) {
+      console.log(LOG, "pending row missing but transaction already exists", {
+        txHash,
+        existingStatus: existingTransaction.status,
+      });
+
       return NextResponse.json({
         success: true,
         status: existingTransaction.status || "confirmed",
@@ -418,17 +504,37 @@ if (!body || Object.keys(body).length === 0) {
     }
 
     if (!pendingRow) {
-      return NextResponse.json({ error: "Mint row not found" }, { status: 404 });
+      return jsonError("Mint row not found", 404, {
+        mintKey,
+      });
     }
 
-    if (pendingRow.wallet_address && String(pendingRow.wallet_address).toLowerCase() !== walletAddress) {
-      return NextResponse.json(
-        { error: "Wallet mismatch for this mint row" },
-        { status: 403 }
-      );
+    if (
+      pendingRow.status === "confirmed" &&
+      pendingRow.tx_hash &&
+      String(pendingRow.tx_hash).toLowerCase() !== txHash.toLowerCase()
+    ) {
+      console.warn(LOG, "confirmed row already tied to different tx hash", {
+        mintKey,
+        existingTxHash: pendingRow.tx_hash,
+        newTxHash: txHash,
+      });
+
+      return jsonError("This mint row is already confirmed with a different tx hash", 409, {
+        existingTxHash: pendingRow.tx_hash,
+      });
     }
+
+    const expectedWallet =
+      normalizeAddress(pendingRow.wallet_address) || normalizeAddress(sessionWallet);
 
     if (pendingRow.status === "confirmed" && pendingRow.tx_hash === txHash) {
+      console.log(LOG, "row already confirmed, returning existing result", {
+        mintKey,
+        txHash,
+        tokenId: pendingRow.token_id,
+      });
+
       return NextResponse.json({
         success: true,
         status: "confirmed",
@@ -446,17 +552,27 @@ if (!body || Object.keys(body).length === 0) {
         existingTransaction.metadata?.on_chain_token_id ||
         pendingRow.token_id;
 
-      await supabase
+      console.log(LOG, "repairing pending row from existing transaction", {
+        mintKey,
+        txHash,
+        repairedTokenId,
+      });
+
+      const { error: repairError } = await supabase
         .from("user_listed")
         .update({
           token_id: repairedTokenId,
           tx_hash: txHash,
           status: "confirmed",
-          chain_id: resolvedChainId,
+          chain_id: dbChainId,
           contract_address: contractAddr,
         })
-        .eq("profile_id", profileId)
         .eq("metadata_key", mintKey);
+
+      if (repairError) {
+        console.error(LOG, "repair update failed", repairError);
+        return jsonError(`Failed to repair mint row: ${repairError.message}`, 500);
+      }
 
       return NextResponse.json({
         success: true,
@@ -472,66 +588,91 @@ if (!body || Object.keys(body).length === 0) {
       });
     }
 
+    console.log(LOG, "attaching tx hash to pending row", {
+      mintKey,
+      txHash,
+    });
+
     const { error: attachError } = await supabase
       .from("user_listed")
       .update({
         tx_hash: txHash,
         status: "mint_submitted",
-        chain_id: resolvedChainId,
+        chain_id: dbChainId,
         contract_address: contractAddr,
       })
-      .eq("profile_id", profileId)
       .eq("metadata_key", mintKey);
 
     if (attachError) {
-      return NextResponse.json(
-        { error: `Failed to attach tx hash: ${attachError.message}` },
-        { status: 500 }
-      );
+      console.error(LOG, "attach tx hash failed", attachError);
+      return jsonError(`Failed to attach tx hash: ${attachError.message}`, 500);
     }
 
     const receipt = await getReceiptStrong(resolvedChainId, txHash);
 
     if (!receipt) {
+      console.log(LOG, "receipt not ready yet", { mintKey, txHash });
+
       return NextResponse.json({
         success: false,
         pending: true,
         status: "mint_submitted",
         mintKey,
         txHash,
-        message: "Receipt not ready yet. Tx hash has been attached and confirmation can continue.",
+        message: "Receipt not ready yet. Tx hash is attached and confirmation can continue.",
       });
     }
 
+    console.log(LOG, "receipt loaded", {
+      txHash,
+      status: receipt.status,
+      blockNumber: String(receipt.blockNumber),
+      logsCount: Array.isArray(receipt.logs) ? receipt.logs.length : 0,
+    });
+
     if (receipt.status !== "success") {
+      console.warn(LOG, "receipt found but tx reverted", { mintKey, txHash });
+
       await supabase
         .from("user_listed")
         .update({
           tx_hash: txHash,
           status: "failed",
         })
-        .eq("profile_id", profileId)
         .eq("metadata_key", mintKey);
 
-      return NextResponse.json(
-        { error: "Transaction failed on-chain" },
-        { status: 400 }
-      );
+      return jsonError("Transaction failed on-chain", 400, {
+        txHash,
+        hint: "Check whether the wallet had enough Base ETH for gas or whether the transaction reverted.",
+      });
     }
 
     const decoded = decodeMintFromReceipt(receipt, String(contractAddr).toLowerCase());
 
     if (!decoded?.tokenId) {
-      return NextResponse.json(
-        { error: "No mint event found in transaction receipt" },
-        { status: 400 }
-      );
+      console.warn(LOG, "receipt exists but no mint event found", {
+        mintKey,
+        txHash,
+      });
+
+      return jsonError("No mint event found in transaction receipt", 400, {
+        txHash,
+      });
     }
 
-    if (decoded.creator && decoded.creator !== walletAddress) {
-      return NextResponse.json(
-        { error: "Wallet mismatch — tx creator does not match your session" },
-        { status: 400 }
+    if (decoded.creator && expectedWallet && decoded.creator !== expectedWallet) {
+      console.warn(LOG, "creator mismatch", {
+        decodedCreator: decoded.creator,
+        expectedWallet,
+      });
+
+      return jsonError(
+        "Wallet mismatch — tx creator does not match the pending mint wallet",
+        400,
+        {
+          decodedCreator: decoded.creator,
+          expectedWallet,
+        }
       );
     }
 
@@ -544,25 +685,36 @@ if (!body || Object.keys(body).length === 0) {
 
     const finalTotalPaidEth = totalPriceEth > 0 ? totalPriceEth : mintFeeEth;
 
+    console.log(LOG, "marking mint confirmed", {
+      mintKey,
+      txHash,
+      tokenId: decoded.tokenId,
+      parsedRoyaltyPercent,
+      listingPriceEth,
+      mintFeeEth,
+      finalTotalPaidEth,
+      metadataURI: decoded.metadataURI,
+    });
+
     const { error: confirmError } = await supabase
       .from("user_listed")
       .update({
         token_id: decoded.tokenId,
         tx_hash: txHash,
-        chain_id: resolvedChainId,
+        chain_id: dbChainId,
         contract_address: contractAddr,
         mint_fee_eth: mintFeeEth,
         status: "confirmed",
       })
-      .eq("profile_id", profileId)
       .eq("metadata_key", mintKey);
 
     if (confirmError) {
-      return NextResponse.json(
-        { error: `Failed to mark NFT confirmed: ${confirmError.message}` },
-        { status: 500 }
-      );
+      console.error(LOG, "failed marking user_listed confirmed", confirmError);
+      return jsonError(`Failed to mark NFT confirmed: ${confirmError.message}`, 500);
     }
+
+    const resolvedWallet =
+      expectedWallet || String(pendingRow.wallet_address || "").toLowerCase();
 
     const { data: existingWalletMint } = await supabase
       .from("wallet_mints")
@@ -571,9 +723,11 @@ if (!body || Object.keys(body).length === 0) {
       .maybeSingle();
 
     if (!existingWalletMint) {
-      await supabase.from("wallet_mints").insert({
-        wallet_address: walletAddress,
-        chain_id: resolvedChainId,
+      console.log(LOG, "inserting wallet_mints row", { txHash, tokenId: decoded.tokenId });
+
+      const { error: walletMintError } = await supabase.from("wallet_mints").insert({
+        wallet_address: resolvedWallet,
+        chain_id: dbChainId,
         contract_address: contractAddr,
         token_id: decoded.tokenId,
         tx_hash: txHash,
@@ -588,6 +742,12 @@ if (!body || Object.keys(body).length === 0) {
         status: "confirmed",
         minted_at: new Date().toISOString(),
       });
+
+      if (walletMintError) {
+        console.error(LOG, "wallet_mints insert failed", walletMintError);
+      }
+    } else {
+      console.log(LOG, "wallet_mints row already exists", { txHash });
     }
 
     const { data: transactionRow } = await supabase
@@ -599,12 +759,14 @@ if (!body || Object.keys(body).length === 0) {
     let insertedTransaction = false;
 
     if (!transactionRow) {
+      console.log(LOG, "inserting transactions row", { txHash, tokenId: decoded.tokenId });
+
       const { error: txInsertError } = await supabase.from("transactions").insert({
-        wallet_address: walletAddress,
-        profile_id: profileId,
+        wallet_address: resolvedWallet,
+        profile_id: String(pendingRow.profile_id),
         tx_hash: txHash,
         tx_type: "create_mint",
-        chain_id: resolvedChainId,
+        chain_id: dbChainId,
         contract_address: contractAddr,
         token_id: decoded.tokenId,
         amount_eth: finalTotalPaidEth,
@@ -630,17 +792,23 @@ if (!body || Object.keys(body).length === 0) {
       });
 
       if (txInsertError) {
-        return NextResponse.json(
-          { error: `Failed to record transaction: ${txInsertError.message}` },
-          { status: 500 }
-        );
+        console.error(LOG, "transactions insert failed", txInsertError);
+        return jsonError(`Failed to record transaction: ${txInsertError.message}`, 500);
       }
 
       insertedTransaction = true;
+    } else {
+      console.log(LOG, "transactions row already exists", { txHash });
     }
 
     if (insertedTransaction) {
-      const notifBuyer = email || walletAddress;
+      const notifBuyer = email || resolvedWallet || "unknown";
+
+      console.log(LOG, "sending notifications after confirmed transaction", {
+        notifBuyer,
+        txHash,
+        tokenId: decoded.tokenId,
+      });
 
       void notifyMint({
         nftName: pendingRow.name,
@@ -651,7 +819,7 @@ if (!body || Object.keys(body).length === 0) {
         price: String(listingPriceEth),
         contractAddress: contractAddr,
       }).catch((err) => {
-        console.error("[confirm route] notifyMint failed:", err);
+        console.error(LOG, "notifyMint failed", err);
       });
 
       void telegramNotifyMint({
@@ -663,7 +831,7 @@ if (!body || Object.keys(body).length === 0) {
         contractAddress: contractAddr,
         chainId: resolvedChainId,
       }).catch((err) => {
-        console.error("[confirm route] telegramNotifyMint failed:", err);
+        console.error(LOG, "telegramNotifyMint failed", err);
       });
 
       const { error: adminNotifError } = await supabase
@@ -692,7 +860,7 @@ if (!body || Object.keys(body).length === 0) {
         });
 
       if (adminNotifError) {
-        console.error("[confirm route] admin notification insert failed:", adminNotifError);
+        console.error(LOG, "admin notification insert failed", adminNotifError);
       }
     }
 
@@ -703,7 +871,7 @@ if (!body || Object.keys(body).length === 0) {
       mintKey,
       txHash,
       tokenId: decoded.tokenId,
-      profileId,
+      profileId: pendingRow.profile_id,
       contractAddress: contractAddr,
       chainId: resolvedChainId,
       chain: chainLabel(resolvedChainId),
@@ -719,7 +887,20 @@ if (!body || Object.keys(body).length === 0) {
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Unexpected error";
-    console.error("[/api/nft/create/confirm] error:", error);
-    return NextResponse.json({ error: message }, { status: 500 });
+    const errorText = error instanceof Error ? error.message : String(error);
+
+    console.error(LOG, "error", error);
+
+    if (looksLikeInsufficientFundsMessage(errorText)) {
+      return jsonError(
+        "Wallet transaction was not submitted. You may not have enough Base ETH for gas.",
+        400,
+        {
+          hint: "Fund the wallet with a small amount of Base ETH and try again.",
+        }
+      );
+    }
+
+    return jsonError(message, 500);
   }
 }
