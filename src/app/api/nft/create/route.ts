@@ -651,12 +651,12 @@ export async function POST(req: Request) {
       extractIpfsCid(expectedMetadataUri) ||
       normalizeText(form.get("mintKey"), 255);
 
-    const gatewayDomain = normalizeGateway(
-      process.env.PINATA_GATEWAY ||
-        process.env.NEXT_PUBLIC_PINATA_GATEWAY ||
-        "gateway.pinata.cloud"
-    );
-
+   const gatewayDomain = normalizeGateway(
+  process.env.NEXT_PUBLIC_GATEWAY_URL ||
+    process.env.PINATA_GATEWAY ||
+    process.env.NEXT_PUBLIC_PINATA_GATEWAY ||
+    "gateway.pinata.cloud"
+);
     const metadataGatewayUrlFromClient =
       normalizeText(form.get("ipfsMetadataUrl"), 2000) ||
       buildGatewayUrlFromUri(expectedMetadataUri, gatewayDomain);

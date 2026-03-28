@@ -146,6 +146,43 @@ function buildAttributesPayload(attributes) {
     .filter((a) => a.trait_type && a.value);
 }
 
+function getErrorMessage(err, fallback = "Something went wrong") {
+  if (!err) return fallback;
+
+  if (typeof err === "string") return err;
+
+  if (err instanceof Error) {
+    return err.message || fallback;
+  }
+
+  if (typeof err === "object") {
+    if (typeof err.message === "string" && err.message.trim()) {
+      return err.message;
+    }
+
+    if (typeof err.error === "string" && err.error.trim()) {
+      return err.error;
+    }
+
+    if (
+      err.error &&
+      typeof err.error === "object" &&
+      typeof err.error.message === "string" &&
+      err.error.message.trim()
+    ) {
+      return err.error.message;
+    }
+
+    try {
+      return JSON.stringify(err, null, 2);
+    } catch {
+      return fallback;
+    }
+  }
+
+  return String(err);
+}
+
 function CreatePageContent() {
   const { address: liveWalletAddress, isConnected: isWagmiConnected, chain } =
     useAccount();
@@ -326,6 +363,16 @@ function CreatePageContent() {
     preparedAsset?.metadataUri && metadataUri && preparedForKey === prepareKey
   );
 
+  const canMint =
+    Boolean(creatorContract) &&
+    isMintActive &&
+    isFeeReady &&
+    hasEnoughBalance &&
+    isPreparedFresh &&
+    !preparingMetadata &&
+    !isSending &&
+    !syncingToProfile;
+
   const clearPreparedState = useCallback(() => {
     setPreparedAsset(null);
     setPreparedForKey("");
@@ -454,7 +501,10 @@ function CreatePageContent() {
 
       if (!res.ok || !data?.success || !data?.metadataUri) {
         throw new Error(
-          data?.error || data?.message || "Failed to prepare NFT metadata."
+          getErrorMessage(
+            data?.error || data?.message || data,
+            "Failed to prepare NFT metadata."
+          )
         );
       }
 
@@ -476,6 +526,8 @@ function CreatePageContent() {
       setPreparedForKey(prepareKey);
 
       return prepared;
+    } catch (err) {
+      throw new Error(getErrorMessage(err, "Failed to prepare NFT metadata."));
     } finally {
       if (!unmountedRef.current) {
         setPreparingMetadata(false);
@@ -590,8 +642,10 @@ function CreatePageContent() {
         console.error(LOG, "finalizeMint failed", err);
         if (!unmountedRef.current) {
           setPageError(
-            err?.message ||
+            getErrorMessage(
+              err,
               "Mint went through, but syncing to the app failed. Retry below."
+            )
           );
           setMintStage("sync_failed");
         }
@@ -617,7 +671,7 @@ function CreatePageContent() {
         console.error(LOG, "review metadata prepare failed", err);
         if (!unmountedRef.current) {
           setPageError(
-            err?.message || "Failed to prepare metadata. Please retry."
+            getErrorMessage(err, "Failed to prepare metadata. Please retry.")
           );
         }
       });
@@ -634,9 +688,7 @@ function CreatePageContent() {
   useEffect(() => {
     if (sendError) {
       console.error(LOG, "wallet send error", sendError);
-      setPageError(
-        sendError?.shortMessage || sendError?.message || "Transaction failed"
-      );
+      setPageError(getErrorMessage(sendError, "Transaction failed"));
       setMintStage("failed");
     }
   }, [sendError]);
@@ -645,9 +697,10 @@ function CreatePageContent() {
     if (watchedReceiptError) {
       console.error(LOG, "receipt watcher error", watchedReceiptError);
       setPageError(
-        watchedReceiptError?.shortMessage ||
-          watchedReceiptError?.message ||
+        getErrorMessage(
+          watchedReceiptError,
           "Still checking chain confirmation."
+        )
       );
     }
   }, [watchedReceiptError]);
@@ -708,15 +761,6 @@ function CreatePageContent() {
       return;
     }
 
-    console.log(LOG, "starting fast mint flow", {
-      effectiveWallet,
-      creatorContract,
-      targetChainId,
-      onChainFeeEth,
-      listingPriceNum,
-      isPreparedFresh,
-    });
-
     setStep(4);
     setFinalResult(null);
     setPageError(null);
@@ -741,17 +785,12 @@ function CreatePageContent() {
         chainId: targetChainId,
       });
 
-      console.log(LOG, "createNft tx submitted", {
-        hash,
-        metadataUri: prepared.metadataUri,
-      });
-
       setSubmittedTxHash(hash);
       setMetadataUri(prepared.metadataUri);
       setMintStage("waiting_receipt");
     } catch (e) {
       console.error(LOG, "handleCreateMint failed", e);
-      setPageError(e?.shortMessage || e?.message || "Mint failed");
+      setPageError(getErrorMessage(e, "Mint failed"));
       setMintStage("failed");
       setStep(3);
     }
@@ -770,13 +809,11 @@ function CreatePageContent() {
     mintFeeText,
     userBalanceEth,
     royaltyNum,
-    effectiveWallet,
-    listingPriceNum,
     name,
-    writeContractAsync,
-    prepareMetadata,
     preparedAsset,
     isPreparedFresh,
+    prepareMetadata,
+    writeContractAsync,
   ]);
 
   const resetAll = () => {
@@ -806,7 +843,8 @@ function CreatePageContent() {
   let authState = "needs_login";
   if (isLoggedIn && !hasUsableWallet) authState = "needs_wallet";
   if (isLoggedIn && hasUsableWallet) authState = "ready";
-  if (isLoggedIn && isWagmiConnected && isWrongChain) authState = "wrong_network";
+  if (isLoggedIn && isWagmiConnected && isWrongChain)
+    authState = "wrong_network";
 
   const handleLogin = () => {
     if (typeof window !== "undefined") window.location.href = "/login";
@@ -814,7 +852,7 @@ function CreatePageContent() {
 
   const titleText =
     mintStage === "preparing_metadata"
-      ? "Preparing metadata..."
+      ? "Reviewing..."
       : mintStage === "awaiting_wallet"
       ? "Confirm mint in wallet..."
       : mintStage === "waiting_receipt"
@@ -827,15 +865,15 @@ function CreatePageContent() {
 
   const subtitleText =
     mintStage === "preparing_metadata"
-      ? "Uploading your art and metadata first so the wallet step feels instant."
+      ? "Getting everything ready before wallet confirmation."
       : mintStage === "awaiting_wallet"
       ? "Approve the mint transaction in your wallet."
       : mintStage === "waiting_receipt"
-      ? "Your tx is submitted. The app is watching the chain and will save the NFT once the receipt is confirmed."
+      ? "Your transaction is submitted. Waiting for confirmation on-chain."
       : mintStage === "syncing"
       ? "Saving to your Aurora profile and admin records."
       : mintStage === "sync_failed"
-      ? "The chain tx may be fine, but the app could not finish syncing it. Retry below using the same tx hash."
+      ? "The chain transaction may be fine, but the app could not finish syncing it. Retry below using the same tx hash."
       : "Processing...";
 
   return (
@@ -867,8 +905,7 @@ function CreatePageContent() {
           </h1>
 
           <p className="mx-auto max-w-2xl text-base text-muted sm:text-lg">
-            Metadata is prepared during review, so mint goes straight to wallet
-            fast.
+            Upload, review, and mint instantly.
           </p>
 
           {creatorContract && (
@@ -1434,7 +1471,7 @@ function CreatePageContent() {
                           ) : (
                             <Eye size={16} />
                           )}
-                          {preparingMetadata ? "Preparing Review..." : "Review"}
+                          {preparingMetadata ? "Reviewing..." : "Review"}
                         </Button>
                       </div>
                     </div>
@@ -1455,8 +1492,7 @@ function CreatePageContent() {
                         Review Your NFT
                       </h2>
                       <p className="text-xs text-muted">
-                        Metadata is prepared now so mint can open the wallet
-                        fast.
+                        Review your NFT, then mint instantly.
                       </p>
                     </div>
                   </div>
@@ -1620,6 +1656,8 @@ function CreatePageContent() {
                     className={`mt-4 rounded-xl border p-4 ${
                       preparingMetadata
                         ? "border-accent/20 bg-accent/5"
+                        : pageError && !isPreparedFresh
+                        ? "border-danger/20 bg-danger/10"
                         : isPreparedFresh
                         ? "border-success/20 bg-success/10"
                         : "border-warning/20 bg-warning/10"
@@ -1630,6 +1668,11 @@ function CreatePageContent() {
                         <Loader2
                           size={16}
                           className="mt-0.5 animate-spin text-accent"
+                        />
+                      ) : pageError && !isPreparedFresh ? (
+                        <AlertTriangle
+                          size={16}
+                          className="mt-0.5 text-danger"
                         />
                       ) : isPreparedFresh ? (
                         <CheckCircle2
@@ -1646,67 +1689,18 @@ function CreatePageContent() {
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-medium text-text">
                           {preparingMetadata
-                            ? "Preparing metadata on IPFS..."
+                            ? "Reviewing metadata..."
                             : isPreparedFresh
-                            ? "Metadata ready"
-                            : "Metadata not ready yet"}
+                            ? "Ready to mint"
+                            : "Preparing review..."}
                         </p>
-
                         <p className="mt-1 text-xs text-muted">
                           {preparingMetadata
-                            ? "Uploading image + metadata now so the wallet step feels instant."
+                            ? "Getting everything ready before wallet confirmation."
                             : isPreparedFresh
-                            ? "Mint click will use the prepared metadata URI immediately."
-                            : "Retry preparing metadata before minting."}
+                            ? "Everything is ready for mint."
+                            : "Please wait while setup completes."}
                         </p>
-
-                        {isPreparedFresh && metadataUri && (
-                          <div className="mt-3 rounded-lg border border-border-light bg-surface2/40 p-3">
-                            <p className="text-[11px] uppercase tracking-wider text-muted-dim">
-                              Prepared Metadata URI
-                            </p>
-                            <p className="mt-1 break-all font-mono text-xs text-accent">
-                              {metadataUri}
-                            </p>
-                          </div>
-                        )}
-
-                        {preparedAsset?.metadataGatewayUrl && isPreparedFresh && (
-                          <a
-                            href={preparedAsset.metadataGatewayUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="mt-3 inline-flex items-center gap-1 text-xs text-accent hover:underline"
-                          >
-                            <ExternalLink size={12} />
-                            Open prepared metadata
-                          </a>
-                        )}
-
-                        {!preparingMetadata && !isPreparedFresh && (
-                          <div className="mt-3">
-                            <Button
-                              variant="secondary"
-                              size="md"
-                              onClick={() => {
-                                void prepareMetadata().catch((err) => {
-                                  console.error(
-                                    LOG,
-                                    "manual prepareMetadata failed",
-                                    err
-                                  );
-                                  setPageError(
-                                    err?.message ||
-                                      "Failed to prepare metadata."
-                                  );
-                                });
-                              }}
-                            >
-                              <Zap size={14} />
-                              Retry Metadata Prep
-                            </Button>
-                          </div>
-                        )}
                       </div>
                     </div>
                   </div>
@@ -1767,26 +1761,21 @@ function CreatePageContent() {
                       size="lg"
                       className="flex-1"
                       onClick={handleCreateMint}
-                      disabled={
-                        !creatorContract ||
-                        !isMintActive ||
-                        !isFeeReady ||
-                        !hasEnoughBalance ||
-                        !isPreparedFresh ||
-                        isSending ||
-                        syncingToProfile ||
-                        preparingMetadata
-                      }
+                      disabled={!canMint}
                     >
-                      {isSending || syncingToProfile || preparingMetadata ? (
+                      {preparingMetadata ? (
+                        <Loader2 size={16} className="animate-spin" />
+                      ) : isSending || syncingToProfile ? (
                         <Loader2 size={16} className="animate-spin" />
                       ) : (
                         <Sparkles size={16} />
                       )}
                       {preparingMetadata
-                        ? "Preparing Metadata..."
-                        : !isPreparedFresh
-                        ? "Preparing Review..."
+                        ? "Reviewing..."
+                        : isSending
+                        ? "Opening Wallet..."
+                        : syncingToProfile
+                        ? "Saving NFT..."
                         : `Mint NFT — ${
                             mintFeeText ? `${mintFeeText} ETH` : "Loading..."
                           }`}
@@ -1810,28 +1799,6 @@ function CreatePageContent() {
 
               <h2 className="font-display text-xl font-semibold">{titleText}</h2>
               <p className="text-sm text-muted">{subtitleText}</p>
-
-              {metadataUri && (
-                <div className="rounded-xl border border-border-light bg-surface2/40 p-3 text-left">
-                  <p className="text-[11px] uppercase tracking-wider text-muted-dim">
-                    Final Metadata URI
-                  </p>
-                  <p className="mt-1 break-all font-mono text-xs text-accent">
-                    {metadataUri}
-                  </p>
-                </div>
-              )}
-
-              {preparedAsset?.metadataGatewayUrl && (
-                <a
-                  href={preparedAsset.metadataGatewayUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 text-xs text-accent hover:underline"
-                >
-                  <ExternalLink size={12} /> Open metadata JSON
-                </a>
-              )}
 
               {submittedTxHash && (
                 <div className="rounded-xl border border-border-light bg-surface2/40 p-3 text-left">
@@ -1976,12 +1943,6 @@ function CreatePageContent() {
                       : `${royaltyNum}%`}
                   </span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-muted">Metadata URI</span>
-                  <span className="max-w-[60%] truncate font-mono text-xs text-accent">
-                    {metadataUri}
-                  </span>
-                </div>
               </div>
 
               <div className="flex flex-wrap justify-center gap-3">
@@ -1993,18 +1954,6 @@ function CreatePageContent() {
                   >
                     <Button variant="secondary" size="md">
                       <ExternalLink size={14} /> View Transaction
-                    </Button>
-                  </a>
-                )}
-
-                {preparedAsset?.metadataGatewayUrl && (
-                  <a
-                    href={preparedAsset.metadataGatewayUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    <Button variant="secondary" size="md">
-                      <ExternalLink size={14} /> View Metadata
                     </Button>
                   </a>
                 )}
