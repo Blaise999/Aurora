@@ -165,8 +165,7 @@ function getRpcUrls(chainId: number) {
         "https://sepolia-preconf.base.org",
         "https://sepolia.base.org",
       ].filter(Boolean)
-    )
-  ) as string[];
+    ) as string[];
 }
 
 function getClientsForChain(chainId: number) {
@@ -183,7 +182,7 @@ function getClientsForChain(chainId: number) {
 
 async function getReceiptStrong(chainId: number, txHash: Hash) {
   const clients = getClientsForChain(chainId);
-  const delays = [0, 600, 1000, 1800, 3000, 5000];
+  const delays = [0, 600, 1000, 1800, 3000, 5000, 8000, 12000, 16000, 20000];
 
   for (let i = 0; i < delays.length; i++) {
     if (delays[i] > 0) {
