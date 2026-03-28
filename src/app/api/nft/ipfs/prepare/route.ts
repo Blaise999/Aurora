@@ -70,11 +70,13 @@ function buildGatewayUrl(cid: string, gatewayDomain: string) {
 }
 
 function buildSafeSlug(value: string) {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 60) || "aurora-nft";
+  return (
+    value
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 60) || "aurora-nft"
+  );
 }
 
 async function pinFileToIpfs(args: {
@@ -103,6 +105,7 @@ async function pinFileToIpfs(args: {
       Authorization: `Bearer ${args.jwt}`,
     },
     body: data,
+    cache: "no-store",
   });
 
   const body = await readJsonSafe(res);
@@ -138,6 +141,7 @@ async function pinJsonToIpfs(args: {
       },
       pinataContent: args.content,
     }),
+    cache: "no-store",
   });
 
   const body = await readJsonSafe(res);
@@ -242,6 +246,7 @@ export async function POST(req: Request) {
 
     console.log(LOG, "uploading metadata to IPFS", {
       imageCid: imageUpload.cid,
+      name,
     });
 
     const metadataUpload = await pinJsonToIpfs({
@@ -265,7 +270,6 @@ export async function POST(req: Request) {
       imageCid: imageUpload.cid,
       imageGatewayUrl,
       gatewayDomain,
-      metadata,
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Unexpected error";

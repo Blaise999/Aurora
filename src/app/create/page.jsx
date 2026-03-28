@@ -66,9 +66,21 @@ function StepIndicator({ current, steps }) {
             <div
               className={`
                 flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium transition-all duration-300
-                ${isActive ? "border border-accent/30 bg-accent/15 text-accent shadow-[0_0_12px_rgba(34,211,238,0.12)]" : ""}
-                ${isDone ? "border border-success/20 bg-success/10 text-success" : ""}
-                ${!isActive && !isDone ? "border border-border-light bg-surface2/50 text-muted-dim" : ""}
+                ${
+                  isActive
+                    ? "border border-accent/30 bg-accent/15 text-accent shadow-[0_0_12px_rgba(34,211,238,0.12)]"
+                    : ""
+                }
+                ${
+                  isDone
+                    ? "border border-success/20 bg-success/10 text-success"
+                    : ""
+                }
+                ${
+                  !isActive && !isDone
+                    ? "border border-border-light bg-surface2/50 text-muted-dim"
+                    : ""
+                }
               `}
             >
               {isDone ? (
@@ -234,6 +246,7 @@ function CreatePageContent() {
   const [submittedTxHash, setSubmittedTxHash] = useState(null);
   const [metadataUri, setMetadataUri] = useState("");
   const [preparedAsset, setPreparedAsset] = useState(null);
+  const [preparedForKey, setPreparedForKey] = useState("");
   const [finalResult, setFinalResult] = useState(null);
   const [pageError, setPageError] = useState(null);
   const [syncingToProfile, setSyncingToProfile] = useState(false);
@@ -257,8 +270,8 @@ function CreatePageContent() {
     hash: submittedTxHash || undefined,
     chainId: targetChainId,
     confirmations: 1,
-    pollingInterval: 1_000,
-    timeout: 300_000,
+    pollingInterval: 1000,
+    timeout: 300000,
     query: { enabled: Boolean(submittedTxHash) },
   });
 
@@ -289,7 +302,39 @@ function CreatePageContent() {
     ? `${effectiveWallet.slice(0, 6)}...${effectiveWallet.slice(-4)}`
     : null;
 
+  const prepareKey = useMemo(
+    () =>
+      JSON.stringify({
+        name: normalizeText(name, 100),
+        description: normalizeText(description, 1000),
+        collection: normalizeText(collection, 100) || "User Created",
+        externalUrl: normalizeText(externalUrl, 1000),
+        attributes: cleanAttributes,
+        imageFile: imageFile
+          ? {
+              name: imageFile.name,
+              size: imageFile.size,
+              type: imageFile.type,
+              lastModified: imageFile.lastModified,
+            }
+          : null,
+      }),
+    [name, description, collection, externalUrl, cleanAttributes, imageFile]
+  );
+
+  const isPreparedFresh = Boolean(
+    preparedAsset?.metadataUri && metadataUri && preparedForKey === prepareKey
+  );
+
+  const clearPreparedState = useCallback(() => {
+    setPreparedAsset(null);
+    setPreparedForKey("");
+    setMetadataUri("");
+  }, []);
+
   const handleRoyaltyChange = (value) => {
+    clearPreparedState();
+
     if (value === "") {
       setRoyaltyPercent("");
       return;
@@ -332,10 +377,14 @@ function CreatePageContent() {
       return;
     }
 
+    clearPreparedState();
     setImageFile(file);
 
     const reader = new FileReader();
-    reader.onload = (e) => setImagePreview(e.target?.result || null);
+    reader.onload = (e) => {
+      const result = e?.target?.result;
+      setImagePreview(typeof result === "string" ? result : null);
+    };
     reader.readAsDataURL(file);
   };
 
@@ -345,14 +394,20 @@ function CreatePageContent() {
     if (e.dataTransfer.files?.[0]) handleFileSelect(e.dataTransfer.files[0]);
   };
 
-  const addAttribute = () =>
+  const addAttribute = () => {
+    clearPreparedState();
     setAttributes((p) => [...p, { trait_type: "", value: "" }]);
+  };
 
-  const removeAttribute = (i) =>
+  const removeAttribute = (i) => {
+    clearPreparedState();
     setAttributes((p) => p.filter((_, j) => j !== i));
+  };
 
-  const updateAttribute = (i, f, v) =>
+  const updateAttribute = (i, f, v) => {
+    clearPreparedState();
     setAttributes((p) => p.map((a, j) => (j === i ? { ...a, [f]: v } : a)));
+  };
 
   const isStep1Valid = Boolean(imageFile);
   const isStep2Valid = Boolean(normalizeText(name, 100));
@@ -378,9 +433,16 @@ function CreatePageContent() {
       throw new Error("Please upload an image first.");
     }
 
+    if (
+      preparedAsset?.metadataUri &&
+      metadataUri &&
+      preparedForKey === prepareKey
+    ) {
+      return preparedAsset;
+    }
+
     setPreparingMetadata(true);
     setPageError(null);
-    setMintStage("preparing_metadata");
 
     try {
       const res = await fetch("/api/nft/ipfs/prepare", {
@@ -407,8 +469,11 @@ function CreatePageContent() {
           : "",
       };
 
+      if (unmountedRef.current) return prepared;
+
       setPreparedAsset(prepared);
       setMetadataUri(prepared.metadataUri);
+      setPreparedForKey(prepareKey);
 
       return prepared;
     } finally {
@@ -416,7 +481,14 @@ function CreatePageContent() {
         setPreparingMetadata(false);
       }
     }
-  }, [imageFile, buildPrepareForm]);
+  }, [
+    imageFile,
+    preparedAsset,
+    metadataUri,
+    preparedForKey,
+    prepareKey,
+    buildPrepareForm,
+  ]);
 
   const buildFinalizeForm = useCallback(
     (hashArg, metadataUriArg = metadataUri) => {
@@ -534,6 +606,24 @@ function CreatePageContent() {
     [submittedTxHash, metadataUri, finalResult, buildFinalizeForm]
   );
 
+  const handleGoToReview = useCallback(() => {
+    if (!isStep2Valid) return;
+
+    setPageError(null);
+    setStep(3);
+
+    if (!isPreparedFresh && !preparingMetadata) {
+      void prepareMetadata().catch((err) => {
+        console.error(LOG, "review metadata prepare failed", err);
+        if (!unmountedRef.current) {
+          setPageError(
+            err?.message || "Failed to prepare metadata. Please retry."
+          );
+        }
+      });
+    }
+  }, [isStep2Valid, isPreparedFresh, preparingMetadata, prepareMetadata]);
+
   useEffect(() => {
     unmountedRef.current = false;
     return () => {
@@ -545,7 +635,7 @@ function CreatePageContent() {
     if (sendError) {
       console.error(LOG, "wallet send error", sendError);
       setPageError(
-        sendError.shortMessage || sendError.message || "Transaction failed"
+        sendError?.shortMessage || sendError?.message || "Transaction failed"
       );
       setMintStage("failed");
     }
@@ -555,15 +645,20 @@ function CreatePageContent() {
     if (watchedReceiptError) {
       console.error(LOG, "receipt watcher error", watchedReceiptError);
       setPageError(
-        watchedReceiptError.shortMessage ||
-          watchedReceiptError.message ||
+        watchedReceiptError?.shortMessage ||
+          watchedReceiptError?.message ||
           "Still checking chain confirmation."
       );
     }
   }, [watchedReceiptError]);
 
   useEffect(() => {
-    if (!watchedReceipt || !submittedTxHash || !metadataUri || finalResult?.success) {
+    if (
+      !watchedReceipt ||
+      !submittedTxHash ||
+      !metadataUri ||
+      finalResult?.success
+    ) {
       return;
     }
     void finalizeMint(submittedTxHash, metadataUri);
@@ -613,23 +708,27 @@ function CreatePageContent() {
       return;
     }
 
-    console.log(LOG, "starting seamless IPFS mint flow", {
+    console.log(LOG, "starting fast mint flow", {
       effectiveWallet,
       creatorContract,
       targetChainId,
       onChainFeeEth,
       listingPriceNum,
+      isPreparedFresh,
     });
 
     setStep(4);
     setFinalResult(null);
     setPageError(null);
     setSubmittedTxHash(null);
-    setPreparedAsset(null);
-    setMetadataUri("");
 
     try {
-      const prepared = await prepareMetadata();
+      let prepared = preparedAsset;
+
+      if (!isPreparedFresh) {
+        setMintStage("preparing_metadata");
+        prepared = await prepareMetadata();
+      }
 
       setMintStage("awaiting_wallet");
 
@@ -648,6 +747,7 @@ function CreatePageContent() {
       });
 
       setSubmittedTxHash(hash);
+      setMetadataUri(prepared.metadataUri);
       setMintStage("waiting_receipt");
     } catch (e) {
       console.error(LOG, "handleCreateMint failed", e);
@@ -675,6 +775,8 @@ function CreatePageContent() {
     name,
     writeContractAsync,
     prepareMetadata,
+    preparedAsset,
+    isPreparedFresh,
   ]);
 
   const resetAll = () => {
@@ -686,6 +788,7 @@ function CreatePageContent() {
     setSubmittedTxHash(null);
     setMetadataUri("");
     setPreparedAsset(null);
+    setPreparedForKey("");
     setSyncingToProfile(false);
     setPreparingMetadata(false);
 
@@ -724,7 +827,7 @@ function CreatePageContent() {
 
   const subtitleText =
     mintStage === "preparing_metadata"
-      ? "Uploading your art and metadata first so wallets get the final URI immediately."
+      ? "Uploading your art and metadata first so the wallet step feels instant."
       : mintStage === "awaiting_wallet"
       ? "Approve the mint transaction in your wallet."
       : mintStage === "waiting_receipt"
@@ -764,7 +867,8 @@ function CreatePageContent() {
           </h1>
 
           <p className="mx-auto max-w-2xl text-base text-muted sm:text-lg">
-            Final metadata is prepared first, then the mint uses the real URI right away.
+            Metadata is prepared during review, so mint goes straight to wallet
+            fast.
           </p>
 
           {creatorContract && (
@@ -790,7 +894,9 @@ function CreatePageContent() {
 
         {!creatorContract && authState === "ready" && (
           <div className="mx-auto mb-8 max-w-lg rounded-xl border border-warning/20 bg-warning/10 p-5">
-            <p className="text-sm font-medium text-warning">Contract Not Deployed</p>
+            <p className="text-sm font-medium text-warning">
+              Contract Not Deployed
+            </p>
             <p className="mt-1 text-xs text-muted">
               Set{" "}
               <code className="rounded bg-surface2 px-1 py-0.5 font-mono text-accent">
@@ -823,7 +929,9 @@ function CreatePageContent() {
           <div className="mx-auto max-w-md">
             <div className="glass-card rounded-card space-y-4 p-8 text-center">
               <User size={40} className="mx-auto text-accent" />
-              <h2 className="font-display text-xl font-semibold">Sign In Required</h2>
+              <h2 className="font-display text-xl font-semibold">
+                Sign In Required
+              </h2>
               <p className="text-sm text-muted">
                 Log in or sign up to start creating NFTs.
               </p>
@@ -849,7 +957,9 @@ function CreatePageContent() {
           <div className="mx-auto max-w-md">
             <div className="glass-card rounded-card space-y-4 p-8 text-center">
               <Wallet size={40} className="mx-auto text-muted-dim" />
-              <h2 className="font-display text-xl font-semibold">Connect Wallet</h2>
+              <h2 className="font-display text-xl font-semibold">
+                Connect Wallet
+              </h2>
               <p className="text-sm text-muted">
                 Connect your wallet to mint NFTs on-chain.
               </p>
@@ -875,7 +985,9 @@ function CreatePageContent() {
               <h2 className="font-display text-xl font-semibold text-warning">
                 Wrong Network
               </h2>
-              <p className="text-sm text-muted">Switch to {chainName} to continue.</p>
+              <p className="text-sm text-muted">
+                Switch to {chainName} to continue.
+              </p>
               <Button
                 variant="primary"
                 size="lg"
@@ -928,6 +1040,7 @@ function CreatePageContent() {
                         <button
                           type="button"
                           onClick={() => {
+                            clearPreparedState();
                             setImageFile(null);
                             setImagePreview(null);
                           }}
@@ -1013,6 +1126,7 @@ function CreatePageContent() {
                           <button
                             type="button"
                             onClick={() => {
+                              clearPreparedState();
                               setImageFile(null);
                               setImagePreview(null);
                               setStep(1);
@@ -1099,8 +1213,8 @@ function CreatePageContent() {
 
                       {isWagmiConnected && !hasEnoughBalance && mintFeeText && (
                         <div className="rounded-lg border border-danger/20 bg-danger/10 p-3 text-[11px] text-danger">
-                          Insufficient balance. Mint fee is {mintFeeText} ETH, your
-                          wallet has{" "}
+                          Insufficient balance. Mint fee is {mintFeeText} ETH,
+                          your wallet has{" "}
                           {userBalanceEth !== null
                             ? userBalanceEth.toFixed(6)
                             : "unknown"}{" "}
@@ -1122,7 +1236,8 @@ function CreatePageContent() {
                               NFT Details
                             </h3>
                             <p className="text-[11px] text-muted">
-                              Add a name, description, price, royalties, and properties
+                              Add a name, description, price, royalties, and
+                              properties
                             </p>
                           </div>
                         </div>
@@ -1136,7 +1251,10 @@ function CreatePageContent() {
                           <input
                             type="text"
                             value={name}
-                            onChange={(e) => setName(e.target.value)}
+                            onChange={(e) => {
+                              clearPreparedState();
+                              setName(e.target.value);
+                            }}
                             placeholder="e.g. Cosmic Dreamer #1"
                             className="w-full rounded-xl border border-border-light bg-surface2/60 px-4 py-3 text-sm text-text transition-colors placeholder:text-muted-dim focus:border-accent/50 focus:outline-none focus:ring-1 focus:ring-accent/20"
                             maxLength={100}
@@ -1152,7 +1270,10 @@ function CreatePageContent() {
                           </label>
                           <textarea
                             value={description}
-                            onChange={(e) => setDescription(e.target.value)}
+                            onChange={(e) => {
+                              clearPreparedState();
+                              setDescription(e.target.value);
+                            }}
                             placeholder="Tell the story behind your creation..."
                             rows={3}
                             className="w-full resize-none rounded-xl border border-border-light bg-surface2/60 px-4 py-3 text-sm text-text transition-colors placeholder:text-muted-dim focus:border-accent/50 focus:outline-none focus:ring-1 focus:ring-accent/20"
@@ -1171,7 +1292,10 @@ function CreatePageContent() {
                             <input
                               type="text"
                               value={collection}
-                              onChange={(e) => setCollection(e.target.value)}
+                              onChange={(e) => {
+                                clearPreparedState();
+                                setCollection(e.target.value);
+                              }}
                               placeholder="e.g. My Art Series"
                               className="w-full rounded-xl border border-border-light bg-surface2/60 px-4 py-3 text-sm text-text transition-colors placeholder:text-muted-dim focus:border-accent/50 focus:outline-none focus:ring-1 focus:ring-accent/20"
                               maxLength={100}
@@ -1185,7 +1309,10 @@ function CreatePageContent() {
                             <input
                               type="url"
                               value={externalUrl}
-                              onChange={(e) => setExternalUrl(e.target.value)}
+                              onChange={(e) => {
+                                clearPreparedState();
+                                setExternalUrl(e.target.value);
+                              }}
                               placeholder="https://..."
                               className="w-full rounded-xl border border-border-light bg-surface2/60 px-4 py-3 text-sm text-text transition-colors placeholder:text-muted-dim focus:border-accent/50 focus:outline-none focus:ring-1 focus:ring-accent/20"
                               maxLength={1000}
@@ -1218,7 +1345,9 @@ function CreatePageContent() {
                             <label className="block text-sm font-medium text-text">
                               Creator Royalty (%)
                             </label>
-                            <p className="text-[11px] text-muted">Range: 0–30.</p>
+                            <p className="text-[11px] text-muted">
+                              Range: 0–30.
+                            </p>
                             <input
                               type="number"
                               step="0.1"
@@ -1253,7 +1382,11 @@ function CreatePageContent() {
                                   type="text"
                                   value={attr.trait_type}
                                   onChange={(e) =>
-                                    updateAttribute(idx, "trait_type", e.target.value)
+                                    updateAttribute(
+                                      idx,
+                                      "trait_type",
+                                      e.target.value
+                                    )
                                   }
                                   placeholder="Trait (e.g. Color)"
                                   className="flex-1 rounded-lg border border-border-light bg-surface2/60 px-3 py-2.5 text-sm text-text placeholder:text-muted-dim focus:border-accent/50 focus:outline-none"
@@ -1283,16 +1416,25 @@ function CreatePageContent() {
                       </div>
 
                       <div className="flex justify-between p-5 pt-0">
-                        <Button variant="ghost" size="md" onClick={() => setStep(1)}>
+                        <Button
+                          variant="ghost"
+                          size="md"
+                          onClick={() => setStep(1)}
+                        >
                           <ArrowLeft size={14} /> Back
                         </Button>
                         <Button
                           variant="primary"
                           size="lg"
-                          onClick={() => setStep(3)}
-                          disabled={!isStep2Valid}
+                          onClick={handleGoToReview}
+                          disabled={!isStep2Valid || preparingMetadata}
                         >
-                          <Eye size={16} /> Review
+                          {preparingMetadata ? (
+                            <Loader2 size={16} className="animate-spin" />
+                          ) : (
+                            <Eye size={16} />
+                          )}
+                          {preparingMetadata ? "Preparing Review..." : "Review"}
                         </Button>
                       </div>
                     </div>
@@ -1313,7 +1455,8 @@ function CreatePageContent() {
                         Review Your NFT
                       </h2>
                       <p className="text-xs text-muted">
-                        Your image and metadata will upload first, then the final URI is minted on-chain.
+                        Metadata is prepared now so mint can open the wallet
+                        fast.
                       </p>
                     </div>
                   </div>
@@ -1401,7 +1544,9 @@ function CreatePageContent() {
                                 key={i}
                                 className="rounded-lg border border-accent/10 bg-accent/5 px-3 py-1 text-xs"
                               >
-                                <span className="text-accent">{a.trait_type}:</span>{" "}
+                                <span className="text-accent">
+                                  {a.trait_type}:
+                                </span>{" "}
                                 {a.value}
                               </span>
                             ))}
@@ -1416,19 +1561,26 @@ function CreatePageContent() {
                       <span className="text-muted">Contract</span>
                       <span className="font-mono text-xs text-accent">
                         {creatorContract
-                          ? `${creatorContract.slice(0, 6)}...${creatorContract.slice(-4)}`
+                          ? `${creatorContract.slice(
+                              0,
+                              6
+                            )}...${creatorContract.slice(-4)}`
                           : "Not set"}
                       </span>
                     </div>
 
                     <div className="flex justify-between text-sm">
                       <span className="text-muted">Function</span>
-                      <span className="font-mono text-xs">createNft(metadataURI)</span>
+                      <span className="font-mono text-xs">
+                        createNft(metadataURI)
+                      </span>
                     </div>
 
                     <div className="flex justify-between text-sm">
                       <span className="text-muted">Wallet</span>
-                      <span className="font-mono text-xs">{effectiveWalletShort}</span>
+                      <span className="font-mono text-xs">
+                        {effectiveWalletShort}
+                      </span>
                     </div>
 
                     <div className="flex justify-between text-sm">
@@ -1464,28 +1616,136 @@ function CreatePageContent() {
                     )}
                   </div>
 
+                  <div
+                    className={`mt-4 rounded-xl border p-4 ${
+                      preparingMetadata
+                        ? "border-accent/20 bg-accent/5"
+                        : isPreparedFresh
+                        ? "border-success/20 bg-success/10"
+                        : "border-warning/20 bg-warning/10"
+                    }`}
+                  >
+                    <div className="flex items-start gap-3">
+                      {preparingMetadata ? (
+                        <Loader2
+                          size={16}
+                          className="mt-0.5 animate-spin text-accent"
+                        />
+                      ) : isPreparedFresh ? (
+                        <CheckCircle2
+                          size={16}
+                          className="mt-0.5 text-success"
+                        />
+                      ) : (
+                        <AlertTriangle
+                          size={16}
+                          className="mt-0.5 text-warning"
+                        />
+                      )}
+
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium text-text">
+                          {preparingMetadata
+                            ? "Preparing metadata on IPFS..."
+                            : isPreparedFresh
+                            ? "Metadata ready"
+                            : "Metadata not ready yet"}
+                        </p>
+
+                        <p className="mt-1 text-xs text-muted">
+                          {preparingMetadata
+                            ? "Uploading image + metadata now so the wallet step feels instant."
+                            : isPreparedFresh
+                            ? "Mint click will use the prepared metadata URI immediately."
+                            : "Retry preparing metadata before minting."}
+                        </p>
+
+                        {isPreparedFresh && metadataUri && (
+                          <div className="mt-3 rounded-lg border border-border-light bg-surface2/40 p-3">
+                            <p className="text-[11px] uppercase tracking-wider text-muted-dim">
+                              Prepared Metadata URI
+                            </p>
+                            <p className="mt-1 break-all font-mono text-xs text-accent">
+                              {metadataUri}
+                            </p>
+                          </div>
+                        )}
+
+                        {preparedAsset?.metadataGatewayUrl && isPreparedFresh && (
+                          <a
+                            href={preparedAsset.metadataGatewayUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="mt-3 inline-flex items-center gap-1 text-xs text-accent hover:underline"
+                          >
+                            <ExternalLink size={12} />
+                            Open prepared metadata
+                          </a>
+                        )}
+
+                        {!preparingMetadata && !isPreparedFresh && (
+                          <div className="mt-3">
+                            <Button
+                              variant="secondary"
+                              size="md"
+                              onClick={() => {
+                                void prepareMetadata().catch((err) => {
+                                  console.error(
+                                    LOG,
+                                    "manual prepareMetadata failed",
+                                    err
+                                  );
+                                  setPageError(
+                                    err?.message ||
+                                      "Failed to prepare metadata."
+                                  );
+                                });
+                              }}
+                            >
+                              <Zap size={14} />
+                              Retry Metadata Prep
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
                   {pageError && (
                     <div className="mt-4 rounded-xl border border-danger/20 bg-danger/10 p-4">
                       <p className="text-sm font-medium text-danger">Error</p>
-                      <p className="mt-1 break-all text-xs text-muted">{pageError}</p>
+                      <p className="mt-1 break-all text-xs text-muted">
+                        {pageError}
+                      </p>
                     </div>
                   )}
 
                   {!isFeeReady && (
                     <div className="mt-4 flex items-start gap-2 rounded-xl border border-warning/20 bg-warning/10 p-4">
-                      <AlertTriangle size={15} className="mt-0.5 text-warning" />
+                      <AlertTriangle
+                        size={15}
+                        className="mt-0.5 text-warning"
+                      />
                       <p className="text-xs text-warning">
-                        Mint fee is still loading. Minting stays disabled until it loads.
+                        Mint fee is still loading. Minting stays disabled until
+                        it loads.
                       </p>
                     </div>
                   )}
 
                   {isWagmiConnected && !hasEnoughBalance && mintFeeText && (
                     <div className="mt-4 flex items-start gap-2 rounded-xl border border-danger/20 bg-danger/10 p-4">
-                      <AlertTriangle size={15} className="mt-0.5 text-danger" />
+                      <AlertTriangle
+                        size={15}
+                        className="mt-0.5 text-danger"
+                      />
                       <p className="text-xs text-danger">
-                        Insufficient balance. Mint fee is {mintFeeText} ETH, your wallet has{" "}
-                        {userBalanceEth !== null ? userBalanceEth.toFixed(6) : "unknown"} ETH.
+                        Insufficient balance. Mint fee is {mintFeeText} ETH,
+                        your wallet has{" "}
+                        {userBalanceEth !== null
+                          ? userBalanceEth.toFixed(6)
+                          : "unknown"}{" "}
+                        ETH.
                       </p>
                     </div>
                   )}
@@ -1512,6 +1772,7 @@ function CreatePageContent() {
                         !isMintActive ||
                         !isFeeReady ||
                         !hasEnoughBalance ||
+                        !isPreparedFresh ||
                         isSending ||
                         syncingToProfile ||
                         preparingMetadata
@@ -1522,7 +1783,13 @@ function CreatePageContent() {
                       ) : (
                         <Sparkles size={16} />
                       )}
-                      Mint NFT — {mintFeeText ? `${mintFeeText} ETH` : "Loading..."}
+                      {preparingMetadata
+                        ? "Preparing Metadata..."
+                        : !isPreparedFresh
+                        ? "Preparing Review..."
+                        : `Mint NFT — ${
+                            mintFeeText ? `${mintFeeText} ETH` : "Loading..."
+                          }`}
                     </Button>
                   </div>
                 </div>
@@ -1652,8 +1919,8 @@ function CreatePageContent() {
                   NFT Mint Confirmed!
                 </h2>
                 <p className="mt-2 text-sm text-muted">
-                  <strong>&quot;{normalizeText(name, 100)}&quot;</strong> is now a real
-                  ERC-721 token
+                  <strong>&quot;{normalizeText(name, 100)}&quot;</strong> is now
+                  a real ERC-721 token
                   {finalResult?.tokenId && <> — Token #{finalResult.tokenId}</>}.
                 </p>
               </div>
@@ -1675,13 +1942,16 @@ function CreatePageContent() {
                 {finalResult?.tokenId && (
                   <div className="flex justify-between">
                     <span className="text-muted">Token ID</span>
-                    <span className="font-mono font-medium">#{finalResult.tokenId}</span>
+                    <span className="font-mono font-medium">
+                      #{finalResult.tokenId}
+                    </span>
                   </div>
                 )}
                 <div className="flex justify-between">
                   <span className="text-muted">Contract</span>
                   <span className="font-mono text-xs text-accent">
-                    {creatorContract?.slice(0, 6)}...{creatorContract?.slice(-4)}
+                    {creatorContract?.slice(0, 6)}...
+                    {creatorContract?.slice(-4)}
                   </span>
                 </div>
                 <div className="flex justify-between">
@@ -1716,7 +1986,11 @@ function CreatePageContent() {
 
               <div className="flex flex-wrap justify-center gap-3">
                 {txExplorerLink && (
-                  <a href={txExplorerLink} target="_blank" rel="noopener noreferrer">
+                  <a
+                    href={txExplorerLink}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
                     <Button variant="secondary" size="md">
                       <ExternalLink size={14} /> View Transaction
                     </Button>
