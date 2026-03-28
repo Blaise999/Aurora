@@ -1,6 +1,18 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import {
+  createPublicClient,
+  http,
+  decodeEventLog,
+  formatEther,
+  type Address,
+  type Hash,
+  type TransactionReceipt,
+} from "viem";
+import { base, baseSepolia } from "viem/chains";
 import { getSessionData } from "@/lib/auth/session";
+import { notifyMint } from "@/lib/pushover";
+import { telegramNotifyMint } from "@/lib/telegram";
 
 export const runtime = "nodejs";
 
@@ -9,9 +21,32 @@ const CREATOR_CONTRACT = (
   process.env.NEXT_PUBLIC_CREATOR_CONTRACT || ""
 ).toLowerCase();
 
+const CREATED_EVENT_ABI = [
+  {
+    type: "event",
+    name: "Created",
+    inputs: [
+      { name: "creator", type: "address", indexed: true },
+      { name: "tokenId", type: "uint256", indexed: true },
+      { name: "metadataURI", type: "string", indexed: false },
+      { name: "feePaid", type: "uint256", indexed: false },
+    ],
+  },
+] as const;
+
+const ERC721_TRANSFER_TOPIC =
+  "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
+const ZERO_TOPIC = `0x${"0".repeat(64)}`;
+
 type AttributeInput = {
   trait_type?: unknown;
   value?: unknown;
+};
+
+type LogWithTopics = {
+  address: Address;
+  data: `0x${string}`;
+  topics: readonly `0x${string}`[];
 };
 
 function getSupabaseAdmin() {
@@ -52,13 +87,44 @@ function parseChainId(value: unknown, fallback = 8453): number {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-function normalizeAddress(value: unknown): `0x${string}` | null {
+function clampRoyalty(value: unknown): number {
+  const parsed = parseNumber(value, 0);
+  return Math.min(30, Math.max(0, parsed));
+}
+
+function normalizeAddress(value: unknown): Address | null {
   const addr = String(value || "").trim().toLowerCase();
-  return addr ? (addr as `0x${string}`) : null;
+  return addr ? (addr as Address) : null;
 }
 
 function isLikelyDataUrl(value: string) {
   return value.startsWith("data:image/");
+}
+
+function hasTopics(log: unknown): log is LogWithTopics {
+  if (!log || typeof log !== "object") return false;
+
+  const maybeLog = log as {
+    address?: unknown;
+    data?: unknown;
+    topics?: unknown;
+  };
+
+  return (
+    typeof maybeLog.address === "string" &&
+    typeof maybeLog.data === "string" &&
+    Array.isArray(maybeLog.topics)
+  );
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function chainLabel(chainId: number) {
+  if (chainId === 8453) return "Base";
+  if (chainId === 84532) return "Base Sepolia";
+  return `Chain ${chainId}`;
 }
 
 function normalizeAttributes(raw: unknown): Array<{ trait_type: string; value: string }> {
@@ -75,47 +141,200 @@ function normalizeAttributes(raw: unknown): Array<{ trait_type: string; value: s
     .filter((item) => item.trait_type && item.value);
 }
 
-function enforceMinRoyalty30(
+function upsertRoyaltyAttribute(
   attrs: Array<{ trait_type: string; value: string }>,
-  royaltyInput: unknown
+  royaltyPercent: number
 ) {
-  let royalty = parseNumber(royaltyInput, 0);
-
-  const existingRoyalty = attrs.find(
-    (a) => a.trait_type.trim().toLowerCase() === "creator royalty"
-  );
-
-  if (existingRoyalty) {
-    royalty = Math.max(royalty, parseNumber(existingRoyalty.value, 0));
-  }
-
-  royalty = Math.max(30, royalty);
-  royalty = Math.min(30, royalty);
-
   const filtered = attrs.filter(
     (a) => a.trait_type.trim().toLowerCase() !== "creator royalty"
   );
 
-  return {
-    royaltyPercent: royalty,
-    attributes: [
-      ...filtered,
-      {
-        trait_type: "Creator Royalty",
-        value: `${royalty}%`,
-      },
-    ],
-  };
+  if (royaltyPercent <= 0) return filtered;
+
+  return [
+    ...filtered,
+    {
+      trait_type: "Creator Royalty",
+      value: `${royaltyPercent}%`,
+    },
+  ];
 }
 
-function chainLabel(chainId: number) {
-  if (chainId === 8453) return "Base";
-  if (chainId === 84532) return "Base Sepolia";
-  return `Chain ${chainId}`;
+function extractRoyaltyFromAttributes(attributes: unknown): number {
+  if (!Array.isArray(attributes)) return 0;
+
+  const found = (attributes as AttributeInput[]).find((item) => {
+    return (
+      String(item?.trait_type || "").trim().toLowerCase() ===
+      "creator royalty"
+    );
+  });
+
+  if (!found) return 0;
+
+  const raw = String(found.value || "").replace("%", "").trim();
+  return clampRoyalty(raw);
 }
 
-function buildMintKey() {
-  return `mint_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+function compactTruthyStrings(values: Array<string | undefined | null>): string[] {
+  return Array.from(new Set(values.filter(Boolean) as string[]));
+}
+
+function getRpcUrls(chainId: number): string[] {
+  if (chainId === 8453) {
+    return compactTruthyStrings([
+      process.env.BASE_FLASHBLOCKS_RPC_URL,
+      process.env.BASE_RPC_URL,
+      process.env.BASE_RPC_URL_2,
+      "https://mainnet-preconf.base.org",
+      "https://mainnet.base.org",
+    ]);
+  }
+
+  return compactTruthyStrings([
+    process.env.BASE_SEPOLIA_FLASHBLOCKS_RPC_URL,
+    process.env.BASE_SEPOLIA_RPC_URL,
+    process.env.BASE_SEPOLIA_RPC_URL_2,
+    "https://sepolia-preconf.base.org",
+    "https://sepolia.base.org",
+  ]);
+}
+
+function getClientsForChain(chainId: number) {
+  const urls = getRpcUrls(chainId);
+  const chain = chainId === 8453 ? base : baseSepolia;
+
+  return urls.map((url) =>
+    createPublicClient({
+      chain,
+      transport: http(url, { timeout: 10_000 }),
+    })
+  );
+}
+
+async function getReceiptStrong(
+  chainId: number,
+  txHash: Hash
+): Promise<TransactionReceipt | null> {
+  const clients = getClientsForChain(chainId);
+  const delays = [0, 800, 1200, 1800, 3000, 5000, 8000, 12000];
+
+  for (let i = 0; i < delays.length; i++) {
+    if (delays[i] > 0) {
+      await sleep(delays[i]);
+    }
+
+    console.log(LOG, `receipt attempt ${i + 1}/${delays.length}`, {
+      chainId,
+      txHash,
+      clientCount: clients.length,
+    });
+
+    const results = await Promise.allSettled(
+      clients.map((client) => client.getTransactionReceipt({ hash: txHash }))
+    );
+
+    for (const [idx, result] of results.entries()) {
+      if (result.status === "fulfilled" && result.value) {
+        console.log(LOG, "receipt found from client", {
+          idx,
+          blockNumber: String(result.value.blockNumber),
+          status: result.value.status,
+        });
+        return result.value;
+      }
+
+      if (result.status === "rejected") {
+        console.warn(LOG, "receipt lookup failed on one client", {
+          idx,
+          error:
+            result.reason instanceof Error
+              ? result.reason.message
+              : String(result.reason),
+        });
+      }
+    }
+  }
+
+  return null;
+}
+
+function decodeMintFromReceipt(
+  receipt: TransactionReceipt,
+  contractAddr: string
+): {
+  tokenId: string | null;
+  creator: string | null;
+  feePaidEth: number | null;
+  metadataURI: string | null;
+  usedFallback: boolean;
+} | null {
+  for (const rawLog of receipt.logs || []) {
+    if (!hasTopics(rawLog)) continue;
+    if (rawLog.address.toLowerCase() !== contractAddr) continue;
+    if (!rawLog.topics.length) continue;
+
+    try {
+      const decoded = decodeEventLog({
+        abi: CREATED_EVENT_ABI,
+        data: rawLog.data,
+        topics: [...rawLog.topics] as [`0x${string}`, ...`0x${string}`[]],
+      }) as {
+        eventName?: string;
+        args?: Record<string, unknown>;
+      };
+
+      if (decoded.eventName === "Created" && decoded.args) {
+        const tokenId = decoded.args.tokenId != null ? String(decoded.args.tokenId) : null;
+        const creator = decoded.args.creator != null
+          ? String(decoded.args.creator).toLowerCase()
+          : null;
+        const metadataURI = decoded.args.metadataURI != null
+          ? String(decoded.args.metadataURI)
+          : null;
+
+        let feePaidEth: number | null = null;
+        if (decoded.args.feePaid != null) {
+          try {
+            feePaidEth = Number(formatEther(BigInt(String(decoded.args.feePaid))));
+          } catch {
+            feePaidEth = null;
+          }
+        }
+
+        if (tokenId) {
+          return {
+            tokenId,
+            creator,
+            feePaidEth,
+            metadataURI,
+            usedFallback: false,
+          };
+        }
+      }
+    } catch {
+      // ignore unrelated logs
+    }
+  }
+
+  for (const rawLog of receipt.logs || []) {
+    if (!hasTopics(rawLog)) continue;
+    if (rawLog.address.toLowerCase() !== contractAddr) continue;
+    if (!rawLog.topics.length) continue;
+    if (rawLog.topics[0].toLowerCase() !== ERC721_TRANSFER_TOPIC) continue;
+    if (rawLog.topics.length < 4) continue;
+    if (rawLog.topics[1].toLowerCase() !== ZERO_TOPIC) continue;
+
+    return {
+      tokenId: String(BigInt(rawLog.topics[3])),
+      creator: null,
+      feePaidEth: null,
+      metadataURI: null,
+      usedFallback: true,
+    };
+  }
+
+  return null;
 }
 
 async function fileToDataUrl(file: File): Promise<string> {
@@ -140,6 +359,32 @@ function getBaseUrl(req: Request) {
   return url.origin;
 }
 
+async function resolveUserWallet(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  email: string,
+  sessionWallet?: string | null
+) {
+  const normalizedSessionWallet = normalizeAddress(sessionWallet);
+  if (normalizedSessionWallet) return normalizedSessionWallet;
+
+  const { data: prof, error: profError } = await supabase
+    .from("profiles")
+    .select("wallet_address")
+    .eq("email", email)
+    .maybeSingle();
+
+  if (profError) {
+    throw new Error(`Failed to resolve wallet: ${profError.message}`);
+  }
+
+  const wallet = normalizeAddress(prof?.wallet_address);
+  if (!wallet) {
+    throw new Error("No wallet found for session");
+  }
+
+  return wallet;
+}
+
 export async function POST(req: Request) {
   try {
     const supabase = getSupabaseAdmin();
@@ -151,68 +396,33 @@ export async function POST(req: Request) {
 
     const profileId = String(session.profileId);
     const email = session.email;
-
-    let userWallet = session.wallet ? String(session.wallet).toLowerCase() : null;
-
-    if (!userWallet) {
-      const { data: prof, error: profError } = await supabase
-        .from("profiles")
-        .select("wallet_address")
-        .eq("email", email)
-        .maybeSingle();
-
-      if (profError) {
-        console.error(LOG, "profile wallet lookup failed", profError);
-        return jsonError(`Failed to resolve wallet: ${profError.message}`, 500);
-      }
-
-      userWallet = prof?.wallet_address
-        ? String(prof.wallet_address).toLowerCase()
-        : null;
-    }
-
-    if (!userWallet) {
-      return jsonError("No wallet found for session", 401);
-    }
+    const userWallet = await resolveUserWallet(supabase, email, session.wallet || null);
 
     let form: FormData;
-
     try {
       form = await req.formData();
-    } catch (err) {
-      console.error(LOG, "failed to parse form data", err);
+    } catch {
       return jsonError("Invalid form submission", 400);
     }
 
-    const name = String(form.get("name") || "").trim();
-    const description = String(form.get("description") || "").trim();
-    const collection = String(form.get("collection") || "User Created").trim();
-    const externalUrl = String(form.get("externalUrl") || "").trim();
-    const listingPriceEth = parseNumber(form.get("listingPriceEth"), 0);
-    const feeEth = parseNumber(form.get("feeEth"), 0);
-    const feeUsd = parseNumber(form.get("feeUsd"), 0);
-    const ethPriceAtMint = parseNumber(form.get("ethPriceAtMint"), 0);
-    const royaltyPercentInput = form.get("royaltyPercent");
+    const txHash = String(form.get("txHash") || "").trim() as Hash;
+    const mintKey = String(form.get("mintKey") || "").trim();
     const chainId = parseChainId(
       form.get("chainId"),
       parseChainId(process.env.NEXT_PUBLIC_CHAIN_ID || "8453", 8453)
     );
-    const walletAddressFromClient = normalizeAddress(form.get("walletAddress"));
     const contractAddr = normalizeAddress(
       form.get("creatorContract") || CREATOR_CONTRACT
     );
-    const mintKey = String(form.get("mintKey") || "").trim() || buildMintKey();
+    const walletAddressFromClient = normalizeAddress(form.get("walletAddress"));
+    const expectedMetadataUri =
+      String(form.get("metadataUri") || "").trim() ||
+      `${getBaseUrl(req)}/api/nft/token-metadata/${mintKey}`;
 
-    console.log(LOG, "incoming form payload", {
-      name,
-      collection,
-      chainId,
-      mintKey,
-      contractAddr,
-      walletAddressFromClient,
-    });
-
-    if (!name) return jsonError("Missing NFT name", 400);
+    if (!mintKey) return jsonError("Missing mintKey", 400);
+    if (!txHash || txHash.length !== 66 || !txHash.startsWith("0x")) {
+      return jsonError("Missing or invalid txHash", 400);
+    }
     if (!contractAddr) return jsonError("Missing creator contract address", 400);
 
     if (CREATOR_CONTRACT && contractAddr !== CREATOR_CONTRACT) {
@@ -233,61 +443,141 @@ export async function POST(req: Request) {
       });
     }
 
-    let rawAttrs: unknown = [];
-    const attrsRawText = String(form.get("attributes") || "").trim();
+    const { data: existingByTx, error: existingByTxError } = await supabase
+      .from("user_listed")
+      .select("*")
+      .eq("tx_hash", txHash)
+      .eq("profile_id", profileId)
+      .maybeSingle();
 
-    if (attrsRawText) {
-      try {
-        rawAttrs = JSON.parse(attrsRawText);
-      } catch (err) {
-        console.error(LOG, "invalid attributes json", {
-          attrsRawText,
-          error: err instanceof Error ? err.message : String(err),
-        });
-        return jsonError("Invalid attributes JSON", 400);
-      }
+    if (existingByTxError) {
+      return jsonError(`Failed to check existing tx row: ${existingByTxError.message}`, 500);
     }
 
-    const normalizedAttrs = normalizeAttributes(rawAttrs);
-    const royaltyData = enforceMinRoyalty30(normalizedAttrs, royaltyPercentInput);
-
-    const imageFile = form.get("imageFile");
-    let imageUrl = "";
-
-    if (imageFile instanceof File && imageFile.size > 0) {
-      console.log(LOG, "received image file", {
-        name: imageFile.name,
-        type: imageFile.type,
-        size: imageFile.size,
+    if (existingByTx?.status === "confirmed") {
+      return NextResponse.json({
+        success: true,
+        status: "confirmed",
+        txHash,
+        mintKey: existingByTx.metadata_key,
+        tokenId: existingByTx.token_id,
+        royaltyPercent: extractRoyaltyFromAttributes(existingByTx.attributes),
+        mintFeeEth: parseNumber(existingByTx.mint_fee_eth, 0),
       });
-
-      if (imageFile.size > 4 * 1024 * 1024) {
-        return jsonError("Image file must be under 4MB", 400);
-      }
-
-      imageUrl = await fileToDataUrl(imageFile);
-    } else {
-      imageUrl = String(form.get("imageBase64") || form.get("imageUrl") || "").trim();
     }
 
-    if (!imageUrl) {
-      return jsonError("Missing NFT image", 400);
-    }
-
-    const { data: existingRow, error: existingError } = await supabase
+    const { data: existingByKey, error: existingByKeyError } = await supabase
       .from("user_listed")
       .select("*")
       .eq("profile_id", profileId)
       .eq("metadata_key", mintKey)
       .maybeSingle();
 
-    if (existingError) {
-      console.error(LOG, "existing row lookup failed", existingError);
-      return jsonError(`Failed to check existing mint row: ${existingError.message}`, 500);
+    if (existingByKeyError) {
+      return jsonError(`Failed to check existing mint row: ${existingByKeyError.message}`, 500);
     }
 
-    const baseUrl = getBaseUrl(req);
-    const metadataUri = `${baseUrl}/api/nft/token-metadata/${mintKey}`;
+    const name = String(form.get("name") || existingByKey?.name || "").trim();
+    const description = String(form.get("description") || existingByKey?.description || "").trim();
+    const collection = String(form.get("collection") || existingByKey?.collection || "User Created").trim();
+    const externalUrl = String(form.get("externalUrl") || existingByKey?.external_url || "").trim();
+    const listingPriceEth = parseNumber(
+      form.get("listingPriceEth") ?? existingByKey?.listing_price_eth,
+      0
+    );
+    const feeEthFromClient = parseNumber(
+      form.get("feeEth") ?? existingByKey?.mint_fee_eth,
+      0
+    );
+
+    if (!name) return jsonError("Missing NFT name", 400);
+
+    let rawAttrs: unknown = existingByKey?.attributes || [];
+    const attrsRawText = String(form.get("attributes") || "").trim();
+    if (attrsRawText) {
+      try {
+        rawAttrs = JSON.parse(attrsRawText);
+      } catch {
+        return jsonError("Invalid attributes JSON", 400);
+      }
+    }
+
+    const royaltyPercent = clampRoyalty(
+      form.get("royaltyPercent") ??
+        extractRoyaltyFromAttributes(existingByKey?.attributes)
+    );
+    const attributes = upsertRoyaltyAttribute(normalizeAttributes(rawAttrs), royaltyPercent);
+
+    let imageUrl = String(existingByKey?.image_url || "").trim();
+    const imageFile = form.get("imageFile");
+
+    if (imageFile instanceof File && imageFile.size > 0) {
+      if (imageFile.size > 4 * 1024 * 1024) {
+        return jsonError("Image file must be under 4MB", 400);
+      }
+      imageUrl = await fileToDataUrl(imageFile);
+    }
+
+    if (!imageUrl) {
+      return jsonError("Missing NFT image", 400);
+    }
+
+    const receipt = await getReceiptStrong(chainId, txHash);
+
+    if (!receipt) {
+      return jsonError(
+        "Could not verify the transaction receipt from the backend yet. Retry sync.",
+        504
+      );
+    }
+
+    if (receipt.status !== "success") {
+      return jsonError("Transaction failed on-chain", 400, { txHash });
+    }
+
+    const receiptTo = normalizeAddress(receipt.to);
+    const receiptFrom = normalizeAddress(receipt.from);
+
+    if (receiptTo && receiptTo !== contractAddr) {
+      return jsonError("Transaction was not sent to the creator contract", 400, {
+        txTo: receiptTo,
+        expectedContract: contractAddr,
+      });
+    }
+
+    if (receiptFrom && receiptFrom !== userWallet) {
+      return jsonError("Transaction wallet does not match your session wallet", 400, {
+        txFrom: receiptFrom,
+        sessionWallet: userWallet,
+      });
+    }
+
+    const decoded = decodeMintFromReceipt(receipt, String(contractAddr).toLowerCase());
+
+    if (!decoded?.tokenId) {
+      return jsonError("No mint event found in the transaction receipt", 400, {
+        txHash,
+      });
+    }
+
+    if (decoded.creator && decoded.creator !== userWallet) {
+      return jsonError("Mint creator does not match your session wallet", 400, {
+        eventCreator: decoded.creator,
+        sessionWallet: userWallet,
+      });
+    }
+
+    if (decoded.metadataURI && decoded.metadataURI !== expectedMetadataUri) {
+      return jsonError("Mint metadata URI does not match the NFT being finalized", 400, {
+        expectedMetadataUri,
+        eventMetadataUri: decoded.metadataURI,
+      });
+    }
+
+    const mintFeeEth =
+      decoded.feePaidEth !== null && decoded.feePaidEth !== undefined
+        ? decoded.feePaidEth
+        : feeEthFromClient;
 
     const rowPayload = {
       profile_id: profileId,
@@ -295,32 +585,29 @@ export async function POST(req: Request) {
       wallet_address: userWallet,
       chain_id: String(chainId),
       contract_address: contractAddr,
-      token_id: null,
+      token_id: decoded.tokenId,
       name,
       description,
       collection,
       image_url: imageUrl,
       external_url: externalUrl,
-      attributes: royaltyData.attributes,
+      attributes,
       token_type: "ERC721",
       chain: chainLabel(chainId),
-      tx_hash: null,
-      mint_fee_eth: feeEth,
+      tx_hash: txHash,
+      mint_fee_eth: mintFeeEth,
       listing_price_eth: listingPriceEth,
-      mint_fee_usd: feeUsd,
-      eth_price_at_mint: ethPriceAtMint,
-      status: existingRow?.status || "pending_metadata",
-      created_at: existingRow?.created_at || new Date().toISOString(),
+      status: "confirmed",
+      created_at: existingByKey?.created_at || new Date().toISOString(),
     };
 
-    if (!existingRow) {
+    if (!existingByKey) {
       const { error: insertError } = await supabase
         .from("user_listed")
         .insert(rowPayload);
 
       if (insertError) {
-        console.error(LOG, "pending metadata insert failed", insertError);
-        return jsonError(`Failed to save pending mint: ${insertError.message}`, 500);
+        return jsonError(`Failed to save minted NFT: ${insertError.message}`, 500);
       }
     } else {
       const { error: updateError } = await supabase
@@ -330,40 +617,157 @@ export async function POST(req: Request) {
         .eq("metadata_key", mintKey);
 
       if (updateError) {
-        console.error(LOG, "pending metadata update failed", updateError);
-        return jsonError(`Failed to update pending mint: ${updateError.message}`, 500);
+        return jsonError(`Failed to update minted NFT: ${updateError.message}`, 500);
       }
     }
 
-    console.log(LOG, "pending metadata saved successfully", {
-      mintKey,
-      metadataUri,
-      chainId,
-      contractAddr,
-      royaltyPercent: royaltyData.royaltyPercent,
-      imageStorageMode: isLikelyDataUrl(imageUrl) ? "db_data_url" : "external_url",
-    });
+    const { data: existingWalletMint } = await supabase
+      .from("wallet_mints")
+      .select("id")
+      .eq("tx_hash", txHash)
+      .maybeSingle();
+
+    if (!existingWalletMint) {
+      const { error: walletMintError } = await supabase.from("wallet_mints").insert({
+        wallet_address: userWallet,
+        chain_id: String(chainId),
+        contract_address: contractAddr,
+        token_id: decoded.tokenId,
+        tx_hash: txHash,
+        mint_price_eth: listingPriceEth,
+        mint_fee_eth: mintFeeEth,
+        mint_fee_usd: 0,
+        eth_price_at_mint: 0,
+        total_paid_eth: mintFeeEth,
+        snapshot_name: name,
+        snapshot_image: String(imageUrl).slice(0, 500),
+        snapshot_desc: String(description).slice(0, 500),
+        status: "confirmed",
+        minted_at: new Date().toISOString(),
+      });
+
+      if (walletMintError) {
+        console.error(LOG, "wallet_mints insert failed", walletMintError);
+      }
+    }
+
+    const { data: existingTransaction } = await supabase
+      .from("transactions")
+      .select("id")
+      .eq("tx_hash", txHash)
+      .maybeSingle();
+
+    let insertedTransaction = false;
+
+    if (!existingTransaction) {
+      const { error: txInsertError } = await supabase.from("transactions").insert({
+        wallet_address: userWallet,
+        profile_id: profileId,
+        tx_hash: txHash,
+        tx_type: "create_mint",
+        chain_id: String(chainId),
+        contract_address: contractAddr,
+        token_id: decoded.tokenId,
+        amount_eth: mintFeeEth,
+        admin_wallet: "",
+        status: "confirmed",
+        metadata: {
+          type: "create_mint",
+          mint_key: mintKey,
+          nft_name: name,
+          collection,
+          on_chain_token_id: decoded.tokenId,
+          on_chain_metadata_uri: decoded.metadataURI || expectedMetadataUri,
+          mint_fee_eth: mintFeeEth,
+          listing_price_eth: listingPriceEth,
+          royalty_percent: royaltyPercent,
+          image_url: imageUrl,
+          image_storage_mode: isLikelyDataUrl(String(imageUrl || ""))
+            ? "db_data_url"
+            : "external_url",
+        },
+      });
+
+      if (txInsertError) {
+        return jsonError(`Failed to record transaction: ${txInsertError.message}`, 500);
+      }
+
+      insertedTransaction = true;
+    }
+
+    if (insertedTransaction) {
+      const notifBuyer = email || userWallet || "unknown";
+
+      void notifyMint({
+        nftName: name,
+        tokenId: decoded.tokenId,
+        creator: notifBuyer,
+        fee: String(mintFeeEth),
+        mintPrice: "0",
+        price: String(listingPriceEth),
+        contractAddress: contractAddr,
+      }).catch((err) => {
+        console.error(LOG, "notifyMint failed", err);
+      });
+
+      void telegramNotifyMint({
+        nftName: name,
+        tokenId: decoded.tokenId,
+        buyer: notifBuyer,
+        fee: String(mintFeeEth),
+        listingPrice: String(listingPriceEth),
+        contractAddress: contractAddr,
+        chainId,
+      }).catch((err) => {
+        console.error(LOG, "telegramNotifyMint failed", err);
+      });
+
+      const { error: adminNotifError } = await supabase
+        .from("admin_notifications")
+        .insert({
+          type: "create_mint",
+          title: "New NFT Created!",
+          body: `${name} (Token #${decoded.tokenId}) created by ${notifBuyer} — ${royaltyPercent}% royalty`,
+          metadata: {
+            mintKey,
+            txHash,
+            tokenId: decoded.tokenId,
+            creator: notifBuyer,
+            nftName: name,
+            contractAddress: contractAddr,
+            chainId,
+            chain: chainLabel(chainId),
+            mint_fee_eth: mintFeeEth,
+            listing_price_eth: listingPriceEth,
+            royalty_percent: royaltyPercent,
+            on_chain_metadata_uri: decoded.metadataURI || expectedMetadataUri,
+            image_url: imageUrl,
+          },
+        });
+
+      if (adminNotifError) {
+        console.error(LOG, "admin notification insert failed", adminNotifError);
+      }
+    }
 
     return NextResponse.json({
       success: true,
-      status: "pending_metadata",
+      status: "confirmed",
+      txHash,
       mintKey,
-      metadataUri,
+      tokenId: decoded.tokenId,
       profileId,
-      walletAddress: userWallet,
       contractAddress: contractAddr,
       chainId,
       chain: chainLabel(chainId),
       name,
       collection,
-      royaltyPercent: royaltyData.royaltyPercent,
-      mintFeeUsd: feeUsd,
-      mintFeeEth: feeEth,
-      ethPriceAtMint,
+      royaltyPercent,
+      mintFeeEth,
       listingPriceEth,
       hasImage: Boolean(imageUrl),
-      imageStorageMode: isLikelyDataUrl(imageUrl) ? "db_data_url" : "external_url",
-      message: "Metadata saved. Proceed to wallet mint transaction.",
+      metadataURI: decoded.metadataURI || expectedMetadataUri,
+      usedTransferFallback: decoded.usedFallback,
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Unexpected error";
