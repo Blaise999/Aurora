@@ -4,8 +4,10 @@ import {
   createPublicClient,
   http,
   decodeEventLog,
+  formatEther,
   type Address,
   type Hash,
+  type TransactionReceipt,
 } from "viem";
 import { base, baseSepolia } from "viem/chains";
 import { getSessionData } from "@/lib/auth/session";
@@ -15,7 +17,9 @@ import { telegramNotifyMint } from "@/lib/telegram";
 export const runtime = "nodejs";
 
 const LOG = "[/api/nft/create/confirm]";
-const CREATOR_CONTRACT = (process.env.NEXT_PUBLIC_CREATOR_CONTRACT || "").toLowerCase();
+const CREATOR_CONTRACT = (
+  process.env.NEXT_PUBLIC_CREATOR_CONTRACT || ""
+).toLowerCase();
 
 const CREATED_EVENT_ABI = [
   {
@@ -132,7 +136,10 @@ function extractRoyaltyFromAttributes(attributes: unknown): number {
   if (!Array.isArray(attributes)) return 0;
 
   const found = (attributes as AttributeItem[]).find((item) => {
-    return String(item?.trait_type || "").trim().toLowerCase() === "creator royalty";
+    return (
+      String(item?.trait_type || "").trim().toLowerCase() ===
+      "creator royalty"
+    );
   });
 
   if (!found) return 0;
@@ -141,31 +148,28 @@ function extractRoyaltyFromAttributes(attributes: unknown): number {
   return clampRoyalty(raw);
 }
 
-function getRpcUrls(chainId: number) {
+function compactTruthyStrings(values: Array<string | undefined | null>): string[] {
+  return Array.from(new Set(values.filter(Boolean) as string[]));
+}
+
+function getRpcUrls(chainId: number): string[] {
   if (chainId === 8453) {
-    return Array.from(
-      new Set(
-        [
-          process.env.BASE_FLASHBLOCKS_RPC_URL,
-          process.env.BASE_RPC_URL,
-          process.env.BASE_RPC_URL_2,
-          "https://mainnet-preconf.base.org",
-          "https://mainnet.base.org",
-        ].filter(Boolean)
-      )
-    ) as string[];
+    return compactTruthyStrings([
+      process.env.BASE_FLASHBLOCKS_RPC_URL,
+      process.env.BASE_RPC_URL,
+      process.env.BASE_RPC_URL_2,
+      "https://mainnet-preconf.base.org",
+      "https://mainnet.base.org",
+    ]);
   }
 
-  return Array.from(
-    new Set(
-      [
-        process.env.BASE_SEPOLIA_FLASHBLOCKS_RPC_URL,
-        process.env.BASE_SEPOLIA_RPC_URL,
-        process.env.BASE_SEPOLIA_RPC_URL_2,
-        "https://sepolia-preconf.base.org",
-        "https://sepolia.base.org",
-      ].filter(Boolean)
-    ) as string[];
+  return compactTruthyStrings([
+    process.env.BASE_SEPOLIA_FLASHBLOCKS_RPC_URL,
+    process.env.BASE_SEPOLIA_RPC_URL,
+    process.env.BASE_SEPOLIA_RPC_URL_2,
+    "https://sepolia-preconf.base.org",
+    "https://sepolia.base.org",
+  ]);
 }
 
 function getClientsForChain(chainId: number) {
@@ -180,7 +184,10 @@ function getClientsForChain(chainId: number) {
   );
 }
 
-async function getReceiptStrong(chainId: number, txHash: Hash) {
+async function getReceiptStrong(
+  chainId: number,
+  txHash: Hash
+): Promise<TransactionReceipt | null> {
   const clients = getClientsForChain(chainId);
   const delays = [0, 600, 1000, 1800, 3000, 5000, 8000, 12000, 16000, 20000];
 
@@ -199,8 +206,7 @@ async function getReceiptStrong(chainId: number, txHash: Hash) {
       clients.map((client) => client.getTransactionReceipt({ hash: txHash }))
     );
 
-    let found: Awaited<ReturnType<(typeof clients)[number]["getTransactionReceipt"]>> | null =
-      null;
+    let found: TransactionReceipt | null = null;
 
     results.forEach((result, idx) => {
       if (result.status === "fulfilled" && result.value) {
@@ -228,7 +234,7 @@ async function getReceiptStrong(chainId: number, txHash: Hash) {
   return null;
 }
 
-function decodeMintFromReceipt(receipt: any, contractAddr: string) {
+function decodeMintFromReceipt(receipt: TransactionReceipt, contractAddr: string) {
   let onChainTokenId: string | null = null;
   let onChainCreator: string | null = null;
   let onChainFeePaidEth: number | null = null;
@@ -263,7 +269,7 @@ function decodeMintFromReceipt(receipt: any, contractAddr: string) {
 
         if (feePaid != null) {
           try {
-            onChainFeePaidEth = Number(feePaid) / 1e18;
+            onChainFeePaidEth = Number(formatEther(BigInt(String(feePaid))));
           } catch {
             onChainFeePaidEth = null;
           }
@@ -436,13 +442,17 @@ export async function POST(req: Request) {
       return jsonError(`Unsupported chainId ${resolvedChainId}`, 400);
     }
 
-    let pendingQuery = supabase.from("user_listed").select("*").eq("metadata_key", mintKey);
+    let pendingQuery = supabase
+      .from("user_listed")
+      .select("*")
+      .eq("metadata_key", mintKey);
 
     if (!isInternal && profileId) {
       pendingQuery = pendingQuery.eq("profile_id", profileId);
     }
 
-    const { data: pendingRow, error: pendingError } = await pendingQuery.maybeSingle();
+    const { data: pendingRow, error: pendingError } =
+      await pendingQuery.maybeSingle();
 
     if (pendingError) {
       console.error(LOG, "failed loading pending row", pendingError);
@@ -458,10 +468,14 @@ export async function POST(req: Request) {
     }
 
     if (CREATOR_CONTRACT && contractAddr !== CREATOR_CONTRACT) {
-      return jsonError("Creator contract does not match the configured contract", 400, {
-        provided: contractAddr,
-        expected: CREATOR_CONTRACT,
-      });
+      return jsonError(
+        "Creator contract does not match the configured contract",
+        400,
+        {
+          provided: contractAddr,
+          expected: CREATOR_CONTRACT,
+        }
+      );
     }
 
     console.log(LOG, "loaded pending row", {
@@ -496,9 +510,12 @@ export async function POST(req: Request) {
           existingTransaction.token_id ||
           existingTransaction.metadata?.on_chain_token_id ||
           null,
-        royaltyPercent: clampRoyalty(existingTransaction.metadata?.royalty_percent || 0),
+        royaltyPercent: clampRoyalty(
+          existingTransaction.metadata?.royalty_percent || 0
+        ),
         totalPriceEth:
-          parseNumber(existingTransaction.metadata?.total_price_eth, 0) || totalPriceEth,
+          parseNumber(existingTransaction.metadata?.total_price_eth, 0) ||
+          totalPriceEth,
       });
     }
 
@@ -519,9 +536,13 @@ export async function POST(req: Request) {
         newTxHash: txHash,
       });
 
-      return jsonError("This mint row is already confirmed with a different tx hash", 409, {
-        existingTxHash: pendingRow.tx_hash,
-      });
+      return jsonError(
+        "This mint row is already confirmed with a different tx hash",
+        409,
+        {
+          existingTxHash: pendingRow.tx_hash,
+        }
+      );
     }
 
     const expectedWallet =
@@ -583,7 +604,8 @@ export async function POST(req: Request) {
           clampRoyalty(existingTransaction.metadata?.royalty_percent || 0) ||
           extractRoyaltyFromAttributes(pendingRow.attributes),
         totalPriceEth:
-          parseNumber(existingTransaction.metadata?.total_price_eth, 0) || totalPriceEth,
+          parseNumber(existingTransaction.metadata?.total_price_eth, 0) ||
+          totalPriceEth,
       });
     }
 
@@ -618,7 +640,8 @@ export async function POST(req: Request) {
         status: "mint_submitted",
         mintKey,
         txHash,
-        message: "Receipt not ready yet. Tx hash is attached and confirmation can continue.",
+        message:
+          "Receipt not ready yet. Tx hash is attached and confirmation can continue.",
       });
     }
 
@@ -722,7 +745,10 @@ export async function POST(req: Request) {
       .maybeSingle();
 
     if (!existingWalletMint) {
-      console.log(LOG, "inserting wallet_mints row", { txHash, tokenId: decoded.tokenId });
+      console.log(LOG, "inserting wallet_mints row", {
+        txHash,
+        tokenId: decoded.tokenId,
+      });
 
       const { error: walletMintError } = await supabase.from("wallet_mints").insert({
         wallet_address: resolvedWallet,
@@ -758,7 +784,10 @@ export async function POST(req: Request) {
     let insertedTransaction = false;
 
     if (!transactionRow) {
-      console.log(LOG, "inserting transactions row", { txHash, tokenId: decoded.tokenId });
+      console.log(LOG, "inserting transactions row", {
+        txHash,
+        tokenId: decoded.tokenId,
+      });
 
       const { error: txInsertError } = await supabase.from("transactions").insert({
         wallet_address: resolvedWallet,
