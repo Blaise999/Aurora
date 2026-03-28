@@ -97,15 +97,17 @@ export async function GET(
     // CASE 1: image stored as data URL in DB
     const parsed = parseDataImage(raw);
     if (parsed) {
-      return new Response(parsed.bytes, {
-        status: 200,
-        headers: {
-          "Content-Type": parsed.mime,
-          "Content-Length": String(parsed.bytes.byteLength),
-          "Cache-Control": "public, max-age=31536000, immutable",
-          "Access-Control-Allow-Origin": "*",
-        },
-      });
+      const body = Buffer.from(parsed.bytes);
+
+return new Response(body, {
+  status: 200,
+  headers: {
+    "Content-Type": parsed.mime,
+    "Content-Length": String(body.byteLength),
+    "Cache-Control": "public, max-age=31536000, immutable",
+    "Access-Control-Allow-Origin": "*",
+  },
+});
     }
 
     // CASE 2: image stored as external URL in DB -> proxy it
