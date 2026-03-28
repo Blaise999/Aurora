@@ -1,279 +1,232 @@
 import { NextResponse } from "next/server";
+import { pinata } from "@/utils/pinata";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 const LOG = "[/api/nft/ipfs/prepare]";
+const MAX_FILE_SIZE = 4 * 1024 * 1024;
 
-type AttributeInput = {
-  trait_type?: unknown;
-  value?: unknown;
-};
+const ALLOWED_TYPES = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/gif",
+  "image/webp",
+  "image/svg+xml",
+]);
 
-function jsonError(
-  message: string,
-  status = 400,
-  extra?: Record<string, unknown>
-) {
+function getErrorMessage(error, fallback = "Internal Server Error") {
+  if (!error) return fallback;
+
+  if (typeof error === "string") return error || fallback;
+
+  if (error instanceof Error) {
+    return error.message || fallback;
+  }
+
+  if (typeof error === "object") {
+    if (typeof error.message === "string" && error.message.trim()) {
+      return error.message;
+    }
+
+    if (typeof error.error === "string" && error.error.trim()) {
+      return error.error;
+    }
+
+    if (
+      error.error &&
+      typeof error.error === "object" &&
+      typeof error.error.message === "string" &&
+      error.error.message.trim()
+    ) {
+      return error.error.message;
+    }
+
+    try {
+      return JSON.stringify(error, null, 2);
+    } catch {
+      return fallback;
+    }
+  }
+
+  return String(error);
+}
+
+function jsonError(message, status = 400, extra = {}) {
   return NextResponse.json(
     {
       success: false,
-      error: message,
-      ...(extra || {}),
+      error: String(message || "Request failed"),
+      ...extra,
     },
     { status }
   );
 }
 
-async function readJsonSafe(res: Response) {
-  const raw = await res.text();
-  try {
-    return raw ? JSON.parse(raw) : {};
-  } catch {
-    return { error: raw || "Invalid server response" };
-  }
-}
-
-function normalizeText(value: unknown, maxLen = 0) {
+function normalizeText(value, maxLen = 0) {
   const text = String(value ?? "").trim();
   if (!maxLen || text.length <= maxLen) return text;
   return text.slice(0, maxLen).trim();
 }
 
-function normalizeAttributes(
-  raw: unknown
-): Array<{ trait_type: string; value: string }> {
-  if (!Array.isArray(raw)) return [];
+function safeJsonParse(value, fallback) {
+  if (typeof value !== "string" || !value.trim()) return fallback;
 
-  return raw
-    .map((item) => {
-      const attr = item as AttributeInput;
-      return {
-        trait_type: String(attr?.trait_type ?? "").trim(),
-        value: String(attr?.value ?? "").trim(),
-      };
-    })
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
+  }
+}
+
+function sanitizeExternalUrl(value) {
+  const raw = normalizeText(value, 1000);
+  if (!raw) return "";
+
+  try {
+    const url = new URL(raw);
+    return url.toString();
+  } catch {
+    return "";
+  }
+}
+
+function buildAttributes(value) {
+  const parsed = safeJsonParse(value, []);
+  if (!Array.isArray(parsed)) return [];
+
+  return parsed
+    .map((item) => ({
+      trait_type: normalizeText(item?.trait_type, 100),
+      value: normalizeText(item?.value, 200),
+    }))
     .filter((item) => item.trait_type && item.value);
 }
 
-function normalizeGateway(input?: string | null) {
-  const raw = String(input || "").trim();
-  if (!raw) return "gateway.pinata.cloud";
-
-  return raw
-    .replace(/^https?:\/\//i, "")
-    .replace(/^\/+/, "")
-    .replace(/\/+$/, "");
-}
-
-function buildGatewayUrl(cid: string, gatewayDomain: string) {
-  return `https://${gatewayDomain}/ipfs/${cid}`;
-}
-
-function buildSafeSlug(value: string) {
-  return (
-    value
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "")
-      .slice(0, 60) || "aurora-nft"
-  );
-}
-
-async function pinFileToIpfs(args: {
-  file: File;
-  jwt: string;
-  name: string;
-}) {
-  const data = new FormData();
-  data.append("file", args.file, args.file.name || "image");
-  data.append(
-    "pinataMetadata",
-    JSON.stringify({
-      name: args.name,
-    })
-  );
-  data.append(
-    "pinataOptions",
-    JSON.stringify({
-      cidVersion: 1,
-    })
-  );
-
-  const res = await fetch("https://api.pinata.cloud/pinning/pinFileToIPFS", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${args.jwt}`,
-    },
-    body: data,
-    cache: "no-store",
-  });
-
-  const body = await readJsonSafe(res);
-
-  if (!res.ok || !body?.IpfsHash) {
-    throw new Error(body?.error || body?.message || "Image upload failed");
-  }
-
-  return {
-    cid: String(body.IpfsHash),
-    size: Number(body.PinSize || 0),
-    isDuplicate: Boolean(body.isDuplicate),
+function getExtension(file) {
+  const byType = {
+    "image/png": "png",
+    "image/jpeg": "jpg",
+    "image/gif": "gif",
+    "image/webp": "webp",
+    "image/svg+xml": "svg",
   };
+
+  if (byType[file.type]) return byType[file.type];
+
+  const fromName = String(file?.name || "").split(".").pop();
+  return fromName ? fromName.toLowerCase() : "bin";
 }
 
-async function pinJsonToIpfs(args: {
-  content: Record<string, unknown>;
-  jwt: string;
-  name: string;
-}) {
-  const res = await fetch("https://api.pinata.cloud/pinning/pinJSONToIPFS", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${args.jwt}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      pinataOptions: {
-        cidVersion: 1,
-      },
-      pinataMetadata: {
-        name: args.name,
-      },
-      pinataContent: args.content,
-    }),
-    cache: "no-store",
-  });
+function fileNameBase(value) {
+  const clean = normalizeText(value, 100)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
 
-  const body = await readJsonSafe(res);
-
-  if (!res.ok || !body?.IpfsHash) {
-    throw new Error(body?.error || body?.message || "Metadata upload failed");
-  }
-
-  return {
-    cid: String(body.IpfsHash),
-    size: Number(body.PinSize || 0),
-    isDuplicate: Boolean(body.isDuplicate),
-  };
+  return clean || "nft";
 }
 
-export async function POST(req: Request) {
+export async function POST(request) {
   try {
-    const jwt = process.env.PINATA_JWT;
-    if (!jwt) {
-      return jsonError("Missing PINATA_JWT", 500);
+    const contentType = request.headers.get("content-type") || "";
+    if (!contentType.includes("multipart/form-data")) {
+      return jsonError("Expected multipart/form-data", 400);
     }
 
-    let form: FormData;
-    try {
-      form = await req.formData();
-    } catch {
-      return jsonError("Invalid form submission", 400);
+    const form = await request.formData();
+
+    const imageFile = form.get("imageFile");
+    if (!(imageFile instanceof File)) {
+      return jsonError("Missing image file.", 400);
+    }
+
+    if (!ALLOWED_TYPES.has(imageFile.type)) {
+      return jsonError("Please upload PNG, JPG, GIF, WEBP, or SVG.", 400);
+    }
+
+    if (imageFile.size > MAX_FILE_SIZE) {
+      return jsonError("File must be under 4MB.", 400);
     }
 
     const name = normalizeText(form.get("name"), 100);
     const description = normalizeText(form.get("description"), 1000);
-    const externalUrl = normalizeText(form.get("externalUrl"), 1000);
-
-    let rawAttrs: unknown = [];
-    const attrsRawText = String(form.get("attributes") ?? "").trim();
-    if (attrsRawText) {
-      try {
-        rawAttrs = JSON.parse(attrsRawText);
-      } catch {
-        return jsonError("Invalid attributes JSON", 400);
-      }
-    }
-
-    const attributes = normalizeAttributes(rawAttrs);
+    const collection = normalizeText(form.get("collection"), 100) || "User Created";
+    const externalUrl = sanitizeExternalUrl(form.get("externalUrl"));
+    const attributes = buildAttributes(form.get("attributes"));
 
     if (!name) {
-      return jsonError("Missing NFT name", 400);
+      return jsonError("NFT name is required.", 400);
     }
 
-    const imageFile = form.get("imageFile");
-    if (!(imageFile instanceof File) || imageFile.size <= 0) {
-      return jsonError("Missing NFT image file", 400);
+    const baseName = fileNameBase(name);
+    const imageExt = getExtension(imageFile);
+
+    const imageUpload = await pinata.upload.public
+      .file(imageFile)
+      .name(`${baseName}.${imageExt}`)
+      .keyvalues({
+        app: "aurora-nft",
+        type: "nft-image",
+        nftName: name.slice(0, 100),
+      });
+
+    if (!imageUpload?.cid) {
+      throw new Error("Pinata did not return an image CID.");
     }
 
-    const allowed = new Set([
-      "image/png",
-      "image/jpeg",
-      "image/gif",
-      "image/webp",
-      "image/svg+xml",
-    ]);
-
-    if (!allowed.has(imageFile.type)) {
-      return jsonError("Please upload PNG, JPG, GIF, WEBP, or SVG", 400);
-    }
-
-    if (imageFile.size > 4 * 1024 * 1024) {
-      return jsonError("Image file must be under 4MB", 400);
-    }
-
-    const gatewayDomain = normalizeGateway(
-      process.env.PINATA_GATEWAY ||
-        process.env.NEXT_PUBLIC_PINATA_GATEWAY ||
-        "gateway.pinata.cloud"
-    );
-
-    const slug = buildSafeSlug(name);
-
-    console.log(LOG, "uploading image to IPFS", {
-      name,
-      fileName: imageFile.name,
-      fileType: imageFile.type,
-      size: imageFile.size,
-    });
-
-    const imageUpload = await pinFileToIpfs({
-      file: imageFile,
-      jwt,
-      name: `${slug}-image`,
-    });
-
-    const imageUri = `ipfs://${imageUpload.cid}`;
-    const imageGatewayUrl = buildGatewayUrl(imageUpload.cid, gatewayDomain);
+    const imageCid = String(imageUpload.cid);
+    const imageUri = `ipfs://${imageCid}`;
+    const imageGatewayUrl = await pinata.gateways.public.convert(imageUri);
 
     const metadata = {
       name,
-      description: description || "",
+      description,
       image: imageUri,
-      external_url: externalUrl || "",
+      external_url: externalUrl || undefined,
       attributes,
+      collection,
     };
 
-    console.log(LOG, "uploading metadata to IPFS", {
-      imageCid: imageUpload.cid,
-      name,
-    });
+    const metadataUpload = await pinata.upload.public
+      .json(metadata)
+      .name(`${baseName}-metadata.json`)
+      .keyvalues({
+        app: "aurora-nft",
+        type: "nft-metadata",
+        nftName: name.slice(0, 100),
+      });
 
-    const metadataUpload = await pinJsonToIpfs({
-      content: metadata,
-      jwt,
-      name: `${slug}-metadata.json`,
-    });
+    if (!metadataUpload?.cid) {
+      throw new Error("Pinata did not return a metadata CID.");
+    }
 
-    const metadataUri = `ipfs://${metadataUpload.cid}`;
-    const metadataGatewayUrl = buildGatewayUrl(
-      metadataUpload.cid,
-      gatewayDomain
+    const metadataCid = String(metadataUpload.cid);
+    const metadataUri = `ipfs://${metadataCid}`;
+    const metadataGatewayUrl = await pinata.gateways.public.convert(metadataUri);
+
+    return NextResponse.json(
+      {
+        success: true,
+        imageCid,
+        metadataCid,
+        imageUri,
+        metadataUri,
+        imageGatewayUrl,
+        metadataGatewayUrl,
+      },
+      { status: 200 }
     );
+  } catch (error) {
+    const message = getErrorMessage(error, "Failed to prepare NFT metadata.");
+    console.error(LOG, error);
 
-    return NextResponse.json({
-      success: true,
-      metadataUri,
-      metadataCid: metadataUpload.cid,
-      metadataGatewayUrl,
-      imageUri,
-      imageCid: imageUpload.cid,
-      imageGatewayUrl,
-      gatewayDomain,
-    });
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Unexpected error";
-    console.error(LOG, "error", error);
-    return jsonError(message, 500);
+    return NextResponse.json(
+      {
+        success: false,
+        error: message,
+      },
+      { status: 500 }
+    );
   }
 }
