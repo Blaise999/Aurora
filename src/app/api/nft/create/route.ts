@@ -49,6 +49,14 @@ type LogWithTopics = {
   topics: readonly `0x${string}`[];
 };
 
+type MetadataJson = {
+  name?: unknown;
+  description?: unknown;
+  image?: unknown;
+  external_url?: unknown;
+  attributes?: unknown;
+};
+
 function getSupabaseAdmin() {
   const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -95,10 +103,6 @@ function clampRoyalty(value: unknown): number {
 function normalizeAddress(value: unknown): Address | null {
   const addr = String(value || "").trim().toLowerCase();
   return addr ? (addr as Address) : null;
-}
-
-function isLikelyDataUrl(value: string) {
-  return value.startsWith("data:image/");
 }
 
 function hasTopics(log: unknown): log is LogWithTopics {
@@ -319,9 +323,7 @@ function decodeMintFromReceipt(
           };
         }
       }
-    } catch {
-      // ignore unrelated logs
-    }
+    } catch {}
   }
 
   for (const rawLog of receipt.logs || []) {
@@ -344,32 +346,89 @@ function decodeMintFromReceipt(
   return null;
 }
 
-async function fileToDataUrl(file: File): Promise<string> {
-  const arr = await file.arrayBuffer();
-  const buffer = Buffer.from(arr);
-  const mime = file.type || "application/octet-stream";
-  return `data:${mime};base64,${buffer.toString("base64")}`;
-}
-
-function getBaseUrl(req: Request) {
-  const url = new URL(req.url);
-  const forwardedProto = req.headers.get("x-forwarded-proto");
-  const forwardedHost = req.headers.get("x-forwarded-host");
-
-  if (forwardedProto && forwardedHost) {
-    return `${forwardedProto}://${forwardedHost}`;
-  }
-
-  const origin = req.headers.get("origin");
-  if (origin) return origin;
-
-  return url.origin;
-}
-
 function normalizeText(value: unknown, maxLen = 0) {
   const text = String(value ?? "").trim();
   if (!maxLen || text.length <= maxLen) return text;
   return text.slice(0, maxLen).trim();
+}
+
+function toJsonSafe(value: unknown): unknown {
+  if (typeof value === "bigint") return value.toString();
+
+  if (Array.isArray(value)) {
+    return value.map((item) => toJsonSafe(item));
+  }
+
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([key, val]) => [
+        key,
+        toJsonSafe(val),
+      ])
+    );
+  }
+
+  return value;
+}
+
+function normalizeGateway(input?: string | null) {
+  const raw = String(input || "").trim();
+  if (!raw) return "gateway.pinata.cloud";
+
+  return raw
+    .replace(/^https?:\/\//i, "")
+    .replace(/^\/+/, "")
+    .replace(/\/+$/, "");
+}
+
+function extractIpfsCid(value: unknown): string {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+
+  if (raw.startsWith("ipfs://")) {
+    return raw
+      .replace(/^ipfs:\/\//i, "")
+      .replace(/^ipfs\//i, "")
+      .replace(/^\/+/, "")
+      .split(/[?#]/)[0]
+      .replace(/\/+$/, "");
+  }
+
+  const match = raw.match(/\/ipfs\/([^/?#]+)/i);
+  if (match?.[1]) return match[1];
+
+  return "";
+}
+
+function buildGatewayUrlFromCid(cid: string, gatewayDomain: string) {
+  return cid ? `https://${gatewayDomain}/ipfs/${cid}` : "";
+}
+
+function buildGatewayUrlFromUri(value: unknown, gatewayDomain: string) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  if (/^https?:\/\//i.test(raw)) return raw;
+
+  const cid = extractIpfsCid(raw);
+  if (!cid) return "";
+
+  return buildGatewayUrlFromCid(cid, gatewayDomain);
+}
+
+async function fetchMetadataJson(url: string): Promise<MetadataJson | null> {
+  if (!url) return null;
+
+  try {
+    const res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) return null;
+
+    const data = await res.json();
+    if (!data || typeof data !== "object") return null;
+
+    return data as MetadataJson;
+  } catch {
+    return null;
+  }
 }
 
 async function resolveUserWallet(
@@ -398,6 +457,158 @@ async function resolveUserWallet(
   return wallet;
 }
 
+async function syncMintedNftToCatalog({
+  supabase,
+  chainId,
+  contractAddr,
+  tokenId,
+  name,
+  description,
+  collection,
+  imageUrl,
+  attributes,
+  externalUrl,
+  txHash,
+  metadataKey,
+  listingPriceEth,
+  mintFeeEth,
+  metadataUri,
+  updatedBy,
+}: {
+  supabase: ReturnType<typeof getSupabaseAdmin>;
+  chainId: number;
+  contractAddr: string;
+  tokenId: string;
+  name: string;
+  description: string;
+  collection: string;
+  imageUrl: string;
+  attributes: Array<{ trait_type: string; value: string }>;
+  externalUrl: string;
+  txHash: string;
+  metadataKey: string;
+  listingPriceEth: number;
+  mintFeeEth: number;
+  metadataUri: string;
+  updatedBy: string;
+}) {
+  const rawMetadata = toJsonSafe({
+    name,
+    description,
+    image: imageUrl,
+    image_url: imageUrl,
+    external_url: externalUrl || "",
+    attributes,
+    token_type: "ERC721",
+    chain: chainLabel(chainId),
+    tx_hash: txHash,
+    metadata_key: metadataKey,
+    metadata_uri: metadataUri,
+    listing_price_eth: listingPriceEth,
+    mint_fee_eth: mintFeeEth,
+    source: "minted",
+  });
+
+  const { data: existingCachedRows, error: existingCachedError } = await supabase
+    .from("cached_nfts")
+    .select("id")
+    .eq("chain_id", chainId)
+    .eq("contract_address", contractAddr)
+    .eq("token_id", tokenId)
+    .limit(1);
+
+  if (existingCachedError) {
+    throw new Error(`Failed checking cached NFT: ${existingCachedError.message}`);
+  }
+
+  let cachedNftId: number | null = existingCachedRows?.[0]?.id ?? null;
+
+  const cachedPayload = {
+    chain_id: chainId,
+    contract_address: contractAddr,
+    token_id: tokenId,
+    name,
+    description,
+    image_url: imageUrl,
+    collection_name: collection || "User Created",
+    token_type: "ERC721",
+    attributes,
+    raw_metadata: rawMetadata,
+    is_active: true,
+    synced_at: new Date().toISOString(),
+    batch_id: `minted_${metadataKey}`,
+  };
+
+  if (cachedNftId) {
+    const { error: updateCachedError } = await supabase
+      .from("cached_nfts")
+      .update(cachedPayload)
+      .eq("id", cachedNftId);
+
+    if (updateCachedError) {
+      throw new Error(`Failed updating cached NFT: ${updateCachedError.message}`);
+    }
+  } else {
+    const { data: insertedCached, error: insertCachedError } = await supabase
+      .from("cached_nfts")
+      .insert(cachedPayload)
+      .select("id")
+      .single();
+
+    if (insertCachedError) {
+      throw new Error(`Failed inserting cached NFT: ${insertCachedError.message}`);
+    }
+
+    cachedNftId = insertedCached?.id ?? null;
+  }
+
+  const { data: existingPricingRows, error: existingPricingError } = await supabase
+    .from("nft_pricing")
+    .select("id")
+    .eq("chain_id", chainId)
+    .eq("contract_address", contractAddr)
+    .eq("token_id", tokenId)
+    .limit(1);
+
+  if (existingPricingError) {
+    throw new Error(`Failed checking NFT pricing: ${existingPricingError.message}`);
+  }
+
+  const existingPricingId = existingPricingRows?.[0]?.id ?? null;
+
+  const pricingPayload = {
+    cached_nft_id: cachedNftId,
+    chain_id: chainId,
+    contract_address: contractAddr,
+    token_id: tokenId,
+    mint_price_eth: listingPriceEth,
+    mint_fee_eth: mintFeeEth,
+    is_featured: false,
+    is_listed: listingPriceEth > 0,
+    updated_at: new Date().toISOString(),
+    updated_by: updatedBy,
+  };
+
+  if (existingPricingId) {
+    const { error: updatePricingError } = await supabase
+      .from("nft_pricing")
+      .update(pricingPayload)
+      .eq("id", existingPricingId);
+
+    if (updatePricingError) {
+      throw new Error(`Failed updating NFT pricing: ${updatePricingError.message}`);
+    }
+  } else {
+    const { error: insertPricingError } = await supabase
+      .from("nft_pricing")
+      .insert(pricingPayload);
+
+    if (insertPricingError) {
+      throw new Error(`Failed inserting NFT pricing: ${insertPricingError.message}`);
+    }
+  }
+}
+
 export async function POST(req: Request) {
   try {
     const supabase = getSupabaseAdmin();
@@ -407,7 +618,11 @@ export async function POST(req: Request) {
       return jsonError("You must be logged in to create an NFT", 401);
     }
 
-    const profileId = String(session.profileId);
+    const profileId = Number(session.profileId);
+    if (!Number.isFinite(profileId)) {
+      return jsonError("Invalid profile id in session", 400);
+    }
+
     const email = session.email;
     const userWallet = await resolveUserWallet(
       supabase,
@@ -423,7 +638,6 @@ export async function POST(req: Request) {
     }
 
     const txHash = String(form.get("txHash") || "").trim() as Hash;
-    const mintKey = normalizeText(form.get("mintKey"), 200);
     const chainId = parseChainId(
       form.get("chainId"),
       parseChainId(process.env.NEXT_PUBLIC_CHAIN_ID || "8453", 8453)
@@ -432,15 +646,43 @@ export async function POST(req: Request) {
       form.get("creatorContract") || CREATOR_CONTRACT
     );
     const walletAddressFromClient = normalizeAddress(form.get("walletAddress"));
-    const expectedMetadataUri =
-      normalizeText(form.get("metadataUri"), 1000) ||
-      `${getBaseUrl(req)}/api/nft/token-metadata/${encodeURIComponent(mintKey)}`;
+    const expectedMetadataUri = normalizeText(form.get("metadataUri"), 2000);
+    const metadataKey =
+      extractIpfsCid(expectedMetadataUri) ||
+      normalizeText(form.get("mintKey"), 255);
 
-    if (!mintKey) return jsonError("Missing mintKey", 400);
+    const gatewayDomain = normalizeGateway(
+      process.env.PINATA_GATEWAY ||
+        process.env.NEXT_PUBLIC_PINATA_GATEWAY ||
+        "gateway.pinata.cloud"
+    );
+
+    const metadataGatewayUrlFromClient =
+      normalizeText(form.get("ipfsMetadataUrl"), 2000) ||
+      buildGatewayUrlFromUri(expectedMetadataUri, gatewayDomain);
+
+    const imageIpfsUriFromClient = normalizeText(form.get("ipfsImageUri"), 2000);
+    const imageGatewayUrlFromClient =
+      normalizeText(form.get("ipfsImageUrl"), 2000) ||
+      buildGatewayUrlFromUri(imageIpfsUriFromClient, gatewayDomain);
+
     if (!txHash || txHash.length !== 66 || !txHash.startsWith("0x")) {
       return jsonError("Missing or invalid txHash", 400);
     }
-    if (!contractAddr) return jsonError("Missing creator contract address", 400);
+
+    if (!contractAddr) {
+      return jsonError("Missing creator contract address", 400);
+    }
+
+    if (!expectedMetadataUri) {
+      return jsonError("Missing metadataUri", 400);
+    }
+
+    if (!metadataKey) {
+      return jsonError("Could not derive metadata key from metadataUri", 400, {
+        metadataUri: expectedMetadataUri,
+      });
+    }
 
     if (CREATOR_CONTRACT && contractAddr !== CREATOR_CONTRACT) {
       return jsonError(
@@ -468,6 +710,8 @@ export async function POST(req: Request) {
       );
     }
 
+    const metadataFromGateway = await fetchMetadataJson(metadataGatewayUrlFromClient);
+
     const { data: existingByTx, error: existingByTxError } = await supabase
       .from("user_listed")
       .select("*")
@@ -483,14 +727,36 @@ export async function POST(req: Request) {
     }
 
     if (existingByTx?.status === "confirmed") {
+      await syncMintedNftToCatalog({
+        supabase,
+        chainId: Number(existingByTx.chain_id || chainId),
+        contractAddr: String(existingByTx.contract_address || contractAddr).toLowerCase(),
+        tokenId: String(existingByTx.token_id || ""),
+        name: String(existingByTx.name || "Untitled NFT"),
+        description: String(existingByTx.description || ""),
+        collection: String(existingByTx.collection || "User Created"),
+        imageUrl: String(existingByTx.image_url || ""),
+        attributes: normalizeAttributes(existingByTx.attributes),
+        externalUrl: String(existingByTx.external_url || ""),
+        txHash,
+        metadataKey: String(existingByTx.metadata_key || metadataKey),
+        listingPriceEth: parseNumber(existingByTx.listing_price_eth, 0),
+        mintFeeEth: parseNumber(existingByTx.mint_fee_eth, 0),
+        metadataUri: expectedMetadataUri,
+        updatedBy: email || userWallet,
+      });
+
       return NextResponse.json({
         success: true,
         status: "confirmed",
         txHash,
         mintKey: existingByTx.metadata_key,
+        metadataKey: existingByTx.metadata_key,
         tokenId: existingByTx.token_id,
         royaltyPercent: extractRoyaltyFromAttributes(existingByTx.attributes),
         mintFeeEth: parseNumber(existingByTx.mint_fee_eth, 0),
+        listingPriceEth: parseNumber(existingByTx.listing_price_eth, 0),
+        metadataURI: expectedMetadataUri,
       });
     }
 
@@ -498,7 +764,7 @@ export async function POST(req: Request) {
       .from("user_listed")
       .select("*")
       .eq("profile_id", profileId)
-      .eq("metadata_key", mintKey)
+      .eq("metadata_key", metadataKey)
       .maybeSingle();
 
     if (existingByKeyError) {
@@ -508,16 +774,27 @@ export async function POST(req: Request) {
       );
     }
 
-    const name = normalizeText(form.get("name") ?? "", 100);
-    const description = normalizeText(form.get("description") ?? "", 1000);
+    const name =
+      normalizeText(form.get("name"), 100) ||
+      normalizeText(metadataFromGateway?.name, 100);
+
+    const description =
+      normalizeText(form.get("description"), 1000) ||
+      normalizeText(metadataFromGateway?.description, 1000);
+
     const collection =
-      normalizeText(form.get("collection") ?? "", 100) || "User Created";
-    const externalUrl = normalizeText(form.get("externalUrl") ?? "", 1000);
+      normalizeText(form.get("collection"), 100) || "User Created";
 
-    const listingPriceEth = parseNumber(form.get("listingPriceEth"), 0);
-    const feeEthFromClient = parseNumber(form.get("feeEth"), 0);
+    const externalUrl =
+      normalizeText(form.get("externalUrl"), 1000) ||
+      normalizeText(metadataFromGateway?.external_url, 1000);
 
-    if (!name) return jsonError("Missing NFT name", 400);
+    const listingPriceEth = Math.max(0, parseNumber(form.get("listingPriceEth"), 0));
+    const feeEthFromClient = Math.max(0, parseNumber(form.get("feeEth"), 0));
+
+    if (!name) {
+      return jsonError("Missing NFT name", 400);
+    }
 
     let rawAttrs: unknown = [];
     const attrsRawText = String(form.get("attributes") ?? "").trim();
@@ -528,6 +805,8 @@ export async function POST(req: Request) {
       } catch {
         return jsonError("Invalid attributes JSON", 400);
       }
+    } else if (metadataFromGateway?.attributes) {
+      rawAttrs = metadataFromGateway.attributes;
     }
 
     const royaltyPercent = clampRoyalty(form.get("royaltyPercent") ?? 0);
@@ -536,20 +815,17 @@ export async function POST(req: Request) {
       royaltyPercent
     );
 
-    let imageUrl = "";
+    const metadataImageUri =
+      imageIpfsUriFromClient ||
+      normalizeText(metadataFromGateway?.image, 2000);
 
-    const imageFile = form.get("imageFile");
-    if (imageFile instanceof File && imageFile.size > 0) {
-      if (imageFile.size > 4 * 1024 * 1024) {
-        return jsonError("Image file must be under 4MB", 400);
-      }
-      imageUrl = await fileToDataUrl(imageFile);
-    } else if (existingByKey?.image_url) {
-      imageUrl = String(existingByKey.image_url).trim();
-    }
+    const imageUrl =
+      imageGatewayUrlFromClient ||
+      buildGatewayUrlFromUri(metadataImageUri, gatewayDomain) ||
+      String(existingByKey?.image_url || "").trim();
 
     if (!imageUrl) {
-      return jsonError("Missing NFT image", 400);
+      return jsonError("Missing NFT image URL", 400);
     }
 
     const receipt = await getReceiptStrong(chainId, txHash);
@@ -616,18 +892,20 @@ export async function POST(req: Request) {
         ? decoded.feePaidEth
         : feeEthFromClient;
 
+    const resolvedMetadataUri = decoded.metadataURI || expectedMetadataUri;
+
     const rowPayload = {
       profile_id: profileId,
-      metadata_key: mintKey,
+      metadata_key: metadataKey,
       wallet_address: userWallet,
-      chain_id: String(chainId),
+      chain_id: chainId,
       contract_address: contractAddr,
-      token_id: decoded.tokenId,
+      token_id: String(decoded.tokenId),
       name,
       description,
       collection,
       image_url: imageUrl,
-      external_url: externalUrl,
+      external_url: externalUrl || "",
       attributes,
       token_type: "ERC721",
       chain: chainLabel(chainId),
@@ -635,6 +913,20 @@ export async function POST(req: Request) {
       mint_fee_eth: mintFeeEth,
       listing_price_eth: listingPriceEth,
       status: "confirmed",
+      confirmed_at: new Date().toISOString(),
+      last_confirm_check_at: new Date().toISOString(),
+      confirm_attempts: (existingByKey?.confirm_attempts || 0) + 1,
+      last_confirm_error: null,
+      receipt_json: toJsonSafe({
+        ...receipt,
+        app_metadata: {
+          metadata_uri: resolvedMetadataUri,
+          metadata_gateway_url: metadataGatewayUrlFromClient,
+          image_ipfs_uri: metadataImageUri || "",
+          image_gateway_url: imageUrl,
+          gateway_domain: gatewayDomain,
+        },
+      }),
       created_at: existingByKey?.created_at || new Date().toISOString(),
     };
 
@@ -651,12 +943,31 @@ export async function POST(req: Request) {
         .from("user_listed")
         .update(rowPayload)
         .eq("profile_id", profileId)
-        .eq("metadata_key", mintKey);
+        .eq("metadata_key", metadataKey);
 
       if (updateError) {
         return jsonError(`Failed to update minted NFT: ${updateError.message}`, 500);
       }
     }
+
+    await syncMintedNftToCatalog({
+      supabase,
+      chainId,
+      contractAddr,
+      tokenId: String(decoded.tokenId),
+      name,
+      description,
+      collection,
+      imageUrl,
+      attributes,
+      externalUrl,
+      txHash,
+      metadataKey,
+      listingPriceEth,
+      mintFeeEth,
+      metadataUri: resolvedMetadataUri,
+      updatedBy: email || userWallet,
+    });
 
     const { data: existingWalletMint } = await supabase
       .from("wallet_mints")
@@ -699,7 +1010,7 @@ export async function POST(req: Request) {
     if (!existingTransaction) {
       const { error: txInsertError } = await supabase.from("transactions").insert({
         wallet_address: userWallet,
-        profile_id: profileId,
+        profile_id: String(profileId),
         tx_hash: txHash,
         tx_type: "create_mint",
         chain_id: String(chainId),
@@ -708,21 +1019,21 @@ export async function POST(req: Request) {
         amount_eth: mintFeeEth,
         admin_wallet: "",
         status: "confirmed",
-        metadata: {
+        metadata: toJsonSafe({
           type: "create_mint",
-          mint_key: mintKey,
+          metadata_key: metadataKey,
           nft_name: name,
           collection,
           on_chain_token_id: decoded.tokenId,
-          on_chain_metadata_uri: decoded.metadataURI || expectedMetadataUri,
+          on_chain_metadata_uri: resolvedMetadataUri,
           mint_fee_eth: mintFeeEth,
           listing_price_eth: listingPriceEth,
           royalty_percent: royaltyPercent,
           image_url: imageUrl,
-          image_storage_mode: isLikelyDataUrl(String(imageUrl || ""))
-            ? "db_data_url"
-            : "external_url",
-        },
+          image_ipfs_uri: metadataImageUri || "",
+          metadata_gateway_url: metadataGatewayUrlFromClient,
+          image_storage_mode: "ipfs_gateway",
+        }),
       });
 
       if (txInsertError) {
@@ -740,7 +1051,7 @@ export async function POST(req: Request) {
         tokenId: decoded.tokenId,
         creator: notifBuyer,
         fee: String(mintFeeEth),
-        mintPrice: "0",
+        mintPrice: String(listingPriceEth),
         price: String(listingPriceEth),
         contractAddress: contractAddr,
       }).catch((err) => {
@@ -765,8 +1076,8 @@ export async function POST(req: Request) {
           type: "create_mint",
           title: "New NFT Created!",
           body: `${name} (Token #${decoded.tokenId}) created by ${notifBuyer} — ${royaltyPercent}% royalty`,
-          metadata: {
-            mintKey,
+          metadata: toJsonSafe({
+            metadataKey,
             txHash,
             tokenId: decoded.tokenId,
             creator: notifBuyer,
@@ -777,9 +1088,11 @@ export async function POST(req: Request) {
             mint_fee_eth: mintFeeEth,
             listing_price_eth: listingPriceEth,
             royalty_percent: royaltyPercent,
-            on_chain_metadata_uri: decoded.metadataURI || expectedMetadataUri,
+            on_chain_metadata_uri: resolvedMetadataUri,
+            metadata_gateway_url: metadataGatewayUrlFromClient,
+            image_ipfs_uri: metadataImageUri || "",
             image_url: imageUrl,
-          },
+          }),
         });
 
       if (adminNotifError) {
@@ -791,7 +1104,8 @@ export async function POST(req: Request) {
       success: true,
       status: "confirmed",
       txHash,
-      mintKey,
+      mintKey: metadataKey,
+      metadataKey,
       tokenId: decoded.tokenId,
       profileId,
       contractAddress: contractAddr,
@@ -804,7 +1118,9 @@ export async function POST(req: Request) {
       mintFeeEth,
       listingPriceEth,
       hasImage: Boolean(imageUrl),
-      metadataURI: decoded.metadataURI || expectedMetadataUri,
+      imageUrl,
+      metadataURI: resolvedMetadataUri,
+      metadataGatewayUrl: metadataGatewayUrlFromClient,
       usedTransferFallback: decoded.usedFallback,
     });
   } catch (error: unknown) {

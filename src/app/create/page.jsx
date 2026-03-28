@@ -10,7 +10,6 @@ import {
 } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { useSettings } from "@/hooks/useNfts";
 import {
   useAccount,
   useWriteContract,
@@ -104,15 +103,6 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function buildMintKey() {
-  return `mint_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
-}
-
-function buildMetadataUri(mintKey) {
-  if (typeof window === "undefined") return "";
-  return `${window.location.origin}/api/nft/token-metadata/${encodeURIComponent(mintKey)}`;
-}
-
 async function readJsonSafe(res) {
   const raw = await res.text();
   try {
@@ -129,8 +119,22 @@ function normalizeText(value, maxLen = 0) {
   return trimmed.slice(0, maxLen).trim();
 }
 
+function parseListingPrice(value) {
+  const parsed = Number.parseFloat(String(value ?? "").trim());
+  if (!Number.isFinite(parsed) || parsed < 0) return 0;
+  return parsed;
+}
+
+function buildAttributesPayload(attributes) {
+  return attributes
+    .map((a) => ({
+      trait_type: normalizeText(a?.trait_type, 100),
+      value: normalizeText(a?.value, 200),
+    }))
+    .filter((a) => a.trait_type && a.value);
+}
+
 function CreatePageContent() {
-  const { settings } = useSettings();
   const { address: liveWalletAddress, isConnected: isWagmiConnected, chain } =
     useAccount();
   const { switchChain } = useSwitchChain();
@@ -150,11 +154,12 @@ function CreatePageContent() {
   const liveWallet = liveWalletAddress
     ? String(liveWalletAddress).toLowerCase()
     : null;
+
   const savedWallet = linkedWallet
     ? String(linkedWallet).toLowerCase()
     : profile?.wallet_address
-      ? String(profile.wallet_address).toLowerCase()
-      : null;
+    ? String(profile.wallet_address).toLowerCase()
+    : null;
 
   const effectiveWallet = liveWallet || savedWallet || null;
   const hasUsableWallet = Boolean(effectiveWallet);
@@ -184,7 +189,8 @@ function CreatePageContent() {
     query: { enabled: Boolean(creatorContract) },
   });
 
-  const onChainFeeEth = onChainFeeRaw != null ? formatEther(onChainFeeRaw) : null;
+  const onChainFeeEth =
+    onChainFeeRaw != null ? formatEther(onChainFeeRaw) : null;
   const onChainFeeNum = parseFloat(onChainFeeEth || "0");
 
   const { data: balanceData } = useBalance({
@@ -225,11 +231,13 @@ function CreatePageContent() {
 
   const [step, setStep] = useState(1);
   const [mintStage, setMintStage] = useState("");
-  const [mintKey, setMintKey] = useState(null);
   const [submittedTxHash, setSubmittedTxHash] = useState(null);
+  const [metadataUri, setMetadataUri] = useState("");
+  const [preparedAsset, setPreparedAsset] = useState(null);
   const [finalResult, setFinalResult] = useState(null);
   const [pageError, setPageError] = useState(null);
   const [syncingToProfile, setSyncingToProfile] = useState(false);
+  const [preparingMetadata, setPreparingMetadata] = useState(false);
 
   const finalizingRef = useRef(false);
   const unmountedRef = useRef(false);
@@ -259,6 +267,28 @@ function CreatePageContent() {
     [royaltyPercent]
   );
 
+  const listingPriceNum = useMemo(
+    () => parseListingPrice(listingPrice),
+    [listingPrice]
+  );
+
+  const cleanAttributes = useMemo(
+    () => buildAttributesPayload(attributes),
+    [attributes]
+  );
+
+  const txExplorerLink = submittedTxHash
+    ? `${explorerUrl}/tx/${submittedTxHash}`
+    : null;
+
+  const contractExplorerLink = creatorContract
+    ? `${explorerUrl}/address/${creatorContract}`
+    : null;
+
+  const effectiveWalletShort = effectiveWallet
+    ? `${effectiveWallet.slice(0, 6)}...${effectiveWallet.slice(-4)}`
+    : null;
+
   const handleRoyaltyChange = (value) => {
     if (value === "") {
       setRoyaltyPercent("");
@@ -268,6 +298,17 @@ function CreatePageContent() {
     const parsed = Number.parseFloat(value);
     if (!Number.isFinite(parsed)) return;
     setRoyaltyPercent(String(clampRoyalty(parsed)));
+  };
+
+  const handleListingPriceChange = (value) => {
+    if (value === "") {
+      setListingPrice("");
+      return;
+    }
+
+    const parsed = Number.parseFloat(value);
+    if (!Number.isFinite(parsed) || parsed < 0) return;
+    setListingPrice(value);
   };
 
   const handleFileSelect = (file) => {
@@ -317,24 +358,72 @@ function CreatePageContent() {
   const isStep2Valid = Boolean(normalizeText(name, 100));
   const isFormValid = isStep1Valid && isStep2Valid;
 
-  const txExplorerLink = submittedTxHash
-    ? `${explorerUrl}/tx/${submittedTxHash}`
-    : null;
-  const contractExplorerLink = creatorContract
-    ? `${explorerUrl}/address/${creatorContract}`
-    : null;
+  const buildPrepareForm = useCallback(() => {
+    const form = new FormData();
+    form.append("name", normalizeText(name, 100));
+    form.append("description", normalizeText(description, 1000));
+    form.append("externalUrl", normalizeText(externalUrl, 1000));
+    form.append("collection", normalizeText(collection, 100) || "User Created");
+    form.append("attributes", JSON.stringify(cleanAttributes));
 
-  const effectiveWalletShort = effectiveWallet
-    ? `${effectiveWallet.slice(0, 6)}...${effectiveWallet.slice(-4)}`
-    : null;
+    if (imageFile) {
+      form.append("imageFile", imageFile);
+    }
+
+    return form;
+  }, [name, description, externalUrl, collection, cleanAttributes, imageFile]);
+
+  const prepareMetadata = useCallback(async () => {
+    if (!imageFile) {
+      throw new Error("Please upload an image first.");
+    }
+
+    setPreparingMetadata(true);
+    setPageError(null);
+    setMintStage("preparing_metadata");
+
+    try {
+      const res = await fetch("/api/nft/ipfs/prepare", {
+        method: "POST",
+        body: buildPrepareForm(),
+      });
+
+      const data = await readJsonSafe(res);
+
+      if (!res.ok || !data?.success || !data?.metadataUri) {
+        throw new Error(
+          data?.error || data?.message || "Failed to prepare NFT metadata."
+        );
+      }
+
+      const prepared = {
+        metadataUri: String(data.metadataUri),
+        imageUri: data.imageUri ? String(data.imageUri) : "",
+        imageGatewayUrl: data.imageGatewayUrl
+          ? String(data.imageGatewayUrl)
+          : "",
+        metadataGatewayUrl: data.metadataGatewayUrl
+          ? String(data.metadataGatewayUrl)
+          : "",
+      };
+
+      setPreparedAsset(prepared);
+      setMetadataUri(prepared.metadataUri);
+
+      return prepared;
+    } finally {
+      if (!unmountedRef.current) {
+        setPreparingMetadata(false);
+      }
+    }
+  }, [imageFile, buildPrepareForm]);
 
   const buildFinalizeForm = useCallback(
-    (hashArg, keyArg) => {
+    (hashArg, metadataUriArg = metadataUri) => {
       const form = new FormData();
 
       form.append("txHash", hashArg);
-      form.append("mintKey", keyArg);
-      form.append("metadataUri", buildMetadataUri(keyArg));
+      form.append("metadataUri", metadataUriArg || "");
       form.append("creatorContract", creatorContract || "");
       form.append("chainId", String(targetChainId));
       form.append("walletAddress", effectiveWallet || "");
@@ -345,28 +434,18 @@ function CreatePageContent() {
         normalizeText(collection, 100) || "User Created"
       );
       form.append("externalUrl", normalizeText(externalUrl, 1000));
-      form.append("listingPriceEth", listingPrice ? String(listingPrice) : "0");
+      form.append("listingPriceEth", String(listingPriceNum));
       form.append("royaltyPercent", royaltyNum > 0 ? String(royaltyNum) : "0");
       form.append("feeEth", onChainFeeEth || "0");
-      form.append(
-        "attributes",
-        JSON.stringify(
-          attributes
-            .map((a) => ({
-              trait_type: normalizeText(a.trait_type, 100),
-              value: normalizeText(a.value, 200),
-            }))
-            .filter((a) => a.trait_type && a.value)
-        )
-      );
-
-      if (imageFile) {
-        form.append("imageFile", imageFile);
-      }
+      form.append("attributes", JSON.stringify(cleanAttributes));
+      form.append("ipfsImageUri", preparedAsset?.imageUri || "");
+      form.append("ipfsImageUrl", preparedAsset?.imageGatewayUrl || "");
+      form.append("ipfsMetadataUrl", preparedAsset?.metadataGatewayUrl || "");
 
       return form;
     },
     [
+      metadataUri,
       creatorContract,
       targetChainId,
       effectiveWallet,
@@ -374,20 +453,19 @@ function CreatePageContent() {
       description,
       collection,
       externalUrl,
-      listingPrice,
+      listingPriceNum,
       royaltyNum,
       onChainFeeEth,
-      attributes,
-      imageFile,
+      cleanAttributes,
+      preparedAsset,
     ]
   );
 
   const finalizeMint = useCallback(
-    async (hashArg = submittedTxHash, keyArg = mintKey) => {
+    async (hashArg = submittedTxHash, metadataUriArg = metadataUri) => {
       if (
         !hashArg ||
-        !keyArg ||
-        !imageFile ||
+        !metadataUriArg ||
         finalResult?.success ||
         finalizingRef.current
       ) {
@@ -401,26 +479,15 @@ function CreatePageContent() {
       setStep(4);
 
       try {
-        let lastMessage = "Failed to save minted NFT to profile.";
+        let lastMessage = "Failed to save minted NFT.";
 
         for (let attempt = 1; attempt <= 4; attempt++) {
-          console.log(LOG, `finalize attempt ${attempt}/4`, {
-            hashArg,
-            keyArg,
-          });
-
           const res = await fetch("/api/nft/create", {
             method: "POST",
-            body: buildFinalizeForm(hashArg, keyArg),
+            body: buildFinalizeForm(hashArg, metadataUriArg),
           });
 
           const data = await readJsonSafe(res);
-
-          console.log(LOG, "finalize response", {
-            ok: res.ok,
-            status: res.status,
-            data,
-          });
 
           if (res.ok && data?.success) {
             if (unmountedRef.current) return true;
@@ -452,7 +519,7 @@ function CreatePageContent() {
         if (!unmountedRef.current) {
           setPageError(
             err?.message ||
-              "Mint went through, but syncing to your profile failed. Retry below."
+              "Mint went through, but syncing to the app failed. Retry below."
           );
           setMintStage("sync_failed");
         }
@@ -464,7 +531,7 @@ function CreatePageContent() {
         }
       }
     },
-    [submittedTxHash, mintKey, imageFile, finalResult, buildFinalizeForm]
+    [submittedTxHash, metadataUri, finalResult, buildFinalizeForm]
   );
 
   useEffect(() => {
@@ -496,11 +563,11 @@ function CreatePageContent() {
   }, [watchedReceiptError]);
 
   useEffect(() => {
-    if (!watchedReceipt || !submittedTxHash || !mintKey || finalResult?.success) {
+    if (!watchedReceipt || !submittedTxHash || !metadataUri || finalResult?.success) {
       return;
     }
-    void finalizeMint(submittedTxHash, mintKey);
-  }, [watchedReceipt, submittedTxHash, mintKey, finalResult, finalizeMint]);
+    void finalizeMint(submittedTxHash, metadataUri);
+  }, [watchedReceipt, submittedTxHash, metadataUri, finalResult, finalizeMint]);
 
   const handleCreateMint = useCallback(async () => {
     if (!isLoggedIn || !isFormValid) return;
@@ -520,7 +587,7 @@ function CreatePageContent() {
       return;
     }
 
-    if (!isFeeReady) {
+    if (!isFeeReady || !onChainFeeEth) {
       setPageError("Mint fee is still loading. Please try again.");
       return;
     }
@@ -540,51 +607,48 @@ function CreatePageContent() {
     }
 
     const cleanName = normalizeText(name, 100);
-    const nextMintKey = buildMintKey();
-    const metadataUri = buildMetadataUri(nextMintKey);
 
     if (!cleanName) {
       setPageError("NFT name is required.");
       return;
     }
 
-    if (!metadataUri) {
-      setPageError("Could not build metadata URI.");
-      return;
-    }
-
-    console.log(LOG, "starting clean mint flow", {
+    console.log(LOG, "starting seamless IPFS mint flow", {
       effectiveWallet,
       creatorContract,
       targetChainId,
       onChainFeeEth,
-      nextMintKey,
-      metadataUri,
+      listingPriceNum,
     });
 
     setStep(4);
     setFinalResult(null);
     setPageError(null);
-    setMintStage("awaiting_wallet");
-    setMintKey(nextMintKey);
     setSubmittedTxHash(null);
+    setPreparedAsset(null);
+    setMetadataUri("");
 
     try {
+      const prepared = await prepareMetadata();
+
+      setMintStage("awaiting_wallet");
+
       const hash = await writeContractAsync({
         address: creatorContract,
         abi: AURORA_CREATOR_ABI,
         functionName: "createNft",
-        args: [metadataUri],
+        args: [prepared.metadataUri],
         value: parseEther(String(onChainFeeEth)),
         chainId: targetChainId,
       });
 
-      console.log(LOG, "createNft tx submitted", { hash });
+      console.log(LOG, "createNft tx submitted", {
+        hash,
+        metadataUri: prepared.metadataUri,
+      });
 
       setSubmittedTxHash(hash);
       setMintStage("waiting_receipt");
-
-      void finalizeMint(hash, nextMintKey);
     } catch (e) {
       console.error(LOG, "handleCreateMint failed", e);
       setPageError(e?.shortMessage || e?.message || "Mint failed");
@@ -601,15 +665,16 @@ function CreatePageContent() {
     switchChain,
     creatorContract,
     isFeeReady,
+    onChainFeeEth,
     hasEnoughBalance,
     mintFeeText,
     userBalanceEth,
     royaltyNum,
     effectiveWallet,
-    onChainFeeEth,
+    listingPriceNum,
     name,
     writeContractAsync,
-    finalizeMint,
+    prepareMetadata,
   ]);
 
   const resetAll = () => {
@@ -618,9 +683,11 @@ function CreatePageContent() {
     setPageError(null);
     setStep(1);
     setMintStage("");
-    setMintKey(null);
     setSubmittedTxHash(null);
+    setMetadataUri("");
+    setPreparedAsset(null);
     setSyncingToProfile(false);
+    setPreparingMetadata(false);
 
     setName("");
     setDescription("");
@@ -643,26 +710,30 @@ function CreatePageContent() {
   };
 
   const titleText =
-    mintStage === "awaiting_wallet"
+    mintStage === "preparing_metadata"
+      ? "Preparing metadata..."
+      : mintStage === "awaiting_wallet"
       ? "Confirm mint in wallet..."
       : mintStage === "waiting_receipt"
-        ? "Waiting for on-chain confirmation..."
-        : mintStage === "syncing"
-          ? "Saving NFT to your profile..."
-          : mintStage === "sync_failed"
-            ? "Minted, but profile sync needs retry"
-            : "Processing mint...";
+      ? "Waiting for on-chain confirmation..."
+      : mintStage === "syncing"
+      ? "Saving NFT into Aurora..."
+      : mintStage === "sync_failed"
+      ? "Minted, but app sync needs retry"
+      : "Processing mint...";
 
   const subtitleText =
-    mintStage === "awaiting_wallet"
+    mintStage === "preparing_metadata"
+      ? "Uploading your art and metadata first so wallets get the final URI immediately."
+      : mintStage === "awaiting_wallet"
       ? "Approve the mint transaction in your wallet."
       : mintStage === "waiting_receipt"
-        ? "Your tx hash is submitted. The app is watching the chain and will save the NFT once the receipt is confirmed."
-        : mintStage === "syncing"
-          ? "Verifying the receipt, decoding the mint event, and writing the NFT to your account."
-          : mintStage === "sync_failed"
-            ? "The chain tx may be fine, but the app could not finish syncing it. Retry below using the same tx hash."
-            : "Processing...";
+      ? "Your tx is submitted. The app is watching the chain and will save the NFT once the receipt is confirmed."
+      : mintStage === "syncing"
+      ? "Saving to your Aurora profile and admin records."
+      : mintStage === "sync_failed"
+      ? "The chain tx may be fine, but the app could not finish syncing it. Retry below using the same tx hash."
+      : "Processing...";
 
   return (
     <div className="min-h-screen">
@@ -693,7 +764,7 @@ function CreatePageContent() {
           </h1>
 
           <p className="mx-auto max-w-2xl text-base text-muted sm:text-lg">
-            One wallet mint. One verified on-chain receipt. One clean save to your profile.
+            Final metadata is prepared first, then the mint uses the real URI right away.
           </p>
 
           {creatorContract && (
@@ -980,6 +1051,15 @@ function CreatePageContent() {
                         </div>
 
                         <div className="flex justify-between text-sm">
+                          <span className="text-muted">Set NFT Price</span>
+                          <span className="font-mono text-text">
+                            {listingPriceNum > 0
+                              ? `${listingPriceNum} ETH`
+                              : "Not listed yet"}
+                          </span>
+                        </div>
+
+                        <div className="flex justify-between text-sm">
                           <span className="text-muted">Gas Fee</span>
                           <span className="font-mono text-muted-dim">
                             Estimated by wallet
@@ -1126,7 +1206,9 @@ function CreatePageContent() {
                               step="0.0001"
                               min="0"
                               value={listingPrice}
-                              onChange={(e) => setListingPrice(e.target.value)}
+                              onChange={(e) =>
+                                handleListingPriceChange(e.target.value)
+                              }
                               placeholder="0.01"
                               className="w-full rounded-xl border border-border-light bg-surface2/60 px-4 py-3 text-sm text-text transition-colors placeholder:text-muted-dim focus:border-accent/50 focus:outline-none focus:ring-1 focus:ring-accent/20"
                             />
@@ -1231,8 +1313,7 @@ function CreatePageContent() {
                         Review Your NFT
                       </h2>
                       <p className="text-xs text-muted">
-                        One mint transaction, then automatic receipt verification and
-                        profile sync.
+                        Your image and metadata will upload first, then the final URI is minted on-chain.
                       </p>
                     </div>
                   </div>
@@ -1289,13 +1370,13 @@ function CreatePageContent() {
                           </p>
                           <p className="font-mono text-sm">{chainName}</p>
                         </div>
-                        {listingPrice && parseFloat(listingPrice) > 0 && (
+                        {listingPriceNum > 0 && (
                           <div>
                             <p className="mb-1 text-xs uppercase tracking-wider text-muted-dim">
                               NFT Price
                             </p>
                             <p className="font-mono text-sm text-accent">
-                              {listingPrice} ETH
+                              {listingPriceNum} ETH
                             </p>
                           </div>
                         )}
@@ -1309,25 +1390,21 @@ function CreatePageContent() {
                         </div>
                       </div>
 
-                      {attributes.filter((a) => a.trait_type && a.value).length > 0 && (
+                      {cleanAttributes.length > 0 && (
                         <div>
                           <p className="mb-2 text-xs uppercase tracking-wider text-muted-dim">
                             Properties
                           </p>
                           <div className="flex flex-wrap gap-2">
-                            {attributes
-                              .filter((a) => a.trait_type && a.value)
-                              .map((a, i) => (
-                                <span
-                                  key={i}
-                                  className="rounded-lg border border-accent/10 bg-accent/5 px-3 py-1 text-xs"
-                                >
-                                  <span className="text-accent">
-                                    {normalizeText(a.trait_type, 100)}:
-                                  </span>{" "}
-                                  {normalizeText(a.value, 200)}
-                                </span>
-                              ))}
+                            {cleanAttributes.map((a, i) => (
+                              <span
+                                key={i}
+                                className="rounded-lg border border-accent/10 bg-accent/5 px-3 py-1 text-xs"
+                              >
+                                <span className="text-accent">{a.trait_type}:</span>{" "}
+                                {a.value}
+                              </span>
+                            ))}
                           </div>
                         </div>
                       )}
@@ -1346,16 +1423,12 @@ function CreatePageContent() {
 
                     <div className="flex justify-between text-sm">
                       <span className="text-muted">Function</span>
-                      <span className="font-mono text-xs">
-                        createNft(metadataURI)
-                      </span>
+                      <span className="font-mono text-xs">createNft(metadataURI)</span>
                     </div>
 
                     <div className="flex justify-between text-sm">
                       <span className="text-muted">Wallet</span>
-                      <span className="font-mono text-xs">
-                        {effectiveWalletShort}
-                      </span>
+                      <span className="font-mono text-xs">{effectiveWalletShort}</span>
                     </div>
 
                     <div className="flex justify-between text-sm">
@@ -1394,9 +1467,7 @@ function CreatePageContent() {
                   {pageError && (
                     <div className="mt-4 rounded-xl border border-danger/20 bg-danger/10 p-4">
                       <p className="text-sm font-medium text-danger">Error</p>
-                      <p className="mt-1 break-all text-xs text-muted">
-                        {pageError}
-                      </p>
+                      <p className="mt-1 break-all text-xs text-muted">{pageError}</p>
                     </div>
                   )}
 
@@ -1404,8 +1475,7 @@ function CreatePageContent() {
                     <div className="mt-4 flex items-start gap-2 rounded-xl border border-warning/20 bg-warning/10 p-4">
                       <AlertTriangle size={15} className="mt-0.5 text-warning" />
                       <p className="text-xs text-warning">
-                        Mint fee is still loading. Minting stays disabled until it
-                        loads.
+                        Mint fee is still loading. Minting stays disabled until it loads.
                       </p>
                     </div>
                   )}
@@ -1414,12 +1484,8 @@ function CreatePageContent() {
                     <div className="mt-4 flex items-start gap-2 rounded-xl border border-danger/20 bg-danger/10 p-4">
                       <AlertTriangle size={15} className="mt-0.5 text-danger" />
                       <p className="text-xs text-danger">
-                        Insufficient balance. Mint fee is {mintFeeText} ETH, your
-                        wallet has{" "}
-                        {userBalanceEth !== null
-                          ? userBalanceEth.toFixed(6)
-                          : "unknown"}{" "}
-                        ETH.
+                        Insufficient balance. Mint fee is {mintFeeText} ETH, your wallet has{" "}
+                        {userBalanceEth !== null ? userBalanceEth.toFixed(6) : "unknown"} ETH.
                       </p>
                     </div>
                   )}
@@ -1447,10 +1513,11 @@ function CreatePageContent() {
                         !isFeeReady ||
                         !hasEnoughBalance ||
                         isSending ||
-                        syncingToProfile
+                        syncingToProfile ||
+                        preparingMetadata
                       }
                     >
-                      {isSending || syncingToProfile ? (
+                      {isSending || syncingToProfile || preparingMetadata ? (
                         <Loader2 size={16} className="animate-spin" />
                       ) : (
                         <Sparkles size={16} />
@@ -1477,15 +1544,26 @@ function CreatePageContent() {
               <h2 className="font-display text-xl font-semibold">{titleText}</h2>
               <p className="text-sm text-muted">{subtitleText}</p>
 
-              {mintKey && (
+              {metadataUri && (
                 <div className="rounded-xl border border-border-light bg-surface2/40 p-3 text-left">
                   <p className="text-[11px] uppercase tracking-wider text-muted-dim">
-                    Mint Key
+                    Final Metadata URI
                   </p>
                   <p className="mt-1 break-all font-mono text-xs text-accent">
-                    {mintKey}
+                    {metadataUri}
                   </p>
                 </div>
+              )}
+
+              {preparedAsset?.metadataGatewayUrl && (
+                <a
+                  href={preparedAsset.metadataGatewayUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-xs text-accent hover:underline"
+                >
+                  <ExternalLink size={12} /> Open metadata JSON
+                </a>
               )}
 
               {submittedTxHash && (
@@ -1549,7 +1627,7 @@ function CreatePageContent() {
                   size="md"
                   className="flex-1"
                   onClick={() => finalizeMint()}
-                  disabled={!mintKey || !submittedTxHash || syncingToProfile}
+                  disabled={!metadataUri || !submittedTxHash || syncingToProfile}
                 >
                   {syncingToProfile ? (
                     <Loader2 size={16} className="animate-spin" />
@@ -1597,9 +1675,7 @@ function CreatePageContent() {
                 {finalResult?.tokenId && (
                   <div className="flex justify-between">
                     <span className="text-muted">Token ID</span>
-                    <span className="font-mono font-medium">
-                      #{finalResult.tokenId}
-                    </span>
+                    <span className="font-mono font-medium">#{finalResult.tokenId}</span>
                   </div>
                 )}
                 <div className="flex justify-between">
@@ -1614,12 +1690,14 @@ function CreatePageContent() {
                     {finalResult?.mintFeeEth || mintFeeText || onChainFeeEth} ETH
                   </span>
                 </div>
-                {listingPrice && parseFloat(listingPrice) > 0 && (
-                  <div className="flex justify-between">
-                    <span className="text-muted">NFT Price</span>
-                    <span className="font-mono text-accent">{listingPrice} ETH</span>
-                  </div>
-                )}
+                <div className="flex justify-between">
+                  <span className="text-muted">NFT Price</span>
+                  <span className="font-mono text-accent">
+                    {Number(finalResult?.listingPriceEth || listingPriceNum) > 0
+                      ? `${finalResult?.listingPriceEth || listingPriceNum} ETH`
+                      : "Not listed yet"}
+                  </span>
+                </div>
                 <div className="flex justify-between">
                   <span className="text-muted">Creator Royalty</span>
                   <span className="font-mono text-accent">
@@ -1629,8 +1707,10 @@ function CreatePageContent() {
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted">Standard</span>
-                  <span className="font-mono">ERC-721</span>
+                  <span className="text-muted">Metadata URI</span>
+                  <span className="max-w-[60%] truncate font-mono text-xs text-accent">
+                    {metadataUri}
+                  </span>
                 </div>
               </div>
 
@@ -1642,13 +1722,21 @@ function CreatePageContent() {
                     </Button>
                   </a>
                 )}
-                <Link href="/profile">
-                  <Button variant="secondary" size="md">
-                    View in Profile
-                  </Button>
-                </Link>
+
+                {preparedAsset?.metadataGatewayUrl && (
+                  <a
+                    href={preparedAsset.metadataGatewayUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <Button variant="secondary" size="md">
+                      <ExternalLink size={14} /> View Metadata
+                    </Button>
+                  </a>
+                )}
+
                 <Button variant="primary" size="md" onClick={resetAll}>
-                  <Plus size={14} /> Create Another
+                  Mint Another NFT
                 </Button>
               </div>
             </div>
@@ -1657,7 +1745,7 @@ function CreatePageContent() {
       </div>
 
       <WalletConnectModal
-        open={showWalletModal}
+        isOpen={showWalletModal}
         onClose={() => setShowWalletModal(false)}
       />
     </div>
@@ -1668,8 +1756,9 @@ export default function CreatePage() {
   return (
     <Suspense
       fallback={
-        <div className="flex min-h-screen items-center justify-center">
-          <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent border-t-transparent" />
+        <div className="mx-auto max-w-xl px-4 py-20 text-center">
+          <Loader2 size={28} className="mx-auto animate-spin text-accent" />
+          <p className="mt-3 text-sm text-muted">Loading create page...</p>
         </div>
       }
     >
