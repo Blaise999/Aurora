@@ -363,15 +363,21 @@ function CreatePageContent() {
     preparedAsset?.metadataUri && metadataUri && preparedForKey === prepareKey
   );
 
-  const canMint =
+  const canPressMint =
     Boolean(creatorContract) &&
     isMintActive &&
     isFeeReady &&
-    hasEnoughBalance &&
     isPreparedFresh &&
     !preparingMetadata &&
     !isSending &&
     !syncingToProfile;
+
+  const canSubmitMintTx =
+    canPressMint &&
+    hasUsableWallet &&
+    isWagmiConnected &&
+    !isWrongChain &&
+    hasEnoughBalance;
 
   const clearPreparedState = useCallback(() => {
     setPreparedAsset(null);
@@ -718,20 +724,35 @@ function CreatePageContent() {
   }, [watchedReceipt, submittedTxHash, metadataUri, finalResult, finalizeMint]);
 
   const handleCreateMint = useCallback(async () => {
-    if (!isLoggedIn || !isFormValid) return;
-
-    if (!hasUsableWallet || !isWagmiConnected) {
-      setShowWalletModal(true);
-      return;
-    }
-
-    if (chain?.id !== targetChainId) {
-      switchChain({ chainId: targetChainId });
+    if (!isLoggedIn || !isFormValid) {
+      setPageError("Complete the NFT details first.");
       return;
     }
 
     if (!creatorContract) {
       setPageError("Creator contract not configured.");
+      return;
+    }
+
+    if (!isMintActive) {
+      setPageError("Minting is currently paused.");
+      return;
+    }
+
+    if (!isPreparedFresh) {
+      setPageError("Still preparing metadata. Please wait a moment.");
+      return;
+    }
+
+    if (!hasUsableWallet || !isWagmiConnected) {
+      setPageError(null);
+      setShowWalletModal(true);
+      return;
+    }
+
+    if (chain?.id !== targetChainId) {
+      setPageError(null);
+      switchChain({ chainId: targetChainId });
       return;
     }
 
@@ -767,11 +788,10 @@ function CreatePageContent() {
     setSubmittedTxHash(null);
 
     try {
-      let prepared = preparedAsset;
+      const prepared = preparedAsset;
 
-      if (!isPreparedFresh) {
-        setMintStage("preparing_metadata");
-        prepared = await prepareMetadata();
+      if (!prepared?.metadataUri) {
+        throw new Error("Metadata is not ready yet.");
       }
 
       setMintStage("awaiting_wallet");
@@ -797,12 +817,14 @@ function CreatePageContent() {
   }, [
     isLoggedIn,
     isFormValid,
+    creatorContract,
+    isMintActive,
+    isPreparedFresh,
     hasUsableWallet,
     isWagmiConnected,
     chain,
     targetChainId,
     switchChain,
-    creatorContract,
     isFeeReady,
     onChainFeeEth,
     hasEnoughBalance,
@@ -811,8 +833,6 @@ function CreatePageContent() {
     royaltyNum,
     name,
     preparedAsset,
-    isPreparedFresh,
-    prepareMetadata,
     writeContractAsync,
   ]);
 
@@ -1492,7 +1512,7 @@ function CreatePageContent() {
                         Review Your NFT
                       </h2>
                       <p className="text-xs text-muted">
-                        Review your NFT, then mint instantly.
+                        Review your NFT, then continue to mint.
                       </p>
                     </div>
                   </div>
@@ -1615,7 +1635,7 @@ function CreatePageContent() {
                     <div className="flex justify-between text-sm">
                       <span className="text-muted">Wallet</span>
                       <span className="font-mono text-xs">
-                        {effectiveWalletShort}
+                        {effectiveWalletShort || "Not connected"}
                       </span>
                     </div>
 
@@ -1656,9 +1676,7 @@ function CreatePageContent() {
                     className={`mt-4 rounded-xl border p-4 ${
                       preparingMetadata
                         ? "border-accent/20 bg-accent/5"
-                        : pageError && !isPreparedFresh
-                        ? "border-danger/20 bg-danger/10"
-                        : isPreparedFresh
+                        : canSubmitMintTx
                         ? "border-success/20 bg-success/10"
                         : "border-warning/20 bg-warning/10"
                     }`}
@@ -1669,12 +1687,7 @@ function CreatePageContent() {
                           size={16}
                           className="mt-0.5 animate-spin text-accent"
                         />
-                      ) : pageError && !isPreparedFresh ? (
-                        <AlertTriangle
-                          size={16}
-                          className="mt-0.5 text-danger"
-                        />
-                      ) : isPreparedFresh ? (
+                      ) : canSubmitMintTx ? (
                         <CheckCircle2
                           size={16}
                           className="mt-0.5 text-success"
@@ -1690,16 +1703,29 @@ function CreatePageContent() {
                         <p className="text-sm font-medium text-text">
                           {preparingMetadata
                             ? "Reviewing metadata..."
-                            : isPreparedFresh
+                            : !isWagmiConnected
+                            ? "Connect wallet to continue"
+                            : isWrongChain
+                            ? `Switch to ${chainName}`
+                            : !hasEnoughBalance
+                            ? "Insufficient balance"
+                            : canSubmitMintTx
                             ? "Ready to mint"
-                            : "Preparing review..."}
+                            : "Almost ready"}
                         </p>
+
                         <p className="mt-1 text-xs text-muted">
                           {preparingMetadata
                             ? "Getting everything ready before wallet confirmation."
-                            : isPreparedFresh
+                            : !isWagmiConnected
+                            ? "Click mint and connect your wallet."
+                            : isWrongChain
+                            ? `Click mint and switch your wallet to ${chainName}.`
+                            : !hasEnoughBalance
+                            ? "Add enough ETH to cover the mint fee."
+                            : canSubmitMintTx
                             ? "Everything is ready for mint."
-                            : "Please wait while setup completes."}
+                            : "Complete the remaining step to continue."}
                         </p>
                       </div>
                     </div>
@@ -1756,22 +1782,26 @@ function CreatePageContent() {
                     >
                       <ArrowLeft size={14} /> Back
                     </Button>
+
                     <Button
                       variant="primary"
                       size="lg"
                       className="flex-1"
                       onClick={handleCreateMint}
-                      disabled={!canMint}
+                      disabled={!canPressMint}
                     >
-                      {preparingMetadata ? (
-                        <Loader2 size={16} className="animate-spin" />
-                      ) : isSending || syncingToProfile ? (
+                      {preparingMetadata || isSending || syncingToProfile ? (
                         <Loader2 size={16} className="animate-spin" />
                       ) : (
                         <Sparkles size={16} />
                       )}
+
                       {preparingMetadata
                         ? "Reviewing..."
+                        : !isWagmiConnected
+                        ? "Connect Wallet"
+                        : isWrongChain
+                        ? `Switch to ${chainName}`
                         : isSending
                         ? "Opening Wallet..."
                         : syncingToProfile
