@@ -256,7 +256,7 @@ export default function SignupPage() {
                     value={country}
                     onChange={(e) => setCountry(e.target.value)}
                     className="w-full pl-9 pr-3 py-2.5 rounded-lg bg-surface2 border border-border-light text-sm"
-                    placeholder="Enter your country (e.g. Nigeria, United States)"
+                    placeholder="Enter your country (e.g.  United States)"
                   />
                 </div>
               </div>
