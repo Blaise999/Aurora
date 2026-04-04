@@ -243,6 +243,7 @@ export default function SignupPage() {
                 </div>
               </div>
 
+              {/* Updated Country field - now a free text input instead of limited select */}
               <div>
                 <label className="text-xs text-muted uppercase tracking-wider">
                   Country
@@ -251,20 +252,12 @@ export default function SignupPage() {
                 <div className="relative mt-1">
                   <Globe size={16} className="absolute left-3 top-3 text-muted" />
 
-                  <select
+                  <input
                     value={country}
                     onChange={(e) => setCountry(e.target.value)}
                     className="w-full pl-9 pr-3 py-2.5 rounded-lg bg-surface2 border border-border-light text-sm"
-                  >
-                    <option value="">Select Country</option>
-                    <option>United States</option>
-                    <option>United Kingdom</option>
-                    <option>Canada</option>
-                    <option>Germany</option>
-                    <option>France</option>
-                    <option>Brazil</option>
-                    <option>India</option>
-                  </select>
+                    placeholder="Enter your country (e.g. Nigeria, United States)"
+                  />
                 </div>
               </div>
 
