@@ -10,12 +10,10 @@ export const revalidate = 10; // ISR cache for 10 seconds
  * Returns the most recent mints + purchases across ALL users
  * for the live activity feed on the home page.
  *
- * NOW INCLUDES:
- * - Real transactions + wallet_mints (unchanged)
- * - Live seeded activities pulled from user_listed (minted NFTs with correct prices)
- * - user_collections support for bought NFTs (with correct prices)
- * - All events mixed + sorted by timestamp
- * - No more 0.0000 ETH — prices now come from nft_price_eth / total_value_eth in the correct tables
+ * FIXED: TypeScript errors on 'assigned_at' by using .select('*')
+ *        → Supabase types now see the full table row (including assigned_at, purchased_at, etc.)
+ *        → Real prices from nft_price_eth / total_value_eth (no more 0.0000 ETH)
+ *        → Seeded activities pulled live from user_listed + user_collections every request
  */
 export async function GET() {
   try {
@@ -51,13 +49,12 @@ export async function GET() {
     if (mintError) console.error("live activity mint query error:", mintError);
 
     // =============================================
-    // 3. SEEDED MINTED NFTs → user_listed (real prices, bulk_randomize + admin_assign)
+    // 3. SEEDED MINTED NFTs → user_listed (real prices)
+    //    Using .select('*') to fix TS error on assigned_at
     // =============================================
     const { data: listedRows, error: listedError } = await sb
       .from("user_listed")
-      .select(
-        "id, profile_id, nft_price_eth, mint_fee_eth, total_value_eth, nft_name, assigned_at, collection"
-      )
+      .select("*") // ← FULL ROW so TypeScript sees assigned_at + all price fields
       .order("assigned_at", { ascending: false })
       .limit(15);
 
@@ -66,13 +63,12 @@ export async function GET() {
     }
 
     // =============================================
-    // 4. BOUGHT NFTs → user_collections (real prices for purchases)
+    // 4. BOUGHT NFTs → user_collections (real prices)
+    //    Using .select('*') to fix any potential TS issues
     // =============================================
     const { data: collectedRows, error: collectedError } = await sb
       .from("user_collections")
-      .select(
-        "id, profile_id, nft_price_eth, total_value_eth, nft_name, purchased_at, collection"
-      )
+      .select("*") // ← FULL ROW so TypeScript sees purchased_at / assigned_at + prices
       .order("purchased_at", { ascending: false })
       .limit(10);
 
@@ -89,7 +85,8 @@ export async function GET() {
       return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
     }
 
-    function timeAgo(dateStr: string) {
+    function timeAgo(dateStr: string | null | undefined) {
+      if (!dateStr) return "just now";
       const diff = Date.now() - new Date(dateStr).getTime();
       const mins = Math.floor(diff / 60000);
       if (mins < 1) return "just now";
@@ -203,7 +200,7 @@ export async function GET() {
         amount: coll.total_value_eth
           ? `${parseFloat(String(coll.total_value_eth)).toFixed(4)} ETH`
           : `${parseFloat(String(coll.nft_price_eth || 0)).toFixed(4)} ETH`,
-        time: timeAgo(coll.purchased_at || coll.assigned_at || new Date().toISOString()),
+        time: timeAgo(coll.purchased_at || coll.assigned_at),
         timestamp: coll.purchased_at || coll.assigned_at || new Date().toISOString(),
       });
     }
@@ -217,7 +214,6 @@ export async function GET() {
     return NextResponse.json({
       events: events.slice(0, 20),
       count: events.length,
-      seededCount: listedRows?.length || 0,
     });
   } catch (e: any) {
     console.error("live activity error:", e);
