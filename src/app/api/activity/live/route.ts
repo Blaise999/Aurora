@@ -37,7 +37,7 @@ interface LiveEvent {
 const MINT_ETH_PRICE: number = 0.122; // EXACTLY 0.122 ETH for ALL minted NFTs (250$ as requested)
 
 const MIN_BUY_ETH_PRICE: number = 0.13; // Bought must ALWAYS be more than 0.122 ETH
-const MAX_BUY_ETH_PRICE: number = 0.40; // Upper limit for bought (realistic premium)
+const MAX_BUY_ETH_PRICE: number = 8.40; // Upper limit for bought (realistic premium)
 
 // Expanded wallet pool for maximum variety
 const FAKE_WALLETS: string[] = [
