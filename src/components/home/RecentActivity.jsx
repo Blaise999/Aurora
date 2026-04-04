@@ -2,125 +2,24 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Activity, Zap, Sparkles } from 'lucide-react';
 
-const POLL_INTERVAL = 15000; // 15 seconds – real-time feel (you can change to 600000 for 10 min if you want)
-
-const SEEDED_NFTS = [
-  {
-    id: 59206,
-    nft_name: "re:gen #2",
-    total_value_eth: "10.619",
-  },
-  {
-    id: 59207,
-    nft_name: "Bored Ape #0",
-    total_value_eth: "10.9712",
-  },
-  {
-    id: 59208,
-    nft_name: "Pudgy Penguin #2",
-    total_value_eth: "11.9053",
-  },
-  {
-    id: 59209,
-    nft_name: "Kemonokaki #3",
-    total_value_eth: "16.1127",
-  },
-  {
-    id: 12,
-    nft_name: "Milady 4",
-    total_value_eth: "0.004",
-  },
-  {
-    id: 13,
-    nft_name: "Milady 3",
-    total_value_eth: "0.004",
-  },
-  {
-    id: 16,
-    nft_name: "XOOB #3",
-    total_value_eth: "0.004",
-  },
-  {
-    id: 15,
-    nft_name: "XOOB #4",
-    total_value_eth: "0.004",
-  },
-  {
-    id: 18,
-    nft_name: "Wrapped Punk #5",
-    total_value_eth: "0.7532",
-  },
-  {
-    id: 19,
-    nft_name: "Lil Pudgy #1",
-    total_value_eth: "0.2426",
-  },
-];
-
-const WALLETS = [
-  "0x00da...d873",
-  "0xfa3b...6873",
-  "0xb7f7...f6",
-  "0x524c...a048",
-  "0x26c4...8188",
-];
-
-const RECENT_TIMES = [
-  "just now",
-  "1m ago",
-  "2m ago",
-  "3m ago",
-  "4m ago",
-  "5m ago",
-  "8m ago",
-];
+const POLL_INTERVAL = 15000;
 
 export default function RecentActivity() {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [visible, setVisible] = useState(false);
 
-  const shuffle = (array) => [...array].sort(() => Math.random() - 0.5);
-
-  const generateSeededEvents = (count) => {
-    const shuffledSeeded = shuffle(SEEDED_NFTS).slice(0, count);
-    const shuffledWallets = shuffle(WALLETS);
-    const shuffledTimes = shuffle(RECENT_TIMES);
-
-    return shuffledSeeded.map((nft, i) => ({
-      id: `seeded-${nft.id}-${Date.now()}`,
-      wallet: shuffledWallets[i % shuffledWallets.length],
-      action: "minted", // seeded are always from user_listed (mint style)
-      nft: nft.nft_name,
-      amount: `${nft.total_value_eth} ETH`,
-      time: shuffledTimes[i % shuffledTimes.length],
-    }));
-  };
-
   const fetchActivity = useCallback(async () => {
     try {
       const res = await fetch('/api/activity/live', { cache: 'no-store' });
       const data = res.ok ? await res.json() : { events: [] };
 
-      // Live events come first (real mints + purchases from your DB)
-      let liveEvents = (data?.events || []).slice(0, 5);
-
-      // Calculate how many seeded events we need to mix in (always keep it lively)
-      const seededCount = Math.max(8 - liveEvents.length, 3);
-
-      // Generate fresh seeded events with new "live" timestamps every poll
-      const seededEvents = generateSeededEvents(seededCount);
-
-      // Mix them together + shuffle so it feels organic
-      let mixed = [...liveEvents, ...seededEvents];
-      mixed = shuffle(mixed).slice(0, 8);
-
-      setEvents(mixed);
+      // Pure API data only - no seeded mixing
+      const cleanEvents = (data?.events || []).slice(0, 8);
+      setEvents(cleanEvents);
     } catch (err) {
-      console.error("Live activity fetch failed, falling back to seeded only");
-      // Still show seeded if API is down or empty
-      const fallback = generateSeededEvents(8);
-      setEvents(fallback);
+      console.error("Live activity fetch failed");
+      setEvents([]);
     }
     setLoading(false);
   }, []);
@@ -172,7 +71,7 @@ export default function RecentActivity() {
             <div>
               <h2 className="font-display text-xl sm:text-2xl font-bold text-text">Live Activity</h2>
               <p className="text-[11px] text-muted-dim mt-0.5 font-mono tracking-wide">
-                Real-time mints &amp; purchases • seeded mixed live
+                Real-time mints &amp; purchases
               </p>
             </div>
           </div>
