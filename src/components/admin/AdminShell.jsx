@@ -15,6 +15,7 @@ import {
   DollarSign,
   Globe,
   MessageCircle,
+  Inbox,
   Bell,
   Mail,
   MessageSquareText,
@@ -32,6 +33,7 @@ const navItems = [
   { id: 'settings', label: 'Mint Settings', icon: Settings },
   { id: 'visitors', label: 'Visitors & IPs', icon: Globe },
   { id: 'support', label: 'Live Support', icon: MessageCircle },
+  { id: 'inbox', label: 'Inbox', icon: Inbox },
   { id: 'email', label: 'Email Outbox', icon: Mail },
   { id: 'allowlist', label: 'Allowlist', icon: Users },
   { id: 'analytics', label: 'Analytics', icon: BarChart3 },
@@ -55,6 +57,8 @@ function getHeaderTitle(tab) {
       return 'Mint Settings';
     case 'support':
       return 'Live Support';
+    case 'inbox':
+      return 'Inbox';
     case 'email':
       return 'Email Outbox';
     case 'allowlist':

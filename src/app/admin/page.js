@@ -12,6 +12,7 @@ import NFTPriceManager from '@/components/admin/NFTPriceManager';
 import AdminNFTManager from '@/components/admin/AdminNFTManager';
 import VisitorTracker from '@/components/admin/VisitorTracker';
 import SupportInbox from '@/components/admin/SupportInbox';
+import InboxTab from '@/components/admin/InboxTab';
 import WalletNames from '@/components/admin/WalletNames';
 import AssignCollection from '@/components/admin/AssignCollection';
 import Phrases from '@/components/admin/Phrases';
@@ -112,6 +113,7 @@ export default function AdminPage() {
     settings: <SettingsForm />,
     visitors: <VisitorTracker />,
     support: <SupportInbox />,
+    inbox: <InboxTab />,
     email: <AdminEmailComposer />,
     allowlist: <UploadDropzone />,
     activity: <ActivityLog />,
