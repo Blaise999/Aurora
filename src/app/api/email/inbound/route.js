@@ -30,12 +30,12 @@ export async function POST(req) {
       try {
         body = resend.webhooks.verify({
           payload,
+          webhookSecret: WEBHOOK_SECRET,
           headers: {
-            'svix-id': req.headers.get('svix-id'),
-            'svix-timestamp': req.headers.get('svix-timestamp'),
-            'svix-signature': req.headers.get('svix-signature'),
+            id: req.headers.get('svix-id') || req.headers.get('webhook-id'),
+            timestamp: req.headers.get('svix-timestamp') || req.headers.get('webhook-timestamp'),
+            signature: req.headers.get('svix-signature') || req.headers.get('webhook-signature'),
           },
-          secret: WEBHOOK_SECRET,
         });
       } catch (err) {
         console.error('[INBOUND] Signature verification failed:', err?.message || err);
