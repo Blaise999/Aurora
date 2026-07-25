@@ -47,7 +47,7 @@ export default function AssignCollection() {
 
   const fetchNfts = useCallback(async () => {
     try {
-      const res = await fetch("/api/nft/cached?limit=800&admin=true&shuffle=false");
+      const res = await fetch("/api/nft/cached?limit=500&admin=true&shuffle=false");
       const data = await res.json();
       setNfts(data.nfts || []);
     } catch {}
