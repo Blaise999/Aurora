@@ -63,7 +63,6 @@ export function useCachedNftsInfinite(pageSize = 50, collection = null) {
     if (append) setLoadingMore(true); else setLoading(true);
     try {
       let url = `/api/nft/cached?limit=${pageSize}&offset=${pageOffset}&shuffle=${pageOffset === 0 ? 'true' : 'false'}`;
-      if (pageOffset === 0) url += `&_t=${Date.now()}`;
       if (collection) url += `&collection=${encodeURIComponent(collection)}`;
       const res = await fetch(url);
       if (!res.ok) throw new Error("fail");
@@ -112,7 +111,7 @@ export function useCachedNfts(limit = 50, collection = null) {
     setLoading(true);
     (async () => {
       try {
-        let url = `/api/nft/cached?limit=${limit}&shuffle=true&_t=${Date.now()}`;
+        let url = `/api/nft/cached?limit=${limit}&shuffle=true`;
         if (collection) url += `&collection=${encodeURIComponent(collection)}`;
         const res = await fetch(url);
         if (!res.ok) throw new Error("fail");
