@@ -29,7 +29,9 @@ export async function GET(request) {
     if (contract && tokenId) {
       const { data } = await sb
         .from("cached_nfts")
-        .select("*, nft_pricing(mint_price_eth, mint_fee_eth, is_featured, is_listed)")
+        .select(
+          "id, contract_address, token_id, name, description, image_url, collection_name, chain_id, token_type, attributes, synced_at, nft_pricing(mint_price_eth, mint_fee_eth, is_featured, is_listed)"
+        )
         .eq("contract_address", contract.toLowerCase())
         .eq("token_id", tokenId)
         .maybeSingle();
@@ -39,7 +41,10 @@ export async function GET(request) {
 
     let query = sb
       .from("cached_nfts")
-      .select("*, nft_pricing(mint_price_eth, mint_fee_eth, is_featured, is_listed)", { count: "exact" })
+      .select(
+        "id, contract_address, token_id, name, description, image_url, collection_name, chain_id, token_type, attributes, synced_at, nft_pricing(mint_price_eth, mint_fee_eth, is_featured, is_listed)",
+        { count: "exact" }
+      )
       .eq("is_active", true)
       .not("image_url", "is", null)
       .neq("image_url", "")
@@ -73,9 +78,11 @@ export async function GET(request) {
       },
       {
         headers: {
-          // Don't cache shuffled responses so each refresh gives different order
+          // Shuffled first-page loads: cache briefly so repeat visits within
+          // the window reuse the same edge response instead of re-hitting
+          // Supabase. Order still changes every ~30s, just not every request.
           "Cache-Control": shuffle && offset === 0
-            ? "private, no-store"
+            ? "public, s-maxage=30, stale-while-revalidate=120"
             : "public, s-maxage=60, stale-while-revalidate=300",
         },
       }
