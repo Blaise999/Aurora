@@ -22,8 +22,10 @@ const nextConfig = {
     remotePatterns: [
       // Alchemy / marketplace / NFT infra
       { protocol: "https", hostname: "nft-cdn.alchemy.com", pathname: "/**" },
+      { protocol: "https", hostname: "nft2-cdn.alchemy.co", pathname: "/**" },
       { protocol: "https", hostname: "cdn.center.app", pathname: "/**" },
       { protocol: "https", hostname: "metadata.ens.domains", pathname: "/**" },
+      { protocol: "https", hostname: "www.miladymaker.net", pathname: "/**" },
 
       // OpenSea / SeaDN
       { protocol: "https", hostname: "i.seadn.io", pathname: "/**" },
